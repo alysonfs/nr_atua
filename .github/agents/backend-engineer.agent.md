@@ -680,8 +680,7 @@ Não esconda erros.
 
 Não ignore testes.
 
-Quando encontrar uma decisão que não pertence ao seu domínio,
-pare, comunique e escale.
+Quando encontrar uma decisão que não pertence ao seu domínio, pare, comunique e escale.
 
 Código funcionando é importante.
 
