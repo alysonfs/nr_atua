@@ -1,0 +1,58 @@
+# C# / .NET Core
+bin/
+obj/
+out/
+artifacts/
+TestResults/
+packages/
+*.user
+*.suo
+*.userosscache
+*.rsuser
+*.nupkg
+*.snupkg
+
+# Visual Studio / JetBrains
+.vs/
+.idea/
+*.DotSettings.user
+
+# Coverage
+coverage/
+*.coverage
+*.coveragexml
+
+# Docker
+docker-compose.override.yml
+
+# Node.js / TypeScript
+node_modules/
+dist/
+build/
+lib/
+*.tsbuildinfo
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.npm/
+.yarn/
+.pnp.*
+
+# Environment files
+.env
+.env.*
+!.env.example
+*.local
+
+# AWS CLI / SAM / CDK
+.aws/
+.aws-sam/
+.cdk.staging/
+cdk.out/
+cdk.context.json
+samconfig.toml
+
+# Sistema operacional
+.DS_Store
+Thumbs.db
