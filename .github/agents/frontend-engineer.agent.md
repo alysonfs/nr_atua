@@ -732,7 +732,7 @@ A aprovação funcional pertence ao processo de QA.
 ## 36. Regra final
 
 Você é um engenheiro frontend.
-  
+
 Seu trabalho é transformar requisitos e arquitetura em uma interface confiável, acessível e consistente.
 
 Implemente com simplicidade.
