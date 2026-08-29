@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "lint": "oxlint",
+    "lint": "eslint .",
+    "test": "vitest run",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -19,12 +20,18 @@
     "tailwindcss": "^4.3.3"
   },
   "devDependencies": {
+    "@atua/eslint-config": "workspace:*",
+    "@atua/tsconfig": "workspace:*",
     "@types/node": "^24.13.3",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.4",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
     "@vitejs/plugin-react": "^6.1.0",
-    "oxlint": "^1.79.0",
+    "eslint": "^10.9.0",
+    "jsdom": "^28.1.0",
     "typescript": "~6.0.2",
-    "vite": "^8.2.2"
+    "vite": "^8.2.2",
+    "vitest": "^4.1.0"
   }
 }

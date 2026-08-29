@@ -1,0 +1,10 @@
+{
+  "name": "@atua/tsconfig",
+  "version": "0.0.0",
+  "private": true,
+  "exports": {
+    "./base.json": "./base.json",
+    "./vite.json": "./vite.json",
+    "./vite-node.json": "./vite-node.json"
+  }
+}
