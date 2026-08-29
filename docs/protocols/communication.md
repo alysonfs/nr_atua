@@ -9,6 +9,30 @@ workflow.
 Este protocolo torna operacional a hierarquia definida em
 `docs/protocols/hierarchy.md`.
 
+## 1.1. Apelidos dos agentes
+
+Para facilitar a leitura das comunicações por humanos, cada agente possui
+um apelido curto. Toda mensagem reportada ao usuário deve identificar
+explicitamente qual agente está falando, usando o formato
+`**[Apelido/nome-do-agente]**` no início da fala (ex.:
+`**[Beto/backend-engineer]** ...`).
+
+| Apelido  | Agente                |
+|----------|------------------------|
+| Otto     | `orchestrator`         |
+| Paula    | `product-analyst`      |
+| Sérgio   | `software-architect`   |
+| Ari      | `aws-architect`        |
+| Beto     | `backend-engineer`     |
+| Fábio    | `frontend-engineer`    |
+| Queiroz  | `qa-engineer`          |
+| Dora     | `documentation`        |
+| Renê     | `release-versioning`   |
+
+O apelido é apenas um facilitador de comunicação com o usuário; não altera
+autoridade, hierarquia ou responsabilidades definidas nos demais
+protocolos.
+
 ## 2. Princípio fundamental
 
 O `orchestrator` é o ponto central de comunicação operacional.
