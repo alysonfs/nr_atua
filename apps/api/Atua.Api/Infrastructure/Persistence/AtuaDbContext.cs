@@ -13,6 +13,10 @@ public sealed class AtuaDbContext(DbContextOptions<AtuaDbContext> options) : DbC
 
     public DbSet<EmailConfirmation> EmailConfirmations => Set<EmailConfirmation>();
 
+    public DbSet<AuthSession> AuthSessions => Set<AuthSession>();
+    public DbSet<AuthRefreshToken> AuthRefreshTokens => Set<AuthRefreshToken>();
+    public DbSet<ServiceCredential> ServiceCredentials => Set<ServiceCredential>();
+
     public DbSet<Tenant> Tenants => Set<Tenant>();
 
     public DbSet<TenantMembership> TenantMemberships => Set<TenantMembership>();
@@ -27,11 +31,54 @@ public sealed class AtuaDbContext(DbContextOptions<AtuaDbContext> options) : DbC
     {
         ConfigureUser(modelBuilder.Entity<User>());
         ConfigureEmailConfirmation(modelBuilder.Entity<EmailConfirmation>());
+        ConfigureAuthSession(modelBuilder.Entity<AuthSession>());
+        ConfigureAuthRefreshToken(modelBuilder.Entity<AuthRefreshToken>());
+        ConfigureServiceCredential(modelBuilder.Entity<ServiceCredential>());
         ConfigureTenant(modelBuilder.Entity<Tenant>());
         ConfigureTenantMembership(modelBuilder.Entity<TenantMembership>());
         ConfigureTrialSubscription(modelBuilder.Entity<TrialSubscription>());
         ConfigureIntegrationProvider(modelBuilder.Entity<IntegrationProvider>());
         ConfigureIntegration(modelBuilder.Entity<Integration>());
+    }
+
+    private static void ConfigureAuthSession(EntityTypeBuilder<AuthSession> builder)
+    {
+        builder.ToTable("auth_sessions");
+        builder.HasKey(session => session.Id);
+        builder.Property(session => session.Id).ValueGeneratedNever();
+        builder.Property(session => session.TimeZoneOverrideId).HasMaxLength(64);
+        builder.HasIndex(session => session.UserId);
+        builder.HasOne<User>().WithMany().HasForeignKey(session => session.UserId)
+            .OnDelete(DeleteBehavior.Cascade);
+    }
+
+    private static void ConfigureAuthRefreshToken(EntityTypeBuilder<AuthRefreshToken> builder)
+    {
+        builder.ToTable("auth_refresh_tokens");
+        builder.HasKey(token => token.Id);
+        builder.Property(token => token.Id).ValueGeneratedNever();
+        builder.Property(token => token.TokenHash).HasMaxLength(64).IsRequired();
+        builder.HasIndex(token => token.TokenHash).IsUnique();
+        builder.HasIndex(token => token.FamilyId);
+        builder.HasOne<AuthSession>().WithMany().HasForeignKey(token => token.SessionId)
+            .OnDelete(DeleteBehavior.Cascade);
+    }
+
+    private static void ConfigureServiceCredential(EntityTypeBuilder<ServiceCredential> builder)
+    {
+        builder.ToTable("service_credentials");
+        builder.HasKey(credential => credential.Id);
+        builder.Property(credential => credential.Id).ValueGeneratedNever();
+        builder.Property(credential => credential.TokenHash).HasMaxLength(64).IsRequired();
+        builder.Property(credential => credential.Scope).HasMaxLength(128).IsRequired();
+        builder.HasIndex(credential => credential.TokenHash).IsUnique();
+        builder.HasIndex(credential => credential.TenantId);
+        builder.HasOne<Tenant>().WithMany().HasForeignKey(credential => credential.TenantId)
+            .OnDelete(DeleteBehavior.Cascade);
+        builder.HasOne<Integration>().WithMany().HasForeignKey(credential => credential.IntegrationId)
+            .OnDelete(DeleteBehavior.Cascade);
+        builder.HasOne<IntegrationProvider>().WithMany().HasForeignKey(credential => credential.ProviderId)
+            .OnDelete(DeleteBehavior.Restrict);
     }
 
     private static void ConfigureUser(EntityTypeBuilder<User> builder)
@@ -93,6 +140,7 @@ public sealed class AtuaDbContext(DbContextOptions<AtuaDbContext> options) : DbC
             .OnDelete(DeleteBehavior.Restrict);
         builder.HasOne<Tenant>().WithMany().HasForeignKey(subscription => subscription.TenantId)
             .OnDelete(DeleteBehavior.Restrict);
+        builder.HasIndex(subscription => subscription.UserId).IsUnique();
     }
 
     private static void ConfigureIntegrationProvider(EntityTypeBuilder<IntegrationProvider> builder)

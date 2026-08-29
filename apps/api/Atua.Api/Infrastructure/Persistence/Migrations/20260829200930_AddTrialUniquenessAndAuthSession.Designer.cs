@@ -3,6 +3,7 @@ using System;
 using Atua.Api.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Atua.Api.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(AtuaDbContext))]
-    partial class AtuaDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260829200930_AddTrialUniquenessAndAuthSession")]
+    partial class AddTrialUniquenessAndAuthSession
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -49,50 +52,10 @@ namespace Atua.Api.Infrastructure.Persistence.Migrations
                     b.ToTable("trial_subscriptions", (string)null);
                 });
 
-            modelBuilder.Entity("Atua.Api.Domain.Identity.AuthRefreshToken", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTimeOffset>("ExpiresAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid>("FamilyId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("SessionId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("TokenHash")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("character varying(64)");
-
-                    b.Property<DateTimeOffset?>("UsedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("FamilyId");
-
-                    b.HasIndex("SessionId");
-
-                    b.HasIndex("TokenHash")
-                        .IsUnique();
-
-                    b.ToTable("auth_refresh_tokens", (string)null);
-                });
-
             modelBuilder.Entity("Atua.Api.Domain.Identity.AuthSession", b =>
                 {
                     b.Property<Guid>("Id")
                         .HasColumnType("uuid");
-
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateTimeOffset?>("RevokedAt")
-                        .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("TimeZoneOverrideId")
                         .HasMaxLength(64)
@@ -132,47 +95,6 @@ namespace Atua.Api.Infrastructure.Persistence.Migrations
                     b.HasIndex("UserId");
 
                     b.ToTable("email_confirmations", (string)null);
-                });
-
-            modelBuilder.Entity("Atua.Api.Domain.Identity.ServiceCredential", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("IntegrationId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("ProviderId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTimeOffset?>("RevokedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("Scope")
-                        .IsRequired()
-                        .HasMaxLength(128)
-                        .HasColumnType("character varying(128)");
-
-                    b.Property<Guid>("TenantId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("TokenHash")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("character varying(64)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("IntegrationId");
-
-                    b.HasIndex("ProviderId");
-
-                    b.HasIndex("TenantId");
-
-                    b.HasIndex("TokenHash")
-                        .IsUnique();
-
-                    b.ToTable("service_credentials", (string)null);
                 });
 
             modelBuilder.Entity("Atua.Api.Domain.Identity.User", b =>
@@ -326,15 +248,6 @@ namespace Atua.Api.Infrastructure.Persistence.Migrations
                         .IsRequired();
                 });
 
-            modelBuilder.Entity("Atua.Api.Domain.Identity.AuthRefreshToken", b =>
-                {
-                    b.HasOne("Atua.Api.Domain.Identity.AuthSession", null)
-                        .WithMany()
-                        .HasForeignKey("SessionId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-                });
-
             modelBuilder.Entity("Atua.Api.Domain.Identity.AuthSession", b =>
                 {
                     b.HasOne("Atua.Api.Domain.Identity.User", null)
@@ -349,27 +262,6 @@ namespace Atua.Api.Infrastructure.Persistence.Migrations
                     b.HasOne("Atua.Api.Domain.Identity.User", null)
                         .WithMany()
                         .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-                });
-
-            modelBuilder.Entity("Atua.Api.Domain.Identity.ServiceCredential", b =>
-                {
-                    b.HasOne("Atua.Api.Domain.Integrations.Integration", null)
-                        .WithMany()
-                        .HasForeignKey("IntegrationId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("Atua.Api.Domain.Integrations.IntegrationProvider", null)
-                        .WithMany()
-                        .HasForeignKey("ProviderId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("Atua.Api.Domain.Tenants.Tenant", null)
-                        .WithMany()
-                        .HasForeignKey("TenantId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });

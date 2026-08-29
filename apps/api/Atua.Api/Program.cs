@@ -1,9 +1,15 @@
 using Amazon.SimpleEmailV2;
+using System.Security.Claims;
+using System.Text;
+using Atua.Api.Application.Billing;
 using Atua.Api.Application.Identity;
 using Atua.Api.Endpoints;
 using Atua.Api.Infrastructure.Email;
 using Atua.Api.Infrastructure.Persistence;
+using Atua.Api.Infrastructure.Security;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Tokens;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -16,9 +22,64 @@ var connectionString = builder.Configuration.GetConnectionString("Atua")
     ?? "Host=localhost;Database=atua;Username=atua";
 
 builder.Services.AddDbContext<AtuaDbContext>(options => options.UseNpgsql(connectionString));
+var authOptions = builder.Configuration.GetSection(AuthOptions.SectionName).Get<AuthOptions>()
+    ?? new AuthOptions();
+if (string.IsNullOrWhiteSpace(authOptions.SigningKey) || authOptions.SigningKey.Length < 32)
+{
+    throw new InvalidOperationException("Authentication:SigningKey deve ter ao menos 32 caracteres.");
+}
+builder.Services.Configure<AuthOptions>(builder.Configuration.GetSection(AuthOptions.SectionName));
+builder.Services.AddAuthentication(options =>
+{
+    options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+    options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+})
+.AddJwtBearer(options =>
+{
+    options.MapInboundClaims = false;
+    options.TokenValidationParameters = new TokenValidationParameters
+    {
+        ValidateIssuer = true, ValidIssuer = authOptions.Issuer,
+        ValidateAudience = true, ValidAudience = authOptions.Audience,
+        ValidateIssuerSigningKey = true,
+        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(authOptions.SigningKey)),
+        ValidateLifetime = true,
+        ClockSkew = TimeSpan.Zero
+    };
+    options.Events = new JwtBearerEvents
+    {
+        OnTokenValidated = async context =>
+        {
+            var sub = context.Principal?.FindFirstValue("sub");
+            var sid = context.Principal?.FindFirstValue("sid");
+            if (!Guid.TryParse(sub, out var userId) || !Guid.TryParse(sid, out var sessionId))
+            {
+                context.Fail("Invalid session claims.");
+                return;
+            }
+            var db = context.HttpContext.RequestServices.GetRequiredService<AtuaDbContext>();
+            var active = await db.AuthSessions.AsNoTracking().AnyAsync(session =>
+                session.Id == sessionId && session.UserId == userId && session.RevokedAt == null,
+                context.HttpContext.RequestAborted);
+            if (!active) context.Fail("Session revoked.");
+        }
+    };
+})
+.AddScheme<Microsoft.AspNetCore.Authentication.AuthenticationSchemeOptions,
+    ServiceCredentialAuthenticationHandler>(ServiceCredentialAuthenticationHandler.SchemeName, _ => { });
+builder.Services.AddAuthorization(options =>
+{
+    options.AddPolicy("BrowserSession", policy =>
+        policy.AddAuthenticationSchemes(JwtBearerDefaults.AuthenticationScheme).RequireAuthenticatedUser());
+    options.AddPolicy("CollectorEligibility", policy =>
+        policy.AddAuthenticationSchemes(ServiceCredentialAuthenticationHandler.SchemeName)
+            .RequireClaim("scope", ServiceCredentialAuthenticationHandler.EligibilityScope));
+});
 
 builder.Services.AddSingleton<IAmazonSimpleEmailServiceV2, AmazonSimpleEmailServiceV2Client>();
 builder.Services.AddSingleton<ISecretHasher, Argon2idSecretHasher>();
+builder.Services.AddSingleton<ITokenHashService, TokenHashService>();
+builder.Services.AddScoped<IRefreshTokenStore, RefreshTokenStore>();
 builder.Services.AddSingleton<IEmailConfirmationCodeGenerator, EmailConfirmationCodeGenerator>();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddScoped<IEmailConfirmationSender>(sp =>
@@ -31,6 +92,10 @@ builder.Services.AddScoped<IEmailConfirmationSender>(sp =>
 });
 builder.Services.AddScoped<SignUpService>();
 builder.Services.AddScoped<ConfirmEmailService>();
+builder.Services.AddScoped<AuthService>();
+builder.Services.AddScoped<TimeZonePreferenceService>();
+builder.Services.AddScoped<CreateTrialService>();
+builder.Services.AddScoped<TrialEligibilityService>();
 
 var app = builder.Build();
 
@@ -42,6 +107,9 @@ if (app.Environment.IsDevelopment())
 
 app.MapGet("/health", () => Results.Ok(new { status = "healthy" }));
 
+app.UseAuthentication();
+app.UseAuthorization();
 app.MapAuthEndpoints();
+app.MapTrialEndpoints();
 
 app.Run();
