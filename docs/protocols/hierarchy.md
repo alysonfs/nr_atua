@@ -222,7 +222,11 @@ Não pode:
 - alterar contratos relevantes sem coordenação;
 - aprovar sua própria implementação;
 - fazer push, criar tags ou definir versão;
-- realizar commit incremental sem autorização do `qa-engineer`.
+- realizar commit incremental sem autorização do `qa-engineer`;
+- executar comandos Git destrutivos ou amplos sem pathspec especifico
+  (`git clean`, `git reset --hard`, `git checkout`/`git restore` sem
+  arquivo/diretório explícito, `git stash drop`/`git stash pop`) sem
+  autorização explícita do usuário (ver ADR-006).
 
 ## 9. Frontend Engineer
 
@@ -260,7 +264,11 @@ Não pode:
 - alterar infraestrutura;
 - aprovar sua própria implementação;
 - fazer push, criar tags ou definir versão;
-- realizar commit incremental sem autorização do `qa-engineer`.
+- realizar commit incremental sem autorização do `qa-engineer`;
+- executar comandos Git destrutivos ou amplos sem pathspec especifico
+  (`git clean`, `git reset --hard`, `git checkout`/`git restore` sem
+  arquivo/diretório explícito, `git stash drop`/`git stash pop`) sem
+  autorização explícita do usuário (ver ADR-006).
 
 ## 10. QA Engineer
 
