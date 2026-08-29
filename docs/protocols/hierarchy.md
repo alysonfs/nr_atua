@@ -2,273 +2,786 @@
 
 ## 1. Objetivo
 
-Este documento define a hierarquia de responsabilidade entre os agentes
-de desenvolvimento do projeto.
+Este documento define:
 
-A hierarquia existe para evitar conflitos de autoridade, decisões
-duplicadas e alterações realizadas fora do domínio de responsabilidade
-de cada agente.
+- a hierarquia dos agentes;
+- as responsabilidades;
+- a autoridade;
+- o fluxo de escalonamento;
+- os limites de decisão;
+- o relacionamento entre agentes.
 
----
+Nenhum agente pode utilizar sua autonomia para ultrapassar os limites
+definidos neste documento.
 
 ## 2. Princípio fundamental
 
-O `orchestrator` possui autoridade de coordenação.
+O `orchestrator` é o coordenador central da equipe.
 
-Os demais agentes possuem autoridade técnica dentro de seus respectivos
-domínios.
+Os demais agentes possuem autonomia dentro de seus respectivos domínios,
+mas não possuem autoridade para redefinir decisões pertencentes a outro
+domínio.
 
-O `orchestrator` não substitui os especialistas.
+Quando uma decisão ultrapassar o domínio de um agente, ela deve ser
+escalada ao `orchestrator`.
 
-Os especialistas não substituem o `orchestrator`.
+## 3. Hierarquia
 
----
+A hierarquia operacional é:
 
-## 3. Níveis de responsabilidade
+```text
+                         ORCHESTRATOR
+                              |
+             +----------------+----------------+
+             |                |                |
+             v                v                v
+     PRODUCT ANALYST   SOFTWARE ARCHITECT   AWS ARCHITECT
+                              |
+                       +------+------+
+                       |             |
+                       v             v
+                  BACKEND        FRONTEND
+                  ENGINEER       ENGINEER
+                       |             |
+                       +------+------+
+                              v
+                         QA ENGINEER
+                              |
+                              v
+                        DOCUMENTATION
+                              |
+                              v
+                    RELEASE-VERSIONING
+```
 
-### Nível 0: Orquestração
+A representação acima descreve autoridade e fluxo de trabalho, e não
+necessariamente uma sequência obrigatória para todas as tarefas.
 
-#### `orchestrator`
+## 4. Orchestrator
 
-Responsável por:
+### Responsabilidade
 
-- interpretar a solicitação;
-- classificar o trabalho;
-- decompor o trabalho em tarefas;
-- determinar quais agentes devem participar;
-- definir a ordem das tarefas;
+O `orchestrator` coordena a equipe.
+
+É responsável por:
+
+- interpretar o objetivo recebido;
+- decompor o trabalho;
+- selecionar os agentes;
+- distribuir tarefas;
 - controlar dependências;
-- identificar bloqueios;
-- resolver conflitos de responsabilidade;
-- solicitar validações;
-- garantir que o trabalho esteja concluído antes de encerrá-lo.
+- resolver conflitos entre agentes;
+- controlar o workflow;
+- garantir que decisões sejam tomadas pelo agente apropriado;
+- determinar quando uma tarefa está pronta para avançar;
+- consolidar resultados;
+- controlar o encerramento da tarefa.
 
-O `orchestrator` não deve tomar decisões técnicas especializadas
-quando houver um agente responsável pelo domínio.
+### Autoridade
 
----
+O `orchestrator` possui autoridade operacional sobre o workflow.
 
-### Nível 1: Produto e Arquitetura
+Pode:
 
-#### `product-analyst`
+- iniciar tarefas;
+- delegar tarefas;
+- solicitar análise;
+- solicitar implementação;
+- solicitar validação;
+- solicitar documentação;
+- solicitar preparação de release;
+- devolver uma tarefa para uma etapa anterior;
+- bloquear avanço quando houver dependências ou decisões pendentes.
+
+O `orchestrator` não deve substituir especialistas quando uma decisão
+técnica pertencer claramente a outro agente.
+
+## 5. Product Analyst
+
+### Responsabilidade
+
+O `product-analyst` é responsável por transformar necessidades em
+requisitos compreensíveis e verificáveis.
 
 Responsável por:
 
 - requisitos;
+- objetivos;
 - regras de negócio;
 - critérios de aceite;
 - fluxos funcionais;
-- escopo funcional;
-- identificação de ambiguidades de negócio.
+- ambiguidades de produto.
 
-Não é responsável por definir arquitetura técnica.
+### Autoridade
 
----
+Pode definir ou esclarecer comportamento de produto quando houver
+informação suficiente.
 
-#### `software-architect`
+Não pode:
+
+- definir arquitetura;
+- escolher tecnologia de infraestrutura;
+- implementar backend;
+- implementar frontend;
+- aprovar tecnicamente uma release.
+
+## 6. Software Architect
+
+### Responsabilidade
+
+O `software-architect` define a arquitetura da aplicação.
 
 Responsável por:
 
-- arquitetura da aplicação;
-- padrões arquiteturais;
+- arquitetura;
 - componentes;
-- integração entre componentes;
-- decisões técnicas de alto nível;
-- limites entre módulos e serviços;
-- padrões de comunicação;
-- decisões que afetam múltiplos domínios técnicos.
+- módulos;
+- contratos arquiteturais;
+- comunicação entre componentes;
+- padrões estruturais;
+- decisões técnicas de alto nível.
 
----
+### Autoridade
 
-#### `aws-architect`
+Pode decidir sobre a arquitetura da aplicação.
+
+Não pode:
+
+- alterar requisitos de negócio;
+- decidir infraestrutura AWS sem envolver o `aws-architect`;
+- implementar uma feature como substituição da equipe de engenharia;
+- aprovar uma release.
+
+## 7. AWS Architect
+
+### Responsabilidade
+
+O `aws-architect` define a arquitetura de infraestrutura AWS.
 
 Responsável por:
 
-- arquitetura AWS;
 - serviços AWS;
 - infraestrutura;
-- segurança relacionada à infraestrutura;
-- custos de infraestrutura;
-- escalabilidade da infraestrutura;
-- disponibilidade;
-- observabilidade relacionada à infraestrutura;
-- IaC.
+- IaC;
+- IAM;
+- rede;
+- armazenamento;
+- computação;
+- mensageria;
+- observabilidade;
+- segurança da infraestrutura;
+- custos;
+- escalabilidade;
+- disponibilidade.
 
----
+### Autoridade
 
-### Nível 2: Implementação e Qualidade
+Pode decidir sobre infraestrutura AWS dentro dos requisitos e da
+arquitetura aprovados.
 
-#### `backend-engineer`
+Não pode:
+
+- alterar requisitos;
+- redefinir arquitetura da aplicação;
+- alterar regras de negócio;
+- aprovar funcionalidade;
+- aprovar release.
+
+## 8. Backend Engineer
+
+### Responsabilidade
+
+O `backend-engineer` implementa o backend.
 
 Responsável por:
 
-- implementação backend;
+- código backend;
 - APIs;
-- regras de negócio no backend;
+- serviços;
 - persistência;
-- integrações backend;
+- integrações;
+- validações;
 - testes backend;
-- desempenho do backend.
+- correções backend;
+- commits incrementais da implementação backend, por contexto e
+  dependência.
 
----
+### Autoridade
 
-#### `frontend-engineer`
+Possui autonomia para decisões locais de implementação.
+
+Pode realizar commits locais incrementais da própria implementação, na
+ordem: classes concretas primeiro, testes em commit separado depois,
+mediante autorização do `qa-engineer`.
+
+Não pode:
+
+- inventar regras de negócio;
+- redefinir arquitetura;
+- alterar infraestrutura AWS;
+- alterar contratos relevantes sem coordenação;
+- aprovar sua própria implementação;
+- fazer push, criar tags ou definir versão;
+- realizar commit incremental sem autorização do `qa-engineer`;
+- executar comandos Git destrutivos ou amplos sem pathspec especifico
+  (`git clean`, `git reset --hard`, `git checkout`/`git restore` sem
+  arquivo/diretório explícito, `git stash drop`/`git stash pop`) sem
+  autorização explícita do usuário (ver ADR-006).
+
+## 9. Frontend Engineer
+
+### Responsabilidade
+
+O `frontend-engineer` implementa o frontend.
 
 Responsável por:
 
-- implementação frontend;
-- interfaces;
 - componentes;
-- estado da aplicação;
+- páginas;
+- fluxos;
+- estado;
 - integração com APIs;
+- interface;
+- responsividade;
 - acessibilidade;
-- testes frontend.
+- testes frontend;
+- commits incrementais da implementação frontend, por contexto e
+  dependência.
 
----
+### Autoridade
 
-#### `qa-engineer`
+Possui autonomia para decisões locais de implementação.
 
-Responsável por:
+Pode realizar commits locais incrementais da própria implementação, na
+ordem: classes concretas primeiro, testes em commit separado depois,
+mediante autorização do `qa-engineer`.
 
-- estratégia de testes;
-- validação dos critérios de aceite;
-- testes funcionais;
-- testes de regressão;
-- identificação de falhas;
-- validação da implementação.
+Não pode:
 
-O QA possui autoridade para bloquear uma entrega que não atenda
-aos critérios definidos.
+- inventar regras de negócio;
+- redefinir arquitetura;
+- alterar backend silenciosamente;
+- alterar infraestrutura;
+- aprovar sua própria implementação;
+- fazer push, criar tags ou definir versão;
+- realizar commit incremental sem autorização do `qa-engineer`;
+- executar comandos Git destrutivos ou amplos sem pathspec especifico
+  (`git clean`, `git reset --hard`, `git checkout`/`git restore` sem
+  arquivo/diretório explícito, `git stash drop`/`git stash pop`) sem
+  autorização explícita do usuário (ver ADR-006).
 
----
+## 10. QA Engineer
 
-### Nível transversal
+### Responsabilidade
 
-#### `documentation`
-
-Responsável por:
-
-- documentação técnica;
-- documentação funcional;
-- atualização de decisões;
-- atualização de arquitetura;
-- documentação de funcionalidades;
-- manutenção da documentação necessária ao projeto.
-
----
-
-#### `release-versioning`
+O `qa-engineer` valida a qualidade.
 
 Responsável por:
 
-- versionamento;
-- preparação de release;
+- testes;
+- critérios de aceite;
+- regressão;
+- identificação de bugs;
+- validação funcional;
+- validação técnica;
+- aprovação ou reprovação;
+- autorização de commits incrementais durante a implementação.
+
+### Autoridade
+
+O QA possui autoridade para:
+
+- aprovar;
+- reprovar;
+- bloquear;
+- autorizar ou recusar commits incrementais propostos por
+  `backend-engineer`/`frontend-engineer`.
+
+Essa autorização de commit incremental é pontual e leve, distinta da
+validação completa da funcionalidade realizada no estado VALIDATION.
+
+Uma implementação não pode ser considerada aprovada apenas porque
+backend ou frontend declarou conclusão.
+
+O QA possui independência para reprovar uma implementação.
+
+## 11. Documentation
+
+### Responsabilidade
+
+O `documentation` mantém o conhecimento do projeto registrado.
+
+Responsável por:
+
+- documentação;
+- arquitetura documentada;
+- requisitos documentados;
+- features;
+- decisões;
+- APIs;
+- README;
+- documentação operacional.
+
+### Autoridade
+
+Pode atualizar documentação conforme as decisões e o estado real do
+projeto.
+
+Não pode:
+
+- inventar decisões;
+- alterar requisitos;
+- definir arquitetura;
+- declarar uma implementação aprovada;
+- decidir versão.
+
+## 12. Release Versioning
+
+### Responsabilidade
+
+O `release-versioning` fecha o ciclo de entrega.
+
+Responsável por:
+
+- versão;
 - changelog;
-- identificação da versão;
-- validação dos requisitos necessários para release;
-- documentação da release.
+- release notes;
+- tags;
+- preparação de release;
+- rastreabilidade;
+- verificação do estado da entrega.
 
----
+Commits incrementais feitos durante a implementação (por
+`backend-engineer` ou `frontend-engineer`) não substituem a preparação de
+release: push, tags e versionamento continuam sendo autoridade exclusiva
+do `release-versioning`.
 
-## 4. Autoridade por domínio
+### Autoridade
 
-| Domínio | Agente responsável |
-|---|---|
-| Produto | `product-analyst` |
-| Requisitos | `product-analyst` |
-| Regras de negócio | `product-analyst` |
-| Arquitetura de software | `software-architect` |
-| Arquitetura AWS | `aws-architect` |
-| Backend | `backend-engineer` |
-| Frontend | `frontend-engineer` |
-| Qualidade | `qa-engineer` |
-| Documentação | `documentation` |
-| Release | `release-versioning` |
-| Coordenação | `orchestrator` |
+Pode determinar a versão conforme a estratégia definida pelo projeto.
 
----
+Não pode:
 
-## 5. Regra de autoridade cruzada
+- liberar funcionalidade não aprovada;
+- alterar requisitos;
+- alterar arquitetura;
+- aprovar QA;
+- ignorar bloqueios.
 
-Nenhum agente deve tomar uma decisão definitiva fora de seu domínio
-quando essa decisão possuir impacto relevante sobre outro domínio.
+## 13. Regra de autoridade por domínio
+
+Cada decisão deve pertencer ao domínio correto.
+
+| Decisão | Responsável |
+| --- | --- |
+| O que o produto deve fazer? | Product Analyst |
+| Qual comportamento é esperado? | Product Analyst |
+| Qual critério determina sucesso? | Product Analyst |
+| Como a aplicação será estruturada? | Software Architect |
+| Como os componentes se comunicam? | Software Architect |
+| Qual serviço AWS utilizar? | AWS Architect |
+| Como a infraestrutura será configurada? | AWS Architect |
+| Como implementar uma função backend? | Backend Engineer |
+| Como implementar uma interface? | Frontend Engineer |
+| A implementação atende aos requisitos? | QA Engineer |
+| Como documentar uma decisão aprovada? | Documentation |
+| Qual versão representa a entrega? | Release Versioning |
+| Como coordenar o workflow? | Orchestrator |
+
+## 14. Regra de escalonamento
+
+Quando um agente encontrar uma decisão fora de seu domínio:
+
+```text
+AGENTE
+   |
+   v
+ORCHESTRATOR
+   |
+   v
+AGENTE RESPONSÁVEL PELO DOMÍNIO
+```
+
+### Exemplo: alteração arquitetural
+
+```text
+Backend Engineer
+      |
+      | precisa alterar arquitetura
+      v
+Orchestrator
+      |
+      v
+Software Architect
+```
+
+### Exemplo: alteração de infraestrutura
+
+```text
+Frontend Engineer
+      |
+      | precisa alterar infraestrutura
+      v
+Orchestrator
+      |
+      v
+AWS Architect
+```
+
+## 15. Comunicação direta
+
+Agentes não devem iniciar comunicação arbitrária entre si para tomar
+decisões fora do workflow.
+
+O fluxo padrão é:
+
+```text
+AGENTE
+   |
+   v
+ORCHESTRATOR
+   |
+   v
+OUTRO AGENTE
+```
+
+Isso permite que o `orchestrator` mantenha:
+
+- contexto;
+- dependências;
+- histórico;
+- decisões;
+- estado da tarefa.
+
+## 16. Exceção
+
+O `orchestrator` pode solicitar diretamente uma colaboração entre dois
+agentes quando isso for necessário.
 
 Exemplo:
 
-O `backend-engineer` pode sugerir Redis.
-
-O `backend-engineer` não deve decidir sozinho que Redis fará parte
-da arquitetura do sistema se isso alterar a arquitetura definida.
-
-Nesse caso:
-
 ```text
-backend-engineer
-        |
-        v
-software-architect
-        |
-        v
-decisão arquitetural
+Orchestrator
+     |
+     +----> Backend Engineer
+     |
+     +----> Frontend Engineer
 ```
 
-Quando a decisão envolver infraestrutura AWS:
+Nesse caso, a colaboração deve continuar subordinada ao workflow
+coordenado pelo `orchestrator`.
+
+## 17. Decisões fora do domínio
+
+Quando um agente identificar uma decisão que não pode tomar sozinho,
+deve utilizar:
 
 ```text
-software-architect
-        |
-        v
-aws-architect
-        |
-        v
-decisão de infraestrutura
+Status: ESCALATE
+
+Decisão:
+<decisão necessária>
+
+Contexto:
+<contexto>
+
+Motivo:
+<por que a decisão ultrapassa meu domínio>
+
+Alternativas:
+<alternativas conhecidas>
+
+Impacto:
+<impacto>
+
+Agente recomendado:
+<agente>
 ```
 
-## 6. Conflitos
+## 18. Conflitos entre agentes
 
-Quando dois agentes apresentarem decisões conflitantes:
+Quando dois agentes apresentarem decisões incompatíveis:
 
-1. o conflito deve ser identificado;
-2. a decisão em disputa deve ser explicitada;
-3. deve ser identificado o domínio responsável pela decisão;
-4. o agente responsável deve analisar o conflito;
-5. quando necessário, o orchestrator deve solicitar uma decisão arquitetural;
-6. decisões relevantes devem ser registradas em docs/decisions/.
+```text
+AGENTE A
+    |
+    +----+
+         v
+    ORCHESTRATOR
+         ^
+    +----+
+    |
+AGENTE B
+```
 
-O orchestrator não deve resolver conflitos técnicos por preferência
-pessoal ou arbitrariamente.
+O `orchestrator` deve:
 
-## 7. Regra de escalonamento
+- identificar o conflito;
+- identificar os domínios envolvidos;
+- solicitar esclarecimentos;
+- encaminhar a decisão ao responsável apropriado;
+- registrar a decisão quando necessário.
 
-Um agente deve solicitar escalonamento quando:
+Nenhum agente deve simplesmente ignorar a decisão do outro.
 
-- o requisito estiver ambíguo;
-- a decisão estiver fora de seu domínio;
-- houver conflito entre decisões;
-- uma alteração afetar múltiplos componentes;
-- uma alteração modificar arquitetura existente;
-- houver impacto relevante em segurança;
-- houver impacto relevante em custo;
-- houver risco de regressão significativa.
+## 19. Conflitos de autoridade
 
-## 8. Regra de bloqueio
+Quando dois agentes acreditarem possuir autoridade sobre a mesma decisão,
+o `orchestrator` deve determinar o domínio correto.
 
-Qualquer agente pode declarar uma tarefa como BLOCKED quando não
-possuir informações suficientes para executar o trabalho corretamente.
+Exemplo:
 
-Um agente não deve preencher lacunas críticas com suposições.
+```text
+Software Architect
+        |
+        | arquitetura da aplicação
+        v
+     decisão
 
-O bloqueio deve informar:
+AWS Architect
+        |
+        | infraestrutura AWS
+        v
+     decisão
+```
+
+Se a decisão envolver ambos, ela deve ser coordenada:
+
+```text
+Software Architect
+        |
+        +----------+
+        |          |
+        v          v
+       AWS      Orchestrator
+   Architect
+```
+
+## 20. Proibição de autoridade implícita
+
+Nenhum agente pode assumir autoridade apenas porque:
+
+- encontrou um problema;
+- possui conhecimento técnico;
+- possui acesso ao código;
+- possui acesso à infraestrutura;
+- acredita que sua solução é melhor;
+- já implementou algo semelhante.
+
+Conhecimento não equivale a autoridade.
+
+## 21. Princípio da menor autoridade
+
+Cada agente deve tomar somente as decisões necessárias para executar
+sua responsabilidade.
+
+Quanto maior o impacto de uma decisão, maior deve ser o nível de
+coordenação necessário.
+
+| Tipo de decisão | Responsável |
+| --- | --- |
+| Decisão local | Agente responsável |
+| Decisão entre componentes | Orchestrator e agentes envolvidos |
+| Decisão arquitetural | Software Architect |
+| Decisão de infraestrutura | AWS Architect |
+| Decisão de produto | Product Analyst |
+| Decisão de aprovação | QA |
+| Decisão de release | Release Versioning |
+
+## 22. Aprovação não é implementação
+
+Os seguintes estados são diferentes:
+
+### `IMPLEMENTED`
+
+Significa que o agente responsável implementou a alteração.
+
+### `TESTED`
+
+Significa que a validação foi executada.
+
+### `APPROVED`
+
+Significa que o QA considerou a implementação aprovada.
+
+### `RELEASE_READY`
+
+Significa que a entrega está preparada para release.
+
+Nenhum desses estados deve ser utilizado como substituto de outro.
+
+## 23. Reprovação
+
+Se o QA reprovar uma implementação:
+
+```text
+QA
+ |
+ v
+REJECTED
+ |
+ v
+ORCHESTRATOR
+ |
+ v
+AGENTE RESPONSÁVEL
+```
+
+O agente responsável corrige a implementação. Depois, ela retorna ao QA:
+
+```text
+AGENTE
+ |
+ v
+QA
+```
+
+O ciclo continua até `APPROVED` ou até o `orchestrator` decidir
+interromper a tarefa.
+
+## 24. Bloqueio
+
+Qualquer agente pode declarar `BLOCKED` quando não puder continuar de
+forma segura ou correta.
+
+Um bloqueio deve informar:
 
 - motivo;
 - informação necessária;
-- agente responsável pela resolução;
-- impacto sobre a tarefa.
+- impacto;
+- responsável recomendado.
 
-## 9. Princípio de menor autoridade
+O `orchestrator` decide como resolver ou encaminhar o bloqueio.
 
-Cada agente deve operar com a menor autoridade necessária para executar
-sua responsabilidade.
+## 25. Mudanças arquiteturais
 
-Um agente não deve alterar arquivos, arquitetura ou decisões pertencentes
-a outro domínio sem justificativa e coordenação.
+Quando uma implementação exigir mudança arquitetural:
+
+```text
+Engineer
+   |
+   v
+Orchestrator
+   |
+   v
+Software Architect
+```
+
+O `software-architect` avalia. Se aprovado:
+
+```text
+Software Architect
+   |
+   v
+Orchestrator
+   |
+   v
+Engineer
+```
+
+O engenheiro implementa conforme a nova decisão.
+
+## 26. Mudanças de infraestrutura
+
+Quando uma implementação exigir mudança de infraestrutura:
+
+```text
+Engineer
+   |
+   v
+Orchestrator
+   |
+   v
+AWS Architect
+```
+
+O `aws-architect` avalia. Se aprovado:
+
+```text
+AWS Architect
+   |
+   v
+Orchestrator
+   |
+   v
+Engineer / Infraestrutura
+```
+
+## 27. Mudanças de requisitos
+
+Quando uma implementação ou o QA revelar que o requisito está incorreto
+ou incompleto:
+
+```text
+Agent
+   |
+   v
+Orchestrator
+   |
+   v
+Product Analyst
+```
+
+O `product-analyst` reavalia o requisito.
+
+Nenhum agente técnico deve alterar o requisito silenciosamente.
+
+## 28. Documentação
+
+Documentação deve ocorrer após decisões e alterações relevantes terem
+sido suficientemente definidas.
+
+O agente `documentation` registra o resultado.
+
+Ele não deve utilizar documentação para criar autoridade sobre decisões.
+
+## 29. Release
+
+Uma release deve respeitar:
+
+```text
+Implementation
+      |
+      v
+     QA
+      |
+      v
+APPROVED
+      |
+      v
+Documentation
+      |
+      v
+Release Versioning
+      |
+      v
+Release
+```
+
+Uma release não deve ser preparada como concluída quando existir um
+bloqueio relevante.
+
+## 30. Regra de ouro
+
+- Quem executa não necessariamente decide.
+- Quem decide não necessariamente executa.
+- Quem valida não deve validar sua própria aprovação.
+- Quem coordena não deve substituir especialistas sem necessidade.
+
+A equipe funciona pela separação de responsabilidades.
+
+## 31. Regra final
+
+Quando houver dúvida sobre quem deve decidir:
+
+- não assumir;
+- não inventar;
+- não executar silenciosamente;
+- escalar para o `orchestrator`.
+
+O `orchestrator` mantém a visão global.
+
+Os especialistas mantêm a profundidade técnica de seus domínios.
+
+O sistema funciona quando essas duas responsabilidades permanecem
+separadas.

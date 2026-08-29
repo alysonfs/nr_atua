@@ -1,0 +1,26 @@
+{
+  "chat.tools.terminal.autoApprove": {
+    "npx --yes markdownlint-cli": true,
+    "dotnet new": true,
+    "dotnet sln": true,
+    "dotnet build": true,
+    "dotnet restore": true,
+    "dotnet test": true,
+    "dotnet tool": true,
+    "test": true,
+    "dotnet add": true,
+    "/^exec bash -c 'cd /Users/alysonfs/workspace/Software/natal-refrigeracao/atua && pwd && dotnet test tests/Atua\\.Api\\.Tests/Atua\\.Api\\.Tests\\.csproj 2>&1 \\| tail -100'$/": {
+      "approve": true,
+      "matchCommandLine": true
+    },
+    "/^exec bash -c 'cd /Users/alysonfs/workspace/Software/natal-refrigeracao/atua && dotnet build Atua\\.sln 2>&1 \\| tail -40'$/": {
+      "approve": true,
+      "matchCommandLine": true
+    },
+    "/^grep -n \"Npgsql\\\\\\|UseInMemoryDatabase\" tests/Atua\\.Api\\.Tests/SignUpServiceTests\\.cs \\| tail -20 && echo --- && dotnet --version$/": {
+      "approve": true,
+      "matchCommandLine": true
+    },
+    "dotnet nuget": true
+  }
+}

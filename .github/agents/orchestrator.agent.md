@@ -3,6 +3,8 @@ name: orchestrator
 description: Orquestra a equipe de desenvolvimento
 tools:
   - agent
+  - read
+  - search
 agents:
   - product-analyst
   - software-architect

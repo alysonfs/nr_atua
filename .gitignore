@@ -27,6 +27,7 @@ docker-compose.override.yml
 
 # Node.js / TypeScript
 node_modules/
+.turbo/
 dist/
 build/
 lib/
@@ -56,3 +57,7 @@ samconfig.toml
 # Sistema operacional
 .DS_Store
 Thumbs.db
+.github/skills/criar-skills/SKILL.md
+.gitignore
+src/VideoTranscriber/*
+rag/*

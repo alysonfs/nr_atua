@@ -1,0 +1,24 @@
+{
+  "name": "atua",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@8.15.1",
+  "scripts": {
+    "build": "turbo run build",
+    "check": "turbo run check",
+    "commit": "cz",
+    "dev": "turbo run dev",
+    "lint": "turbo run lint",
+    "test": "turbo run test"
+  },
+  "config": {
+    "commitizen": {
+      "path": "./node_modules/cz-conventional-changelog"
+    }
+  },
+  "devDependencies": {
+    "commitizen": "^4.3.1",
+    "cz-conventional-changelog": "^3.3.0",
+    "turbo": "^2.7.0"
+  }
+}
