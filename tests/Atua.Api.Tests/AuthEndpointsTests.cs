@@ -28,12 +28,45 @@ public class AuthEndpointsTests
         Assert.DoesNotContain("482913", body);
     }
 
+    [Fact]
+    public async Task ConfirmEmailRetornaOkQuandoCodigoValido()
+    {
+        await using var app = CreateApplication();
+        await app.StartAsync();
+        var client = app.GetTestClient();
+
+        await client.PostAsJsonAsync("/auth/signup", new SignUpRequest(
+            "owner@atua.com", "senha123", "senha123"));
+
+        var response = await client.PostAsJsonAsync("/auth/confirm-email", new ConfirmEmailRequest(
+            "owner@atua.com", "482913"));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task ConfirmEmailRetornaBadRequestQuandoCodigoInvalido()
+    {
+        await using var app = CreateApplication();
+        await app.StartAsync();
+        var client = app.GetTestClient();
+
+        await client.PostAsJsonAsync("/auth/signup", new SignUpRequest(
+            "owner@atua.com", "senha123", "senha123"));
+
+        var response = await client.PostAsJsonAsync("/auth/confirm-email", new ConfirmEmailRequest(
+            "owner@atua.com", "000000"));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
     private static WebApplication CreateApplication()
     {
         var builder = WebApplication.CreateBuilder();
         builder.WebHost.UseTestServer();
+        var databaseName = Guid.NewGuid().ToString();
         builder.Services.AddDbContext<AtuaDbContext>(options =>
-            options.UseInMemoryDatabase(Guid.NewGuid().ToString()));
+            options.UseInMemoryDatabase(databaseName));
         builder.Services.AddSingleton<TimeProvider>(TimeProvider.System);
         builder.Services.AddSingleton<ISecretHasher, FakeSecretHasher>();
         builder.Services.AddSingleton<IEmailConfirmationCodeGenerator,
@@ -41,6 +74,7 @@ public class AuthEndpointsTests
         builder.Services.AddSingleton<IEmailConfirmationSender,
             FakeEmailConfirmationSender>();
         builder.Services.AddScoped<SignUpService>();
+        builder.Services.AddScoped<ConfirmEmailService>();
 
         var app = builder.Build();
         app.MapAuthEndpoints();
