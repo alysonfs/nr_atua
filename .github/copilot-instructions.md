@@ -28,3 +28,8 @@ Documentação viva do projeto:
 Quando a documentação e a memória da conversa divergirem, a documentação
 versionada é a fonte de verdade, salvo decisão explícita do usuário em
 contrário.
+
+Convenções C# do projeto:
+
+- enums devem começar com `E` e o arquivo deve ter o mesmo nome;
+- interfaces devem começar com `I` e o arquivo deve ter o mesmo nome.

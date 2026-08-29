@@ -202,11 +202,17 @@ Responsável por:
 - integrações;
 - validações;
 - testes backend;
-- correções backend.
+- correções backend;
+- commits incrementais da implementação backend, por contexto e
+  dependência.
 
 ### Autoridade
 
 Possui autonomia para decisões locais de implementação.
+
+Pode realizar commits locais incrementais da própria implementação, na
+ordem: classes concretas primeiro, testes em commit separado depois,
+mediante autorização do `qa-engineer`.
 
 Não pode:
 
@@ -214,7 +220,9 @@ Não pode:
 - redefinir arquitetura;
 - alterar infraestrutura AWS;
 - alterar contratos relevantes sem coordenação;
-- aprovar sua própria implementação.
+- aprovar sua própria implementação;
+- fazer push, criar tags ou definir versão;
+- realizar commit incremental sem autorização do `qa-engineer`.
 
 ## 9. Frontend Engineer
 
@@ -232,11 +240,17 @@ Responsável por:
 - interface;
 - responsividade;
 - acessibilidade;
-- testes frontend.
+- testes frontend;
+- commits incrementais da implementação frontend, por contexto e
+  dependência.
 
 ### Autoridade
 
 Possui autonomia para decisões locais de implementação.
+
+Pode realizar commits locais incrementais da própria implementação, na
+ordem: classes concretas primeiro, testes em commit separado depois,
+mediante autorização do `qa-engineer`.
 
 Não pode:
 
@@ -244,7 +258,9 @@ Não pode:
 - redefinir arquitetura;
 - alterar backend silenciosamente;
 - alterar infraestrutura;
-- aprovar sua própria implementação.
+- aprovar sua própria implementação;
+- fazer push, criar tags ou definir versão;
+- realizar commit incremental sem autorização do `qa-engineer`.
 
 ## 10. QA Engineer
 
@@ -260,7 +276,8 @@ Responsável por:
 - identificação de bugs;
 - validação funcional;
 - validação técnica;
-- aprovação ou reprovação.
+- aprovação ou reprovação;
+- autorização de commits incrementais durante a implementação.
 
 ### Autoridade
 
@@ -268,7 +285,12 @@ O QA possui autoridade para:
 
 - aprovar;
 - reprovar;
-- bloquear.
+- bloquear;
+- autorizar ou recusar commits incrementais propostos por
+  `backend-engineer`/`frontend-engineer`.
+
+Essa autorização de commit incremental é pontual e leve, distinta da
+validação completa da funcionalidade realizada no estado VALIDATION.
 
 Uma implementação não pode ser considerada aprovada apenas porque
 backend ou frontend declarou conclusão.
@@ -320,6 +342,11 @@ Responsável por:
 - preparação de release;
 - rastreabilidade;
 - verificação do estado da entrega.
+
+Commits incrementais feitos durante a implementação (por
+`backend-engineer` ou `frontend-engineer`) não substituem a preparação de
+release: push, tags e versionamento continuam sendo autoridade exclusiva
+do `release-versioning`.
 
 ### Autoridade
 

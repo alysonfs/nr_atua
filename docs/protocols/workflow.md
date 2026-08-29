@@ -121,6 +121,40 @@ Os agentes de implementação devem respeitar:
 - decisões existentes;
 - padrões do projeto.
 
+### 8.1. Commits incrementais
+
+Ao concluir uma etapa da implementação, com os testes locais aprovados
+e sem quebrar outros projetos do monorepo, o agente responsável
+(`backend-engineer` ou `frontend-engineer`) deve realizar commits locais
+incrementais, em vez de acumular todas as mudanças em um único commit ao
+final da tarefa.
+
+Antes de cada commit incremental, o agente responsável deve solicitar
+autorização do `qa-engineer`, informando o escopo do incremento e o
+resultado dos testes locais. O `qa-engineer` autoriza o commit quando não
+identificar regressão aparente no incremento. Essa autorização é pontual
+e leve, e não substitui a validação completa da funcionalidade contra os
+critérios de aceite, realizada no estado VALIDATION. Um commit
+incremental não deve ser realizado sem essa autorização.
+
+Ordem de stage e commit:
+
+1. classes concretas, agrupadas por contexto e respeitando a ordem de
+   dependência (ex.: Domain antes de Application, Application antes de
+   Endpoints/Infrastructure);
+1. testes correspondentes, em commit separado, após o commit das classes
+   concretas que eles cobrem.
+
+Commits incrementais são locais, não envolvem push, tags ou definição de
+versão. Eles não substituem a preparação de release feita pelo
+`release-versioning` em `RELEASE_READY`. Devem ter mensagens claras que
+identifiquem o contexto (ex.: `feat(identity): adiciona
+EmailConfirmation`).
+
+Push, tags, changelog e versionamento permanecem sob autoridade exclusiva
+do `release-versioning`, mediante aprovação explícita do usuário quando
+aplicável.
+
 ## 9. VALIDATION
 
 A implementação está sendo validada.

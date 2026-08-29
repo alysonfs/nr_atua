@@ -103,6 +103,11 @@ A implementação deve respeitar:
 
 Não substitua documentação existente por interpretação pessoal.
 
+### Convenções C#
+
+- enums devem começar com `E` e o arquivo deve ter o mesmo nome;
+- interfaces devem começar com `I` e o arquivo deve ter o mesmo nome.
+
 ---
 
 ## 5. Regra fundamental
