@@ -56,7 +56,7 @@ ao menos oito caracteres.
 
 #### RF-002 - Confirmacao de e-mail
 
-Status: `Em desenvolvimento`
+Status: `Validado`
 
 O sistema deve enviar uma confirmacao para o e-mail informado e exigir sua
 conclusao antes de liberar acesso as areas restritas. O codigo deve permanecer
