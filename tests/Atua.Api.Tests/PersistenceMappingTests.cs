@@ -45,6 +45,28 @@ public class PersistenceMappingTests
             property => Assert.Equal(nameof(TenantMembership.UserId), property.Name));
     }
 
+    [Fact]
+    public void TrialPossuiIndiceUnicoParaUsuario()
+    {
+        using var context = CreateContext();
+        var trial = context.Model.FindEntityType(typeof(Domain.Billing.TrialSubscription))!;
+
+        var userIndex = trial.GetIndexes().Single(index =>
+            index.Properties.Single().Name == nameof(Domain.Billing.TrialSubscription.UserId));
+
+        Assert.True(userIndex.IsUnique);
+    }
+
+    [Fact]
+    public void AuthSessionPersisteOverrideOpcionalDeFusoHorario()
+    {
+        using var context = CreateContext();
+        var session = context.Model.FindEntityType(typeof(Domain.Identity.AuthSession))!;
+
+        Assert.True(session.FindProperty(nameof(Domain.Identity.AuthSession.TimeZoneOverrideId))!
+            .IsNullable);
+    }
+
     private static AtuaDbContext CreateContext()
     {
         var options = new DbContextOptionsBuilder<AtuaDbContext>()
