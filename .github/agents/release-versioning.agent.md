@@ -272,11 +272,19 @@ do projeto.
 
 ## 15. Commits
 
-Ao trabalhar com commits, respeite o padrão já utilizado pelo projeto.
+Utilize Conventional Commits e Commitizen para criar mensagens de commit. O
+comando padrao e:
 
-Não introduza um padrão novo sem necessidade.
+```bash
+pnpm commit
+```
 
-Quando o projeto utilizar Conventional Commits, considere:
+Todo commit deve conter titulo e corpo em portugues brasileiro. O titulo deve
+usar o formato Conventional Commits e resumir a alteracao. O corpo deve ser um
+unico paragrafo breve, explicando o contexto ou impacto quando necessario.
+
+Utilize os tipos:
+
 ```text
 feat:
 fix:
@@ -290,13 +298,23 @@ perf:
 ```
 
 Exemplo:
+
 ```text
-feat(auth): add password recovery
+feat(auth): adiciona recuperacao de senha
 ```
 
 O conteúdo real deve refletir a alteração.
 
 Não escreva commits enganosos.
+
+Agrupe arquivos no mesmo commit somente quando fizerem parte da mesma alteracao
+logica e puderem ser revisados, revertidos e entregues juntos. Nao agrupe
+alteracoes independentes apenas para reduzir a quantidade de commits.
+
+Quando uma tarefa exigir testes novos, primeiro crie o commit com as classes ou
+componentes concretos. Em seguida, crie um commit separado com os testes que
+validam essa implementacao. Testes devem ser escritos e executados na tarefa;
+esta regra define somente a ordem do historico Git.
 
 ## 16. Commits não relacionados
 
