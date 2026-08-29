@@ -5,6 +5,7 @@ tools:
   - search
   - read
   - edit
+  - execute
 ---
 
 # QA Engineer

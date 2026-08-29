@@ -5,6 +5,7 @@ tools:
   - search
   - read
   - edit
+  - execute
 ---
 
 # Backend Engineer
@@ -101,6 +102,11 @@ A implementação deve respeitar:
 4. padrões já utilizados no projeto.
 
 Não substitua documentação existente por interpretação pessoal.
+
+### Convenções C#
+
+- enums devem começar com `E` e o arquivo deve ter o mesmo nome;
+- interfaces devem começar com `I` e o arquivo deve ter o mesmo nome.
 
 ---
 
