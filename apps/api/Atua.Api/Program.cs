@@ -30,6 +30,7 @@ builder.Services.AddScoped<IEmailConfirmationSender>(sp =>
     return new SesEmailConfirmationSender(client, senderAddress);
 });
 builder.Services.AddScoped<SignUpService>();
+builder.Services.AddScoped<ConfirmEmailService>();
 
 var app = builder.Build();
 
