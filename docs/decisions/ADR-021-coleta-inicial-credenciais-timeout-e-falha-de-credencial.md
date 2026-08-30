@@ -1,4 +1,4 @@
-# ADR-021 - Coleta Inicial: Entrega de Credenciais ao Worker, Timeout de Re-claim e Falha por Credencial Rejeitada
+# ADR-021 - Coleta Inicial: Acesso a Credenciais pelo Worker, Throttling, Timeout de Re-claim e Falha por Credencial Rejeitada
 
 ## Status
 
@@ -7,34 +7,26 @@ Proposed
 ## Contexto
 
 RF-009 (Coleta Inicial) é o gate onde o Worker (`apps/collector`, rodando em
-EC2 separada) passa a ter acesso real ao iService. Três decisões arquiteturais
-bloqueiam a implementação e foram delegadas ao `software-architect` em
-RF-009:
-
-- **D9**: como o Worker recebe as credenciais decifradas do iService em
-  runtime, sem que apareçam em logs, eventos ou payloads.
-- **D2**: o que acontece quando um Worker morre com o comando em `Claimed`
-  (timeout de re-claim).
-- **D4**: se e como uma conclusão `Failed` por credencial rejeitada deve
-  desativar o Agente.
-
-Esta ADR também consolida o contrato concreto dos endpoints `claim` e
-`complete` (esboçados em ADR-020 mas não implementados) e registra
-contradições identificadas entre documentação e código.
+EC2 separada) passa a ter acesso real ao iService. Esta ADR resolve as
+decisões arquiteturais que bloqueiam a implementação, incorporando decisões
+do usuário/orchestrator sobre D1–D9. Também consolida o contrato concreto
+dos endpoints `claim` e `complete` (esboçados em ADR-020 mas não
+implementados) e registra contradições identificadas entre documentação e
+código.
 
 ### Contexto técnico relevante
 
 - `ImmediateCollectionCommand` já existe no PostgreSQL com
   `EImmediateCollectionCommandStatus`: `Pending`, `Claimed`, `Succeeded`,
   `Failed`, `Cancelled` — os cinco estados já estão presentes no código
-  (commit 5ad77fe, `EImmediateCollectionCommandStatus.cs`). Não é necessário
+  (`EImmediateCollectionCommandStatus.cs`). Não é necessário
   acrescentar estados.
 - O índice único parcial impede mais de um comando `Pending` por
   `IntegrationId`. Um comando `Claimed` órfão bloqueia a integração
   indefinidamente, pois `Pending` não pode ser criado enquanto `Claimed`
   existir para a mesma integração.
 - `CollectorActivationService.ReconcileEligibilityAsync` está **implementada**
-  no commit 5ad77fe (`CollectorActivationService.cs`, linhas 163–186) e já é
+  (`CollectorActivationService.cs`, linhas 163–186) e já é
   acionada por dois gatilhos existentes: troca de credencial
   (`IServiceCredentialService.SaveWithReconciliationAsync`) e validação
   `Failed` (`IServiceCredentialValidationService.ValidateAsync`). O texto de
@@ -50,108 +42,390 @@ contradições identificadas entre documentação e código.
   aqui.
 - A credencial do iService está cifrada por AES-256-GCM com chave de dados
   por integração, chave de dados cifrada por AWS KMS (ADR-004, ADR-018,
-  entidade `IServiceCredential`). O Master API já possui `ICredentialCipher`
-  ou equivalente para decifrar.
+  entidade `IServiceCredential`). Os campos cifrados são
+  `UsernameCiphertext`, `PasswordCiphertext`, `BaseUrlCiphertext`, com
+  `Nonce`, `Tag` e `DataKeyCiphertext` (chave de dados cifrada por KMS).
+  O campo `AlgorithmVersion` está presente na entidade.
 
 ## Decisão
 
 ### D9 — Entrega de credenciais ao Worker
 
-**Decisão: endpoint dedicado na Master API com credencial de uso único e
-curta duração (opção a).**
+#### Contexto técnico atualizado (código verificado)
 
-#### Mecanismo
+O código real (`AesGcmCredentialCipher.cs`, `ICredentialCipher.cs`,
+`IServiceCredential.cs`) implementa **envelope encryption**:
 
-1. O Worker, ao realizar o `claim`, recebe no corpo da resposta um
-   **token de credencial de uso único** (`credentialToken`): um token opaco,
-   UUIDv7, com validade de **10 minutos**, vinculado exclusivamente ao
-   `commandId` e ao `integrationId` do comando reivindicado.
+- Cada integração possui sua própria **DEK** (Data Encryption Key, 32 bytes
+  aleatórios, `CreateDataKey()`).
+- A DEK é wrapped pela **chave mestra** via AES-256-GCM e armazenada como
+  `DataKeyCiphertext` no registro da integração.
+- Para decifrar credenciais, é preciso primeiro chamar `UnwrapDataKey()` para
+  obter a DEK em claro, depois chamar `Decrypt(dekPlaintext, ...)` por campo.
+- **A chave mestra atual** vem de `CredentialCipherOptions.MasterKeyBase64`,
+  lida de `appsettings.Development.json` — arquivo versionado, com valor de
+  dev hardcoded (`zubKUGEX...`). Isso é um TODO explícito no código; AWS KMS
+  ainda não está implementado em C#.
+- Não existe nenhum SDK de AWS KMS ou Secrets Manager no codebase além do
+  AWSSDK.SimpleEmailV2 para SES.
 
-2. O token é persistido no PostgreSQL na tabela
-   `collector_credential_tokens`, com campos:
-   - `Id` (UUIDv7, PK)
-   - `CommandId` (FK para `ImmediateCollectionCommand`, único)
-   - `IntegrationId` (para auditoria; não é autorização)
-   - `TokenHash` (hash SHA-256 do token opaco — o token em si nunca é
-     persistido)
-   - `ExpiresAtUtc`
-   - `ConsumedAtUtc` (nulo até o uso)
-   - `CreatedAtUtc`
+#### Por que o desenho anterior estava errado
 
-3. O Worker apresenta o token a um **endpoint de resgate de credencial**:
+O desenho anterior propunha compartilhar a chave mestra entre API e Worker.
+Isso **elimina o encapsulamento por tenant**: quem tiver a chave mestra pode
+chamar `UnwrapDataKey` em qualquer `DataKeyCiphertext` e decifrar credenciais
+de **todos os tenants** — exatamente o oposto do que o usuário pediu.
 
+O envelope encryption da DEK por integração **já resolve o isolamento por
+tenant** — mas apenas se a chave mestra ficar exclusivamente na API.
+
+#### Variante escolhida: (B) — `claim` retorna credenciais já decifradas pela API
+
+**A API é o único componente que conhece a chave mestra. O Worker nunca
+recebe a chave mestra nem a DEK. Recebe apenas as credenciais em claro,
+protegidas por TLS, com validade para um único comando.**
+
+Avaliação das duas variantes:
+
+| Critério | (A) API entrega DEK em claro | (B) API entrega credenciais em claro |
+|---|---|---|
+| Encapsulamento por tenant | ✅ DEK é da integração específica | ✅ Credenciais são da integração específica |
+| Chave mestra no Worker | ❌ Não, mas DEK é material criptográfico sensível | ✅ Worker não recebe nenhum material de chave |
+| Superfície de ataque no Worker | DEK comprometida → credenciais daquela integração decifráveis | Credenciais em claro por tempo de execução do comando |
+| Acesso do Worker ao Postgres | Precisa ler `IServiceCredentials` | **Não precisa** — API lê e decifra |
+| Complexidade no Worker | Worker precisa implementar AES-256-GCM | Worker é um consumidor simples de credenciais em claro |
+| API já no fluxo | API já executa `claim` — decifragem é O(1) adicional | Idem |
+| Raio de exposição em comprometimento | DEK vaza → uma integração exposta | Credenciais em claro por duração do comando |
+
+**A variante (B) é superior.** A DEK é material criptográfico permanente
+(vinculada à integração até rotação); as credenciais em claro existem por
+segundos e são descartadas. O Worker não precisa implementar criptografia,
+não precisa de acesso à tabela de credenciais no PostgreSQL, e a superfície
+de ataque no processo do Worker é menor. A API já está obrigatoriamente no
+fluxo do `claim` — a decifragem é uma instrução adicional de custo zero.
+
+#### Mecanismo (variante B)
+
+1. **No `claim`:** a Master API, ao transitar o comando para `Claimed`,
+   executa em memória:
+   - Busca `IServiceCredential` da `IntegrationId` do comando.
+   - Chama `ICredentialCipher.UnwrapDataKey(DataKeyCiphertext, KmsKeyId)` →
+     obtém a DEK em claro.
+   - Chama `ICredentialCipher.Decrypt(dek, UsernameCiphertext, Nonce, Tag)` →
+     `username` em claro.
+   - Chama `ICredentialCipher.Decrypt(dek, PasswordCiphertext, Nonce, Tag)` →
+     `password` em claro.
+   - Chama `ICredentialCipher.Decrypt(dek, BaseUrlCiphertext, Nonce, Tag)` →
+     `baseUrl` em claro (se presente).
+   - Zera a DEK da memória imediatamente após as três decifragens.
+   - Inclui as credenciais em claro na resposta do `claim`, protegida por TLS.
+
+2. **No Worker:** recebe `username`, `password` e `baseUrl` no corpo do
+   `claim`. Usa imediatamente para autenticar no iService. Descarta da
+   memória ao final do comando (ou na primeira exceção após o uso).
+
+3. O Worker **não acessa** a tabela `IServiceCredentials`. Não precisa de
+   nenhuma permissão sobre ela.
+
+#### Contrato atualizado do `claim` (resposta `200 OK`)
+
+```json
+{
+  "commandId": "uuid",
+  "commandType": "ImmediateCollection",
+  "integrationId": "uuid",
+  "tenantId": "uuid",
+  "providerId": "uuid",
+  "requestedAtUtc": "2026-08-30T13:00:00Z",
+  "claimedAtUtc": "2026-08-30T13:00:00Z",
+  "claimExpiresAtUtc": "2026-08-30T13:30:00Z",
+  "credential": {
+    "username": "...",
+    "password": "...",
+    "baseUrl": "..."
+  }
+}
+```
+
+#### Controles contra vazamento
+
+- O corpo completo da resposta do `claim` **nunca é logado** pela Master API
+  — nem em DEBUG/TRACE. Middleware de request logging deve filtrar esta rota
+  explicitamente ou omitir o body da resposta.
+- O Worker não loga `credential.*` em nenhum sink.
+- Exceções no Worker durante o uso das credenciais são logadas sem o valor —
+  apenas tipo e mensagem genérica.
+- O payload de `complete` nunca contém nenhum campo de `credential`.
+- A DEK é zerada da memória da API imediatamente após as três decifragens,
+  sem persistência intermediária.
+
+#### Permissão do Worker no PostgreSQL
+
+O Worker **não precisa** de acesso à tabela `IServiceCredentials`.
+
+O Worker usa um role PostgreSQL exclusivo (`atua_worker_ro`) com permissões
+mínimas apenas para ler o estado do comando:
+
+```sql
+GRANT SELECT (
+    "Id",
+    "IntegrationId",
+    "TenantId",
+    "ProviderId",
+    "Status",
+    "ClaimedAtUtc",
+    "ClaimExpiresAtUtc",
+    "RequestedAtUtc"
+) ON "ImmediateCollectionCommands" TO atua_worker_ro;
+```
+
+Nenhuma permissão sobre `IServiceCredentials` ou qualquer outra tabela.
+Nenhuma permissão de escrita em nenhuma tabela.
+
+> Nota: com a variante (B), o Worker pode até dispensar conexão direta ao
+> PostgreSQL — todas as informações necessárias para iniciar a coleta chegam
+> via resposta do `claim`. A conexão de leitura ao PostgreSQL pode ser mantida
+> para verificações de estado futuras, mas não é obrigatória para RF-009.
+
+#### AWS KMS — implementação real (substituindo `MasterKeyBase64`)
+
+**Situação atual:** `AesGcmCredentialCipher` usa `MasterKeyBase64` de
+`appsettings.Development.json` (versionado, valor de dev hardcoded). Não há
+AWS KMS implementado em C#. KMS é intenção do ADR-004, não realidade do
+código.
+
+**Desenho para produção:**
+
+A chave mestra nunca sairá do KMS. Em vez de `AesGcmCredentialCipher` gerar
+e fazer wrap/unwrap da DEK localmente com `MasterKeyBase64`, o fluxo passa a
+ser:
+
+- **`CreateDataKey()`:** chamar `kms:GenerateDataKey` no AWS KMS → retorna
+  a DEK em claro (para uso imediato) e a DEK wrapped pelo KMS (para
+  persistir em `DataKeyCiphertext`). A chave mestra nunca sai do KMS.
+- **`UnwrapDataKey()`:** chamar `kms:Decrypt` no AWS KMS com o
+  `DataKeyCiphertext` → retorna a DEK em claro. A chave mestra nunca sai
+  do KMS.
+
+**Pacote NuGet:** `AWSSDK.KeyManagementService` (mesmo publisher dos demais
+AWSSDK já presentes no projeto).
+
+**Permissão IAM mínima da API em produção:**
+```json
+{
+  "Effect": "Allow",
+  "Action": ["kms:GenerateDataKey", "kms:Decrypt"],
+  "Resource": "arn:aws:kms:<region>:<account>:key/<key-id>"
+}
+```
+
+**O Worker não precisa de nenhuma permissão KMS** com a variante (B) — a
+decifragem ocorre integralmente na API.
+
+**Migração/coexistência com dados já cifrados:**
+
+O campo `AlgorithmVersion` (já presente em `IServiceCredential` e em
+`CredentialCipherOptions`) foi projetado exatamente para este momento. O
+procedimento:
+
+1. Dados existentes têm `AlgorithmVersion = 1` e `KmsKeyId =
+   "00000000-0000-0000-0000-000000000001"` (placeholder de dev). Em
+   produção real ainda não há dados cifrados com KMS.
+2. Ao ativar KMS real, uma nova `KmsKeyId` real é provisionada pelo
+   `aws-architect`.
+3. `AesGcmCredentialCipher.UnwrapDataKey()` passa a bifurcar pelo
+   `AlgorithmVersion`: versão 1 usa `MasterKeyBase64` (path legado para
+   dados de dev/teste); versão 2 usa `kms:Decrypt` (path de produção).
+4. Novos registros são criados com `AlgorithmVersion = 2`. Registros legados
+   são re-cifrados na primeira atualização de credencial pelo usuário (o
+   `ReplaceSecret` já existe).
+5. Quando não houver mais registros com `AlgorithmVersion = 1` em produção,
+   o path legado pode ser removido.
+
+**`KmsKeyId`** no schema já armazena o identificador da CMK por registro —
+coexistência de múltiplas CMKs já está estruturalmente suportada.
+
+#### Ambiente local (desenvolvimento)
+
+**Problema atual:** `MasterKeyBase64` está em `appsettings.Development.json`
+versionado — a chave de dev está exposta no repositório.
+
+**Correção:**
+
+1. Remover `MasterKeyBase64` de `appsettings.Development.json`.
+2. Adicionar ao `.env` local (fora do git):
    ```
-   POST /api/internal/collector/credentials/redeem
-   Authorization: Bearer <credencial-de-serviço-do-Worker>
-                  (escopo collector.command.claim)
-   Body: { "credentialToken": "<uuid-opaco>" }
+   Integrations__CredentialCipher__MasterKeyBase64=<chave-de-dev-gerada-localmente>
    ```
+3. `.env` no `.gitignore` (verificar se já está; se não, adicionar).
+4. A chave de dev é gerada uma vez por desenvolvedor (`openssl rand -base64 32`)
+   e **nunca é a mesma que a chave de produção**. Cada desenvolvedor tem sua
+   própria chave local — isolamento total entre ambientes.
+5. O Worker local lê `Integrations__CredentialCipher__MasterKeyBase64` do
+   mesmo `.env` que a API local — mas com a variante (B) o Worker não usa a
+   chave mestra, então o Worker local não precisa desse valor.
 
-   A Master API:
-   a. Valida a credencial de serviço do Worker (escopo
-      `collector.command.claim`).
-   b. Localiza o token pelo hash; verifica que não foi consumido e não
-      expirou.
-   c. Confirma que `CommandId` pertence ao mesmo Worker (via
-      `integrationId` derivado da credencial de serviço).
-   d. Decifra `username`, `password` e `baseUrl` da `IServiceCredential`
-      via `ICredentialCipher` + AWS KMS — **em memória, sem persistir**.
-   e. Marca o token como consumido (`ConsumedAtUtc = now`).
-   f. Retorna as credenciais em claro na resposta HTTPS:
+> **Ação imediata necessária (pré-implementação):** remover `MasterKeyBase64`
+> do `appsettings.Development.json` antes de qualquer merge. Este arquivo
+> está versionado com a chave de dev exposta.
 
-   ```json
-   {
-     "username": "...",
-     "password": "...",
-     "baseUrl": "..."
-   }
-   ```
+#### Rotação da chave mestra
 
-4. O Worker usa as credenciais imediatamente para autenticar no iService,
-   mantendo-as **somente em memória** durante a execução do comando. Após o
-   uso (ou expiração), o Worker descarta as credenciais sem persistir.
+Com envelope encryption real via KMS, a rotação da chave mestra é simples:
 
-5. Uma job de limpeza (pode ser executada no startup do Worker ou como
-   background job da Master API) expira tokens não consumidos após
-   `ExpiresAtUtc`.
+1. **Habilitar rotação automática da CMK no KMS:** `aws kms enable-key-rotation`
+   — o KMS gerencia versões da CMK internamente. `kms:Decrypt` funciona com
+   qualquer versão da CMK que gerou o ciphertext; `DataKeyCiphertext` não
+   precisa ser re-cifrado.
+2. **Rotação manual (troca de CMK):** se a CMK precisar ser substituída por
+   uma nova, o procedimento é re-wrap das DEKs (chamar `kms:Decrypt` com a
+   CMK antiga + `kms:Encrypt` com a CMK nova para cada `DataKeyCiphertext`).
+   As credenciais em si (`UsernameCiphertext`, etc.) **não precisam ser
+   re-cifradas** — apenas o wrapper da DEK muda. `KmsKeyId` por registro
+   permite identificar quais registros usam qual CMK.
+3. Com `AlgorithmVersion`, múltiplas versões coexistem durante a transição.
 
-#### Por que esta abordagem
+**Custo da rotação com variante (B):** zero impacto no Worker — ele não
+participa de nenhuma operação de chave.
 
-| Critério | Endpoint dedicado (escolhida) | Secrets Manager | Var. de ambiente |
-|---|---|---|---|
-| Isolamento por tenant/integração | ✅ por design (token vinculado a commandId+integrationId) | ⚠️ requer secret por integração ($0.40/mês cada) | ❌ sem isolamento |
-| Comprometimento do Worker | Não dá acesso a outros tenants (token é de uso único e expira) | ⚠️ IAM role da EC2 pode ser reutilizada até rotação | ❌ credenciais de todos os tenants expostas |
-| Tempo de exposição | Mínimo: uma chamada HTTPS, token expira em 10 min | Depende de rotação (horas/dias) | Longa (até restart) |
-| Rastreabilidade | ✅ auditável (token consumido registrado) | ⚠️ log de acesso do Secrets Manager | ❌ sem rastreabilidade |
-| Custo | $0 (PostgreSQL já existente) | $0.40/secret/mês × N integrações | $0 mas inseguro |
-| Complexidade operacional | Baixa (sem nova infraestrutura) | Média (provisionar secret por integração) | Baixa mas inadequada |
+---
 
-A opção (b) — Secrets Manager — foi considerada, mas o custo cresce
-linearmente com o número de integrações (um secret por integração), e a IAM
-role da EC2 do Worker, se comprometida, daria acesso a múltiplos secrets até
-rotação manual. A opção escolhida é o menor mecanismo capaz de atender todos
-os requisitos de segurança sem nova infraestrutura.
+### ⚠️ BUG DE SEGURANÇA CRÍTICO — Nonce e Tag compartilhados (pré-existente)
 
-#### Controles obrigatórios
+**Confirmado no código real (`AesGcmCredentialCipher.cs` + `IServiceCredential.cs`).**
 
-- O corpo da resposta de `/redeem` nunca é logado pela Master API (mesmo em
-  nível DEBUG). O middleware de log deve ter filtro explícito para esta rota.
-- `credentialToken` não aparece em eventos de domínio, payloads de erro ou
-  respostas do `claim` além da entrega inicial.
-- O Worker deve chamar `/redeem` **uma única vez** imediatamente após o
-  `claim`. Se o token expirar antes do uso, o Worker deve chamar `complete`
-  com `Failed` e razão `CredentialTokenExpired` (não exposta ao Office).
-- A tabela `collector_credential_tokens` não é consultável por endpoints do
-  Office.
-- Tokens expirados e não consumidos devem ser limpos periodicamente (TTL
-  sugerido: 24 horas após expiração, para auditoria).
+`IServiceCredential` armazena um único `Nonce` (byte[]) e um único `Tag`
+(byte[]) para os três campos cifrados (`UsernameCiphertext`,
+`PasswordCiphertext`, `BaseUrlCiphertext`).
+
+`AesGcmCredentialCipher.Encrypt()` gera um nonce aleatório por chamada e
+retorna um `CipherResult(CiphertextBase64, Nonce, Tag)`. Porém, ao persistir
+três campos cifrados, o código que chama `Encrypt()` três vezes produz três
+nonces e três tags distintos — mas a entidade `IServiceCredential` só tem
+campos para armazenar **um** nonce e **uma** tag. Isso significa que, na
+prática, o código de persistência salva apenas o nonce/tag de um dos campos
+(provavelmente o último) e usa esse mesmo par para autenticar/decifrar os
+outros dois.
+
+**Consequências criptográficas:**
+
+1. **Reutilização de nonce com a mesma DEK:** AES-GCM com nonce reutilizado
+   permite recuperar o XOR dos plaintexts dos campos que compartilham o mesmo
+   nonce. Um atacante com dois ciphertexts gerados com o mesmo (DEK, nonce)
+   obtém `PT1 XOR PT2`.
+2. **Tag única autenticando três cifragens:** o AES-GCM Tag autentica apenas
+   o ciphertext com o qual foi gerado. Usar um Tag de um campo para verificar
+   outro campo significa que a autenticação dos dois campos restantes **não é
+   verificada** — a decifragem pode retornar dados corrompidos sem levantar
+   exceção.
+
+**Correção recomendada (não implementar agora — registrar para RF posterior):**
+
+Opção preferida: **cifrar um único payload serializado** com os três campos
+juntos. Um nonce, uma DEK, um tag, um ciphertext. A decifragem retorna o
+payload completo. Alinhado com o princípio de autenticar tudo ou nada.
+
+```
+plaintext: JSON({ username, password, baseUrl })
+→ AES-256-GCM(dek, nonce, plaintext) → (ciphertext, nonce, tag)
+```
+
+A entidade `IServiceCredential` passaria a ter um único campo de ciphertext
+(ou manter os três para compatibilidade com `AlgorithmVersion`).
+
+Alternativa: nonce e tag distintos por campo — três campos de nonce e três de
+tag no schema. Mais verboso, menos limpo.
+
+**Impacto atual:** todos os registros de `IServiceCredential` estão
+potencialmente mal-autenticados. A decifragem de `username` com o nonce/tag
+correto pode funcionar; a de `password` e `baseUrl` com nonce/tag errados
+pode falhar silenciosamente ou retornar dados incorretos dependendo da
+implementação. **Este defeito deve ser corrigido antes da entrada em produção
+com dados reais de clientes.**
+
+---
+
+### D5 — Dados do cliente final (PII) no schema MongoDB
+
+**Decisão do usuário:** coletar tudo que for necessário, incluindo dados do
+cliente final. A adequação LGPD será tratada com fábrica e cliente.
+
+#### Schema MongoDB — documentos podendo incluir PII
+
+- `work_order_snapshots` e `work_order_observations` podem conter campos de
+  PII do cliente final (nome, telefone, endereço, CPF/CNPJ — conforme o
+  iService disponibilize).
+- **Recomendação de arquitetura (não bloqueante, mas importante):** mapear e
+  documentar quais campos de PII são efetivamente persistidos em cada coleta,
+  em um artefato de mapeamento de dados (ex.: `docs/data-mapping/work-orders-pii.md`).
+  Isso é barato agora e caro depois: facilita o inventário de dados pessoais
+  exigido pela LGPD, o atendimento de requisições de titular (acesso,
+  exclusão) e eventual expurgo por integração.
+- Controle mínimo imediato: os documentos MongoDB devem ter `tenantId` como
+  campo de nível raiz, indexado, para permitir expurgo por tenant sem
+  varredura completa da coleção.
+
+---
+
+### D1 + D6 — Recorte temporal e throttling da coleta inicial
+
+**Decisão do usuário:** limite de **3 meses** de histórico. Restrição
+absoluta: não derrubar o iService do cliente. Os parâmetros amadurecem com
+a descoberta do iService real.
+
+#### Paginação e throttling
+
+- **Janela temporal:** buscar OS com data de abertura/atualização nos últimos
+  90 dias a partir da data de execução do comando.
+- **Limite de OS por página:** configurável via variável de ambiente
+  (`WORKER_PAGE_SIZE`, valor inicial sugerido: `50`). Nunca hardcoded.
+- **Intervalo entre páginas (throttling):** configurável via variável de
+  ambiente (`WORKER_PAGE_DELAY_MS`, valor inicial sugerido: `500`).
+  O Worker aguarda esse intervalo entre requisições consecutivas ao iService.
+- **Concorrência máxima:** o Worker processa **um comando por vez** por
+  instância EC2. Nenhum paralelismo de coletas.
+- **Backoff em erro:** se o iService retornar erro HTTP (5xx, timeout), o
+  Worker aplica backoff exponencial com jitter antes de tentar novamente.
+  Parâmetros configuráveis: `WORKER_MAX_RETRY_ATTEMPTS` (valor inicial: `3`),
+  backoff inicial de `2s`.
+- **Limite absoluto de OS por coleta:** configurável via variável de ambiente
+  (`WORKER_MAX_ORDERS_PER_COLLECTION`). Sem valor default fixo — deve ser
+  definido via configuração explícita. Não hardcoded.
+
+> Todos os parâmetros de throttling são provisórios. O valor adequado depende
+> do iService real. Configuração por variável de ambiente permite ajuste sem
+> redeploy.
+
+---
+
+### D7 — Chave de identidade da OS (isolamento de decisão pendente)
+
+**Status:** pendente de descoberta (campo `workOrderNo` vs `workOrderId` no
+iService; comportamento em reabertura de OS).
+
+#### Isolamento arquitetural
+
+A escolha deve ser **isolada em um único componente**: o mapeador de OS do
+Worker (ex.: `WorkOrderMapper` ou equivalente). A troca de `workOrderNo` para
+`workOrderId` (ou vice-versa) exige alteração apenas nesse componente e na
+configuração do índice MongoDB.
+
+- O campo interno `providerOrderId` nos documentos MongoDB recebe o valor do
+  campo configurado — abstraído por uma constante ou configuração, não
+  repetido em múltiplos pontos do código.
+- O índice de idempotência em `work_order_snapshots` é
+  `(tenantId, providerOrderId)`.
+
+**Implementação provisória:** usar `workOrderNo` com o ponto de troca
+explicitamente marcado no código (comentário `// TODO(D7)`). Nenhuma outra
+parte do Worker deve referenciar diretamente o nome do campo do iService.
 
 ---
 
 ### D2 — Timeout de re-claim
 
-**Decisão: verificação preguiçosa no próximo `claim`, combinada com job de
-reconciliação leve na Master API.**
+**Decisão (orchestrator):** timeout de 30 minutos → `Failed` com razão
+`ClaimTimeout`. O Agente **não é desativado** automaticamente por timeout.
 
 #### Mecanismo
 
@@ -162,73 +436,73 @@ reconciliação leve na Master API.**
 2. **Verificação preguiçosa no `claim`:** antes de tentar reivindicar um
    novo comando, a Master API verifica se existe um comando `Claimed` para
    a integração com `ClaimExpiresAtUtc < now`. Se sim, transita
-   atomicamente esse comando para `Failed` com
-   `CancellationReason = ClaimTimeout` e libera a possibilidade de criar
-   novo `Pending` (via nova ativação).
+   atomicamente esse comando para `Failed` com razão `ClaimTimeout` e
+   libera a integração.
 
-   > Nota: o índice único parcial cobre apenas `Pending`. Um comando
-   > `Claimed` expirado não impede novo `Pending` pela constraint de banco,
-   > mas a lógica de negócio deve verificar antes de criar novo comando para
-   > evitar dois comandos simultâneos para a mesma integração. A verificação
-   > preguiçosa resolve isso na mesma transação de re-ativação.
+   > O índice único parcial cobre apenas `Pending`. Um comando `Claimed`
+   > expirado não impede novo `Pending` pela constraint de banco, mas a
+   > lógica de negócio deve verificar antes de criar novo `Pending` para
+   > evitar dois comandos simultâneos para a mesma integração.
 
 3. **Job de reconciliação leve:** um `BackgroundService` na Master API
    executa a cada **5 minutos** e transita comandos `Claimed` com
-   `ClaimExpiresAtUtc < now` para `Failed`. Isso garante que a transição
-   ocorra mesmo sem nova tentativa de `claim` pelo usuário, evitando que a
-   integração fique travada indefinidamente.
+   `ClaimExpiresAtUtc < now` para `Failed`. Garante a transição mesmo sem
+   nova tentativa de `claim`.
 
-4. A transição para `Failed` por timeout **não aciona `ReconcileEligibility`
-   automaticamente** — o Agente permanece `Active` (aguarda nova ativação
-   manual pelo usuário se necessário). A decisão de desativar automaticamente
-   por timeout é de produto (D3/D4 tratam falhas por credencial, não por
-   timeout).
+4. A transição para `Failed` por `ClaimTimeout` **não aciona
+   `ReconcileEligibilityAsync`** — o Agente permanece `Active`.
 
-#### Por que não visibility timeout (fila)
+---
 
-ADR-020 rejeitou explicitamente a introdução de fila no MVP. A verificação
-preguiçosa + job de reconciliação leve resolvem o problema sem nova
-infraestrutura, aproveitando o PostgreSQL já existente. O timeout de 30
-minutos foi adotado conforme recomendação de produto (RF-009/D2).
+### D3 — Máximo de tentativas na coleta inicial
+
+**Decisão (orchestrator):** máximo **1 tentativa**. Se o comando falhar, o
+Worker reporta `complete(Failed, ...)` e não tenta novamente. A reativação
+é manual.
+
+O campo `AttemptCount` (já presente na entidade) é incrementado no `claim`.
+A lógica de "não tentar mais de 1 vez" é aplicada pela Master API: se
+`AttemptCount >= 1` e o comando já está em estado terminal, não cria novo
+`Pending` automaticamente.
 
 ---
 
 ### D4 — Falha por credencial rejeitada
 
-**Decisão: `complete` com `Failed` e `failureReason = CredentialRejected`
-deve invalidar `ValidationStatus` e acionar `ReconcileEligibilityAsync`
-(já implementada) — introduzindo um novo gatilho ao mecanismo existente.**
+**Decisão (orchestrator):** apenas `failureReason = CredentialRejected`
+invalida `ValidationStatus` e aciona `ReconcileEligibilityAsync`.
 
 #### Mecanismo
 
 1. O Worker envia `complete` com `outcome: Failed` e
-   `failureReason: CredentialRejected` (ver contrato abaixo).
+   `failureReason: CredentialRejected`.
 
 2. A Master API, ao processar `complete` com `failureReason = CredentialRejected`:
    a. Transita o comando para `Failed`.
-   b. Chama `IServiceCredential.RecordValidation(EIServiceValidationStatus.Failed, now)`
-      — invalida `ValidationStatus` da credencial.
+   b. Chama `IServiceCredential.RecordValidation(EIServiceValidationStatus.Failed, now)`.
    c. Chama `CollectorActivationService.ReconcileEligibilityAsync(tenantId, integrationId)`
-      na mesma transação — seguindo o mesmo padrão transacional já adotado
-      por `IServiceCredentialValidationService.ValidateAsync`. Como
-      `ValidationStatus` agora é `Failed`, a elegibilidade é negada, o
-      Agente transita para `Inactive` com
+      na mesma transação — seguindo o padrão transacional de
+      `IServiceCredentialValidationService.ValidateAsync` (linhas 77–92).
+      Como `ValidationStatus` agora é `Failed`, a elegibilidade é negada,
+      o Agente transita para `Inactive` com
       `DeactivationReason = CredentialNotValidated` e qualquer comando
       `Pending` residual é cancelado.
 
-3. Outros `failureReason` (ex.: `IServiceUnavailable`, `ClaimTimeout`,
+3. Outros `failureReason` (`IServiceUnavailable`, `ClaimTimeout`,
    `UnexpectedError`) **não invalidam** `ValidationStatus` nem acionam
    `ReconcileEligibilityAsync`.
 
-#### Contexto de implementação
+---
 
-`ReconcileEligibilityAsync` está implementada no commit 5ad77fe
-(`CollectorActivationService.cs`, linhas 163–186). Já é acionada por dois
-gatilhos: troca de credencial e validação `Failed` via endpoint do Office.
-O que RF-009 adiciona é um **terceiro gatilho**: a conclusão `Failed` por
-`CredentialRejected` reportada pelo Worker via `complete`. O padrão
-transacional a seguir é o mesmo já estabelecido em
-`IServiceCredentialValidationService.ValidateAsync` (linhas 77–92).
+### D8 — Mesma OS em múltiplos status na mesma coleta
+
+**Decisão (orchestrator):** desempate por prioridade de status, na ordem:
+Designado > Em Processamento > Pendente > Concluído > Cancelado.
+Uma única observação inicial por OS por comando.
+
+O upsert em `work_order_snapshots` aplica essa ordem: se a mesma OS aparecer
+em múltiplos status durante a paginação, persiste o status de maior prioridade
+na lista acima.
 
 ---
 
@@ -245,16 +519,14 @@ transacional a seguir é o mesmo já estabelecido em
 - A Master API deriva `integrationId` exclusivamente da credencial de serviço
   (nunca do corpo ou query string).
 - Verifica se existe comando `Claimed` com `ClaimExpiresAtUtc < now` para a
-  integração → transita para `Failed` (ClaimTimeout) atomicamente antes de
+  integração → transita para `Failed` (`ClaimTimeout`) atomicamente antes de
   prosseguir.
 - Busca o único comando `Pending` para a integração.
-- Se não houver: retorna `204 No Content` (sem trabalho).
+- Se não houver: retorna `204 No Content`.
 - Se houver: em uma transação atômica:
   - Transita `Pending → Claimed`.
   - Preenche `ClaimedAtUtc = now`, `ClaimExpiresAtUtc = now + 30min`.
   - Incrementa `AttemptCount`.
-  - Cria registro em `collector_credential_tokens` (token de uso único,
-    validade 10 min).
   - Retorna `200 OK`:
 
 ```json
@@ -262,27 +534,27 @@ transacional a seguir é o mesmo já estabelecido em
   "commandId": "uuid",
   "commandType": "ImmediateCollection",
   "integrationId": "uuid",
+  "tenantId": "uuid",
   "providerId": "uuid",
   "requestedAtUtc": "2026-08-30T13:00:00Z",
   "claimedAtUtc": "2026-08-30T13:00:00Z",
   "claimExpiresAtUtc": "2026-08-30T13:30:00Z",
-  "credentialToken": "uuid-opaco-uso-unico"
+  "credential": {
+    "username": "...",
+    "password": "...",
+    "baseUrl": "..."
+  }
 }
 ```
 
-**Concorrência:** a transição `Pending → Claimed` usa `UPDATE ... WHERE
-Status = 'Pending' AND integrationId = ?` com token de concorrência (ou
-pessimistic lock na linha). Se dois Workers tentarem simultaneamente, apenas
-um terá linhas afetadas > 0; o outro recebe `204` ou tenta novamente. O
-índice único parcial em `Pending` não é necessário para esta garantia (já
-existe para impedir dois `Pending` simultâneos), mas a transição atômica via
-UPDATE condicional resolve a exclusividade do `claim`.
+> O campo `credential` contém as credenciais já decifradas pela API no
+> momento do `claim`. O Worker não precisa acessar `IServiceCredentials`
+> nem realizar nenhuma operação de criptografia.
 
-**Idempotência:** o `claim` não é idempotente por design — um segundo `claim`
-do mesmo Worker para o mesmo `integrationId` retornaria `204` (o comando já
-está `Claimed`). Se necessário, o Worker pode consultar
-`GET /api/internal/collector/eligibility` para verificar o estado antes de
-tentar.
+**Concorrência:** a transição `Pending → Claimed` usa `UPDATE ... WHERE
+Status = 'Pending' AND "IntegrationId" = @integrationId` com
+`ConcurrencyToken` (já presente na entidade). Se dois Workers tentarem
+simultaneamente, apenas um terá linhas afetadas > 0.
 
 ---
 
@@ -292,8 +564,7 @@ tentar.
 `collector.command.complete`, vinculada a `integrationId`.
 
 **Validação:** a Master API confirma que `commandId` pertence ao
-`integrationId` derivado da credencial do Worker. Worker não pode completar
-comando de outro tenant.
+`integrationId` derivado da credencial do Worker.
 
 **Corpo:**
 
@@ -310,9 +581,8 @@ comando de outro tenant.
   demais casos.
 - O corpo **nunca contém**: credenciais, cookies CAS, dados de OS, resposta
   bruta do iService, PII. Qualquer campo não listado acima é rejeitado (`400`).
-- `failureReason` é um enum fechado. A razão técnica detalhada (ex.: mensagem
-  de erro do iService) **não é transportada** — o Worker pode logar
-  localmente sem transmitir à Master API.
+- `failureReason` é um enum fechado. A razão técnica detalhada nunca é
+  transportada — o Worker loga localmente sem transmitir à Master API.
 
 **Comportamento por `outcome`:**
 
@@ -323,9 +593,8 @@ comando de outro tenant.
 | `Failed` | `CredentialRejected` | Transita para `Failed`. Invalida `ValidationStatus`. Chama `ReconcileEligibilityAsync`. |
 | `Failed` | outros | Transita para `Failed`. Não altera `ValidationStatus`. |
 
-**Idempotência:** se o comando já está em estado terminal (`Succeeded`,
-`Failed`, `Cancelled`), a Master API retorna `200` com o estado atual sem
-re-executar efeitos colaterais.
+**Idempotência:** se o comando já está em estado terminal, a Master API
+retorna `200` sem re-executar efeitos colaterais.
 
 **Resposta `200 OK`:**
 
@@ -341,7 +610,7 @@ re-executar efeitos colaterais.
 
 ### Estados de `EImmediateCollectionCommandStatus`
 
-O enum já contém todos os estados necessários para RF-009:
+O enum já contém todos os estados necessários:
 
 ```
 Pending → Claimed → Succeeded
@@ -350,51 +619,45 @@ Pending → Claimed → Succeeded
 Pending → Cancelled
 ```
 
-**Nenhum estado novo é necessário.** O RF-009 menciona `InProgress` como
-possível estado intermediário entre `Claimed` e conclusão, mas a coleta
-inteira ocorre dentro do mesmo `Claimed` — o Worker não envia atualizações
-intermediárias de progresso. `InProgress` seria redundante e não adiciona
-valor sem um mecanismo de polling de progresso (fora de escopo).
+**Nenhum estado novo é necessário.**
 
 ---
 
 ### Acionamento do Worker (polling)
 
-O Worker (`apps/collector`) é atualmente um stub com `Task.Delay(1000)`. A
-arquitetura de RF-009 adota **polling ativo** como mecanismo de acionamento:
-
-1. O Worker executa um loop com intervalo configurável (valor inicial
-   sugerido: **30 segundos** para a coleta inicial, podendo ser reduzido
-   quando RF-011 introduzir coleta recorrente).
-2. A cada iteração, o Worker chama `POST /api/internal/collector/commands/claim`.
-3. Se receber `204`, aguarda o próximo intervalo.
-4. Se receber `200` com `commandId`, executa o fluxo completo de coleta e
-   chama `complete` ao final.
-
-Esta abordagem é consistente com ADR-020 ("polling interno" como transporte)
-e não introduz fila, Redis ou infraestrutura nova.
+1. Loop com intervalo configurável (`WORKER_POLL_INTERVAL_MS`,
+   valor inicial sugerido: `30000`).
+2. A cada iteração, chama `POST /api/internal/collector/commands/claim`.
+3. Se `204`: aguarda o próximo intervalo.
+4. Se `200` com `commandId`: busca credencial no banco (role `atua_worker_ro`),
+   decifra em memória, acessa iService com throttling configurável, persiste
+   no MongoDB, chama `complete`.
 
 ---
 
-### Persistência de dados de OS coletados
+### Persistência de dados de OS coletados (MongoDB)
 
-**MongoDB Atlas Free Tier** (ADR-012), conexão via string de conexão
-armazenada no AWS Secrets Manager (`atua/mongodb-atlas`).
+**MongoDB Atlas Free Tier** (ADR-012).
 
-Coleções propostas para RF-009:
+Coleções:
 
-- `work_order_snapshots`: estado atual de cada OS (um documento por
-  `providerOrderId` por `tenantId`). Upsert idempotente por
-  `(tenantId, providerOrderId)` — atende RF-009.9.
-- `work_order_observations`: observações históricas (uma por OS por coleta,
-  `capturedAt` imutável). Índice único em
-  `(tenantId, providerOrderId, commandId)` para idempotência.
+- `work_order_snapshots`: estado atual de cada OS. Upsert idempotente por
+  `(tenantId, providerOrderId)`. Pode conter PII (D5).
+- `work_order_observations`: uma observação por OS por coleta
+  (`capturedAt` imutável). Índice único em
+  `(tenantId, providerOrderId, commandId)`.
 
-Os documentos **não contêm**: credenciais, cookies CAS, `username`,
-`password`, `baseUrl`, sessão CAS, ou qualquer campo sensível (RF-009.6).
+Campos obrigatórios em todo documento:
+- `tenantId` (indexado — controle mínimo para expurgo LGPD por tenant).
+- `providerOrderId` (chave externa do iService — campo provisório D7).
+- `commandId` (rastreabilidade).
+- `capturedAtUtc`.
 
-O `providerOrderId` é mantido como referência externa, separado do UUIDv7
-interno do ATUA (RF-009.5, ADR-004).
+PII coletada deve ser mapeada em `docs/data-mapping/work-orders-pii.md`
+(recomendação — não bloqueia RF-009, mas deve ser feita em paralelo).
+
+O payload do `complete` **nunca contém dados de OS** — a persistência é
+responsabilidade exclusiva do Worker diretamente no MongoDB.
 
 ---
 
@@ -402,151 +665,162 @@ interno do ATUA (RF-009.5, ADR-004).
 
 ### C1 — `providerKey` vs. `ProviderId` na entidade `ImmediateCollectionCommand`
 
-**Documento (ADR-020):** refere-se a `providerKey` como campo do comando,
-sugerindo um identificador de string do provedor.
+**Documento (ADR-020):** refere-se a `providerKey` (string).
 
-**Código real:** a entidade `ImmediateCollectionCommand` (commit 5ad77fe)
-possui `ProviderId` do tipo `Guid` — não uma string `providerKey`. A resposta
-do `claim` deve usar `providerId` (Guid) no payload, não `providerKey`
-(string). O `backend-engineer` deve usar `ProviderId` conforme a entidade
-existente.
+**Código real:** a entidade possui `ProviderId` do tipo `Guid`. A resposta
+do `claim` usa `providerId` (Guid). O `backend-engineer` deve usar
+`ProviderId` conforme a entidade existente.
 
 ### C2 — `ClaimExpiresAtUtc` e `ClaimTimeout` são adições novas
 
 **Código real:** `ImmediateCollectionCommand` não possui `ClaimExpiresAtUtc`.
-`ECollectorDeactivationReason` não possui `ClaimTimeout`. Ambos são campos/
-valores **novos** a serem adicionados via migration e extensão de enum como
-parte de RF-009. A ADR os trata como adições, mas é importante que o
-`backend-engineer` saiba que exigem migration e alteração de enum.
+`ECollectorDeactivationReason` não possui `ClaimTimeout`. Ambos exigem
+migration e extensão de enum como parte de RF-009.
 
-### C3 — `ECollectorDeactivationReason` é usado como `CancellationReason` no comando
+### C3 — `ECollectorDeactivationReason` vs. `ECommandFailureReason`
 
 **Código real:** `ImmediateCollectionCommand.CancellationReason` é do tipo
-`ECollectorDeactivationReason?` — o mesmo enum usado para desativação do
-Agente. O `failureReason` do payload de `complete` é um **enum separado**
-(novo, a ser criado: ex. `ECommandFailureReason`) que não deve ser confundido
-com `ECollectorDeactivationReason`. O mapeamento entre `failureReason =
-CredentialRejected` e `CancellationReason = CredentialNotValidated` ocorre na
-lógica de aplicação do `complete`.
+`ECollectorDeactivationReason?`. O `failureReason` do payload de `complete`
+é um enum separado (novo: `ECommandFailureReason`). O mapeamento entre
+`failureReason = CredentialRejected` e `CancellationReason =
+CredentialNotValidated` ocorre na lógica de aplicação do `complete`.
 
-### C4 — MongoDB: decisão vigente confirmada, sem contradição
+### C4 — MongoDB: sem contradição
 
-O RF-009 menciona MongoDB. ADR-003, ADR-012 e o secret `atua/mongodb-atlas`
-são consistentes. Não há contradição. A persistência de OS no MongoDB é a
-decisão arquitetural vigente.
+ADR-003, ADR-012 e o secret `atua/mongodb-atlas` são consistentes.
 
 ### C5 — Worker hoje é um stub inerte
 
-O `Worker.cs` executa apenas `Task.Delay(1000)`. Não há lógica de polling,
-autenticação de serviço ou consumo de comandos. O RF-009 exige substituição
-completa desse stub por um loop de polling funcional.
+`Worker.cs` executa apenas `Task.Delay(1000)`. RF-009 exige substituição
+completa por loop de polling funcional.
+
+### C6 — `MasterKeyBase64` exposta no repositório (pré-existente)
+
+`appsettings.Development.json` contém `MasterKeyBase64` com valor de dev
+hardcoded versionado no git. Deve ser removido do arquivo versionado e
+movido para `.env` local antes de qualquer merge, conforme descrito em D9.
 
 ---
 
-## Dependências desta ADR que requerem decisões de produto pendentes
+## Decisões de produto pendentes
 
-| Decisão de produto | Impacto arquitetural se não respondida |
-|---|---|
-| **D1** (recorte temporal: todas as OS ou janela?) | O Worker não sabe se deve paginar ilimitadamente ou aplicar filtro. Sem resposta, implementar como "sem filtro" (recomendação do RF-009) com paginação por conta do Worker. |
-| **D3** (máximo de tentativas) | `AttemptCount` já existe. Sem resposta, o Worker não sabe quando parar de tentar após `Failed`. Recomendação: 1 tentativa para coleta inicial. |
-| **D5** (LGPD — campos de OS) | Sem resposta, o Worker não sabe quais campos de OS podem ser persistidos. **Bloqueia a definição do schema MongoDB.** |
-| **D6** (limite de OS por coleta) | Sem resposta, o Worker não sabe quando truncar. O schema e o comportamento de loop dependem disso. |
-| **D7** (qual `providerOrderId` — `workOrderNo` ou `workOrderId`?) | **Bloqueia a definição do índice de idempotência** em `work_order_snapshots`. Sem resposta, não é possível garantir RF-009.9. |
-| **D8** (mesma OS em múltiplos status na mesma coleta) | Sem resposta, o Worker não sabe qual estado persistir. Bloqueia a lógica de upsert. |
-
-> **D5 e D7 são os bloqueadores mais críticos para a implementação do schema
-> MongoDB e da lógica de persistência.** As demais podem ter comportamento
-> padrão definido pelo `backend-engineer` enquanto aguardam resposta.
+| Decisão | Status | Impacto |
+|---|---|---|
+| **D7** — chave de identidade da OS (`workOrderNo` vs `workOrderId`) e comportamento em reabertura | **PENDENTE** (descoberta do iService real) | Bloqueia a definição definitiva do índice de idempotência. Implementar provisoriamente com `workOrderNo` e ponto de troca explícito no código. |
 
 ---
 
 ## Alternativas consideradas
 
-### D9 — Secrets Manager com IAM role da EC2
+### D9 — Variante (A): `claim` entrega DEK em claro, Worker decifra localmente
 
-Rejeitada. O custo cresce com o número de integrações ($0.40/secret/mês × N).
-A IAM role da EC2 do Worker, se comprometida, permite acesso a múltiplos
-secrets até rotação. Não oferece rastreabilidade por comando.
+Avaliada e rejeitada. A DEK é material criptográfico permanente vinculado à
+integração — comprometê-la equivale a comprometer a credencial
+indefinidamente até rotação. A variante (B) adotada entrega credenciais em
+claro por segundos e não exige que o Worker implemente criptografia nem
+acesse `IServiceCredentials`.
 
-### D9 — Variável de ambiente injetada no deployment
+### D9 — Worker recebe chave mestra e acessa Postgres diretamente
 
-Rejeitada. Exigiria redeploy por integração, expõe credenciais de múltiplos
-tenants no ambiente do processo, sem isolamento ou auditabilidade.
+Rejeitada. Elimina o encapsulamento por tenant: quem tem a chave mestra pode
+desembrulhar qualquer DEK e decifrar credenciais de todos os tenants.
+
+### D9 — Token opaco de uso único + endpoint `/redeem` (desenho original)
+
+Substituído pela decisão do usuário. A variante (B) adotada recupera
+parcialmente o encapsulamento: a API decifra e entrega apenas a credencial
+da integração do comando, sem expor material de chave ao Worker.
+
+### D9 — AWS Secrets Manager com um secret por integração
+
+Rejeitada. Custo cresce com o número de integrações ($0.40/secret/mês × N).
 
 ### D2 — Visibility timeout via fila (SQS)
 
-Rejeitada. ADR-020 rejeitou explicitamente a introdução de fila no MVP.
-A verificação preguiçosa + job de reconciliação resolvem o problema com
-infraestrutura já existente.
+Rejeitada. ADR-020 rejeitou explicitamente fila no MVP.
 
 ### D2 — Apenas verificação preguiçosa (sem job)
 
-Considerada. Suficiente se a integração for sempre re-ativada pelo usuário
-após falha. Rejeitada porque se o Worker morrer e o usuário não tentar
-re-ativar, o comando `Claimed` permanece travado indefinidamente. O job de
-5 minutos é leve e resolve sem nova infraestrutura.
+Rejeitada. Se o Worker morrer e o usuário não re-ativar, o comando `Claimed`
+permanece travado indefinidamente.
 
 ### D4 — Não acionar `ReconcileEligibilityAsync` automaticamente
 
-Considerada (deixar como inconsistência operacional visível). Rejeitada
-porque gera estado inválido: Agente `Active` com coleta `Failed` por
-credencial inválida, sem possibilidade de nova coleta bem-sucedida.
+Rejeitada. Gera estado inválido: Agente `Active` com credencial inválida.
 
 ---
 
 ## Consequências
 
 **Positivas:**
-- Nenhuma nova infraestrutura AWS é necessária para D9 (PostgreSQL já
-  existente, Secrets Manager já provisionado para a string de conexão).
-- O mecanismo de credencial de uso único é auditável e isolado por tenant/comando.
-- O timeout de re-claim resolve o bloqueio de integração sem fila.
-- A cadeia D4 → `ReconcileEligibilityAsync` → desativação garante
+- Worker não precisa de acesso à tabela `IServiceCredentials` nem de nenhuma
+  operação de criptografia — simplifica o Worker e elimina uma classe de
+  vulnerabilidade.
+- Encapsulamento por tenant preservado: Worker recebe apenas a credencial da
+  integração do comando reivindicado.
+- Chave mestra permanece exclusivamente na API; com KMS real, nunca sai do
+  hardware security module.
+- Rotação da chave mestra via `kms:enable-key-rotation` é transparente.
+- Parâmetros de throttling configuráveis permitem ajuste sem redeploy.
+- Isolamento de D7 em um único mapeador permite troca de campo sem
+  refatoração ampla.
+- Cadeia D4 → `ReconcileEligibilityAsync` → desativação garante
   consistência operacional.
 
 **Negativas / trade-offs:**
-- Nova tabela `collector_credential_tokens` no PostgreSQL (migration
-  necessária).
-- Campo `ClaimExpiresAtUtc` na entidade `ImmediateCollectionCommand`
-  (migration necessária).
-- Novo valor `ClaimTimeout` em `ECollectorDeactivationReason` e novo enum
-  `ECommandFailureReason` para o payload de `complete` (ambos adições novas).
-- O Worker precisa de lógica de polling e de chamada a `/redeem` antes de
-  qualquer acesso ao iService — aumenta a complexidade do stub atual.
-- O endpoint `/redeem` é sensível; requer atenção especial de log e de
-  middleware de request logging.
+- **Bug crítico pré-existente** de nonce/tag compartilhados em
+  `IServiceCredential` deve ser corrigido antes de produção com dados reais
+  (ver seção "Bug de Segurança Crítico" em D9).
+- `MasterKeyBase64` exposta em `appsettings.Development.json` deve ser
+  removida antes de qualquer merge (C6).
+- KMS real ainda não implementado em C# — `backend-engineer` precisa
+  implementar `AWSSDK.KeyManagementService` substituindo `GetMasterKey()`.
+- Campo `ClaimExpiresAtUtc` (migration), novo valor `ClaimTimeout` em
+  `ECollectorDeactivationReason` (migration de enum) e novo enum
+  `ECommandFailureReason` — todos são adições novas.
+- Schema MongoDB com PII exige mapeamento de dados para adequação LGPD
+  posterior.
+- Resposta do `claim` inclui `credential` com dados sensíveis em claro —
+  middleware de log deve filtrar o body desta rota explicitamente.
 
 **Dependências de implementação:**
-- `backend-engineer` implementa: `collector_credential_tokens` (migration +
-  entidade), campo `ClaimExpiresAtUtc`, enum `ECommandFailureReason`, novo
-  valor `ClaimTimeout` em `ECollectorDeactivationReason`, endpoints `claim`
-  e `complete`, endpoint `/redeem`, job de timeout de re-claim, e o novo
-  gatilho de `ReconcileEligibilityAsync` no handler de `complete`
-  (`CredentialRejected`) — seguindo o padrão transacional já existente em
-  `IServiceCredentialValidationService.ValidateAsync`.
-- `backend-engineer` (apps/collector) substitui o stub por loop de polling
-  com autenticação de serviço, chamada a `/redeem` e fluxo Playwright.
-- `aws-architect` não precisa de alterações de infraestrutura para D9 (o
-  secret `atua/mongodb-atlas` já existe; KMS e Secrets Manager já estão
-  provisionados).
+- `backend-engineer` (Master API): campo `ClaimExpiresAtUtc`, enum
+  `ECommandFailureReason`, valor `ClaimTimeout` em
+  `ECollectorDeactivationReason`, endpoints `claim` e `complete`, decifragem
+  de credencial no handler do `claim` via `ICredentialCipher` existente,
+  job de timeout de re-claim (BackgroundService, 5min), novo gatilho de
+  `ReconcileEligibilityAsync` em `complete(CredentialRejected)`, filtro de
+  log no body da resposta do `claim`.
+- `backend-engineer` (Worker): substituição do stub por loop de polling,
+  consumo do campo `credential` da resposta do `claim`, paginação com
+  throttling configurável, persistência no MongoDB, isolamento do mapeador
+  D7 com ponto de troca explícito. Worker não implementa criptografia.
+- `backend-engineer` (transversal): remover `MasterKeyBase64` de
+  `appsettings.Development.json`; implementar `AWSSDK.KeyManagementService`
+  em `AesGcmCredentialCipher`; planejar correção do bug de nonce/tag.
+- `aws-architect`: provisionar CMK real no KMS; IAM role da API com
+  `kms:GenerateDataKey` + `kms:Decrypt`; Worker sem permissões KMS nem
+  acesso a `IServiceCredentials` no Postgres.
+- Artefato `docs/data-mapping/work-orders-pii.md`: criar em paralelo.
 
 ## Agentes envolvidos
 
 - `software-architect`: definição desta ADR.
-- `product-analyst`: decisões D1, D3, D5, D6, D7, D8 (bloqueadores de
-  produto ainda pendentes).
 - `backend-engineer`: implementação de Master API e Worker conforme esta ADR.
-- `aws-architect`: confirmação de que IAM role do Worker e rede EC2→Master
-  API estão corretas para o endpoint `/redeem` (sem nova infraestrutura
-  prevista).
-- `qa-engineer`: validação de concorrência no `claim`, isolamento de tenant
-  no `/redeem`, auditoria de logs (ausência de credenciais).
+- `aws-architect`: provisionar CMK KMS real, IAM roles com escopos mínimos,
+  confirmar ausência de permissão KMS e de acesso a `IServiceCredentials` no
+  Worker.
+- `qa-engineer`: validação de concorrência no `claim`, ausência de
+  `credential.*` em logs da API e do Worker, isolamento de tenant,
+  throttling respeitado.
 
 ## Data
 
 2026-08-30
 
-## Substitui
+## Substitui / Complementa
 
 Não substitui ADR anterior. Complementa ADR-003, ADR-004, ADR-012, ADR-017,
-ADR-018 e ADR-020. Resolve D2, D4 e D9 de RF-009.
+ADR-018 e ADR-020. Resolve D1, D2, D3, D4, D5, D6, D8 e D9 de RF-009.
+D7 permanece parcialmente aberto (implementação provisória com ponto de
+troca explícito).
