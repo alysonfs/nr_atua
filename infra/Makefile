@@ -26,7 +26,7 @@ STACK_COMPUTE=AtuaComputeStack
 
 ACCOUNT_ID := $(shell aws sts get-caller-identity --query Account --output text --region $(REGION) 2>/dev/null)
 
-.PHONY: install synth diff bootstrap-cdk up down destroy destroy-all-data status rds-bootstrap rds-up rds-down retrieve-keypair
+.PHONY: install synth diff bootstrap-cdk up down destroy destroy-all-data status rds-bootstrap rds-up rds-down retrieve-keypair deploy-landing
 
 ## Instala dependências (pnpm, alinhado ao monorepo)
 install:
@@ -114,6 +114,25 @@ destroy-all-data: destroy
 	-aws secretsmanager delete-secret --secret-id atua/mongodb-atlas --force-delete-without-recovery --region $(REGION)
 	-aws secretsmanager delete-secret --secret-id atua/app-secrets --force-delete-without-recovery --region $(REGION)
 	@echo "Tudo removido na AWS. MongoDB Atlas (externo) NÃO é afetado - gerenciar separadamente."
+
+## Build da landing (apps/landing) e sync para o S3 de frontends.
+## Bucket: atua-$(ACCOUNT_ID)-frontends, prefixo /landing/
+## URL resultante: http://atua-$(ACCOUNT_ID)-frontends.s3-website-$(REGION).amazonaws.com/landing/
+deploy-landing:
+	@echo "Building landing..."
+	pnpm --filter landing build
+	@echo "Sincronizando assets com cache longa duração..."
+	aws s3 sync ../apps/landing/dist/ s3://atua-$(ACCOUNT_ID)-frontends/landing/ \
+	  --region $(REGION) --delete \
+	  --cache-control "public, max-age=31536000, immutable" \
+	  --exclude "index.html"
+	@echo "Sincronizando index.html sem cache..."
+	aws s3 cp ../apps/landing/dist/index.html \
+	  s3://atua-$(ACCOUNT_ID)-frontends/landing/index.html \
+	  --region $(REGION) \
+	  --cache-control "no-cache, no-store, must-revalidate" \
+	  --content-type "text/html"
+	@echo "Landing publicada em: http://atua-$(ACCOUNT_ID)-frontends.s3-website-$(REGION).amazonaws.com/landing/"
 
 ## Mostra o estado atual (para saber se algo está sendo cobrado)
 status:

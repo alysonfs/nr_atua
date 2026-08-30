@@ -1,5 +1,6 @@
 import * as cdk from 'aws-cdk-lib';
 import * as s3 from 'aws-cdk-lib/aws-s3';
+import * as iam from 'aws-cdk-lib/aws-iam';
 import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 import { Construct } from 'constructs';
 
@@ -73,6 +74,18 @@ export class AtuaDataStack extends cdk.Stack {
       websiteErrorDocument: 'index.html',
       versioned: false,
     });
+
+    // Política pública: somente leitura de objetos no prefixo landing/*
+    // Raiz do bucket e demais prefixos permanecem privados (403).
+    this.frontendsBucket.addToResourcePolicy(
+      new iam.PolicyStatement({
+        sid: 'PublicReadLandingOnly',
+        effect: iam.Effect.ALLOW,
+        principals: [new iam.StarPrincipal()],
+        actions: ['s3:GetObject'],
+        resources: [this.frontendsBucket.arnForObjects('landing/*')],
+      }),
+    );
 
     // --- S3: backups (privado, com lifecycle para Glacier em 35 dias) ---
     this.backupsBucket = new s3.Bucket(this, 'BackupsBucket', {
