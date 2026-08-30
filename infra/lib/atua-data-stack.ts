@@ -75,15 +75,19 @@ export class AtuaDataStack extends cdk.Stack {
       versioned: false,
     });
 
-    // Política pública: somente leitura de objetos no prefixo landing/*
+    // Política pública: somente leitura de objetos nos prefixos landing/*, office/* e manager/*
     // Raiz do bucket e demais prefixos permanecem privados (403).
     this.frontendsBucket.addToResourcePolicy(
       new iam.PolicyStatement({
-        sid: 'PublicReadLandingOnly',
+        sid: 'PublicReadFrontends',
         effect: iam.Effect.ALLOW,
         principals: [new iam.StarPrincipal()],
         actions: ['s3:GetObject'],
-        resources: [this.frontendsBucket.arnForObjects('landing/*')],
+        resources: [
+          this.frontendsBucket.arnForObjects('landing/*'),
+          this.frontendsBucket.arnForObjects('office/*'),
+          this.frontendsBucket.arnForObjects('manager/*'),
+        ],
       }),
     );
 

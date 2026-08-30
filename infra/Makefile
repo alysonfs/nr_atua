@@ -26,7 +26,7 @@ STACK_COMPUTE=AtuaComputeStack
 
 ACCOUNT_ID := $(shell aws sts get-caller-identity --query Account --output text --region $(REGION) 2>/dev/null)
 
-.PHONY: install synth diff bootstrap-cdk up down destroy destroy-all-data status rds-bootstrap rds-up rds-down retrieve-keypair deploy-landing
+.PHONY: install synth diff bootstrap-cdk up down destroy destroy-all-data status rds-bootstrap rds-up rds-down retrieve-keypair deploy-landing deploy-office deploy-manager
 
 ## Instala dependências (pnpm, alinhado ao monorepo)
 install:
@@ -133,6 +133,44 @@ deploy-landing:
 	  --cache-control "no-cache, no-store, must-revalidate" \
 	  --content-type "text/html"
 	@echo "Landing publicada em: http://atua-$(ACCOUNT_ID)-frontends.s3-website-$(REGION).amazonaws.com/landing/"
+
+## Build do office (apps/office) e sync para o S3 de frontends.
+## Bucket: atua-$(ACCOUNT_ID)-frontends, prefixo /office/
+## URL resultante: http://atua-$(ACCOUNT_ID)-frontends.s3-website-$(REGION).amazonaws.com/office/
+deploy-office:
+	@echo "Building office..."
+	pnpm --filter office build
+	@echo "Sincronizando assets com cache longa duração..."
+	aws s3 sync ../apps/office/dist/ s3://atua-$(ACCOUNT_ID)-frontends/office/ \
+	  --region $(REGION) --delete \
+	  --cache-control "public, max-age=31536000, immutable" \
+	  --exclude "index.html"
+	@echo "Sincronizando index.html sem cache..."
+	aws s3 cp ../apps/office/dist/index.html \
+	  s3://atua-$(ACCOUNT_ID)-frontends/office/index.html \
+	  --region $(REGION) \
+	  --cache-control "no-cache, no-store, must-revalidate" \
+	  --content-type "text/html"
+	@echo "Office publicado em: http://atua-$(ACCOUNT_ID)-frontends.s3-website-$(REGION).amazonaws.com/office/"
+
+## Build do manager (apps/manager) e sync para o S3 de frontends.
+## Bucket: atua-$(ACCOUNT_ID)-frontends, prefixo /manager/
+## URL resultante: http://atua-$(ACCOUNT_ID)-frontends.s3-website-$(REGION).amazonaws.com/manager/
+deploy-manager:
+	@echo "Building manager..."
+	pnpm --filter manager build
+	@echo "Sincronizando assets com cache longa duração..."
+	aws s3 sync ../apps/manager/dist/ s3://atua-$(ACCOUNT_ID)-frontends/manager/ \
+	  --region $(REGION) --delete \
+	  --cache-control "public, max-age=31536000, immutable" \
+	  --exclude "index.html"
+	@echo "Sincronizando index.html sem cache..."
+	aws s3 cp ../apps/manager/dist/index.html \
+	  s3://atua-$(ACCOUNT_ID)-frontends/manager/index.html \
+	  --region $(REGION) \
+	  --cache-control "no-cache, no-store, must-revalidate" \
+	  --content-type "text/html"
+	@echo "Manager publicado em: http://atua-$(ACCOUNT_ID)-frontends.s3-website-$(REGION).amazonaws.com/manager/"
 
 ## Mostra o estado atual (para saber se algo está sendo cobrado)
 status:
