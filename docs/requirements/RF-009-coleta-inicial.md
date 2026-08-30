@@ -1,6 +1,8 @@
 # RF-009 - Coleta Inicial
 
-Status: `Requisitos definidos - com decisões pendentes`
+Status: `Entregue (lado API) — Worker e D7 pendentes`
+
+**Data de entrega (lado API):** 2026-08-30, commit `44fdbef`.
 
 ## Objetivo
 
@@ -22,6 +24,43 @@ observacao inicial por OS) -> complete (Succeeded | Failed | Cancelled)
 ```
 
 O Office reflete o estado do comando em tempo real durante todo o processo.
+
+### O que e entregue (lado API — 2026-08-30)
+
+- **Endpoints implementados e testados:**
+  - `POST /api/internal/collector/commands/claim`: transita comando de `Pending` a `Claimed`, decifra credenciais do iService via `ICredentialCipher` (variante B do D9), retorna credenciais em claro protegidas por TLS, incrementa `AttemptCount`, preenche `ClaimedAtUtc` e `ClaimExpiresAtUtc` (D2: 30 minutos). Cuida atomicamente de comando `Claimed` expirado.
+  - `POST /api/internal/collector/commands/{commandId}/complete`: transita comando para `Succeeded`, `Failed` ou `Cancelled`, aciona `ReconcileEligibilityAsync` apenas quando `failureReason = CredentialRejected` (D4), implementa idempotência.
+
+- **BackgroundService `ClaimTimeoutJob`:** executa a cada 5 minutos, transita comandos `Claimed` com `ClaimExpiresAtUtc < now` para `Failed` com razão `ClaimTimeout`.
+
+- **Configuração não hardcoded:**
+  - `ImmediateCollectionOptions.ClaimTimeoutMinutes` (default 30, decisão D2).
+  - `ImmediateCollectionOptions.HistoryWindowMonths` (default 3, decisões D1/D6).
+
+- **Segurança — Variante B do D9:**
+  - A API é o único componente que acessa a chave mestra (via `ICredentialCipher.UnwrapDataKey`).
+  - Credenciais são decifradas em memória no `claim` e entregues em claro ao Worker via TLS.
+  - Worker **não recebe DEK nem chave mestra**, e **não acessa** tabela `IServiceCredentials`.
+  - DEK é zerada da memória da API imediatamente após decifragem.
+  - Middleware de logging filtra o body da resposta do `claim`.
+
+- **Decisões D3 (1 tentativa) e D4 (CredentialRejected):** implementadas.
+  - D3: sem retentativas automáticas; falha resulta em `Failed`; reativação é manual.
+  - D4: apenas `ECommandFailureReason.CredentialRejected` invalida credencial e dispara `ReconcileEligibilityAsync`.
+
+- **Controle de escopo por tenant:** movido de `ServiceCredentialAuthenticationHandler` para policies de authorization. 6 testes de isolamento comprovam que cross-scope é impossível.
+
+- **Tratamento de concorrência:** `DbUpdateConcurrencyException` no `claim` é capturada; o Worker perdedor da corrida recebe `204 No Content`, não `500`.
+
+- **Testes:** 148 testes passando, build sem avisos. QA (`qa-engineer`) aprovou.
+
+### O que NAO e RF-009 (ainda pendente — lado Worker e ambiente iService)
+
+- Implementação do loop de polling no Worker (`apps/collector`).
+- Acesso real ao iService (scraping via Playwright, autenticação CAS, consulta do iService).
+- Paginação, throttling, backoff e tratamento de erro do Worker.
+- Persistência efetiva em MongoDB (Worker invocando inserts).
+- D7 (chave de identidade da OS: `workOrderNo` vs `workOrderId`) — segue pendente de descoberta do iService real.
 
 ### O que NAO e RF-009
 
@@ -173,14 +212,29 @@ mesmo comando enquanto ele estiver nesse estado.
 
 ## Decisoes pendentes
 
-> **ATENCAO:** As decisoes listadas abaixo aguardam resposta do usuario (D1, D3,
-> D5, D6, D7, D8) ou do software-architect (D2, D4, D9). A implementacao **NAO
-> deve prosseguir** sobre os pontos afetados por cada decisao sem que a resposta
-> correspondente tenha sido registrada.
+> Apenas **D7** segue pendente de descoberta. As demais decisões (D1–D6, D8, D9) foram resolvidas e implementadas conforme ADR-021 (2026-08-30).
 
 ---
 
-### D1 - Recorte temporal: todas as OS ou janela de datas?
+### D7 - Qual identificador externo do iService e a chave de identidade da OS?
+
+**Situacao:** A documentacao menciona `workOrderNo` e `workOrderId` (ADR-004,
+mvp-onboarding pendencias) e registra incerteza sobre a estabilidade desses
+identificadores em reaberturas, reatribuicoes ou alteracoes no iService.
+
+**Impacto se nao decidido:** se o identificador escolhido nao for estavel, a
+coleta pode criar duplicatas ou perder o historico de uma OS reaberta.
+
+**Recomendacao da analista:** confirmar com o usuario qual dos dois (`workOrderNo`
+ou `workOrderId`) e a chave primaria de identidade da OS no iService para o MVP,
+e qual e o comportamento esperado em caso de reabertura. A descoberta via
+Playwright (ADR-004) deve validar isso antes da implementacao.
+
+**Aguarda:** decisao do usuario.
+
+---
+
+## Decisoes resolvidas (referência histórica)
 
 **Situacao:** A documentacao indica "estado atual de todas as OS retornadas nos
 status suportados", o que implica ausencia de filtro de data. Para um cliente com
@@ -306,45 +360,13 @@ Playwright (ADR-004) deve validar isso antes da implementacao.
 
 ---
 
-### D8 - O que fazer se o mesmo `providerOrderId` aparece em mais de um status na mesma coleta?
+### D8 — Mesma OS em múltiplos status
 
-**Situacao:** O iService pode retornar a mesma OS em estados diferentes durante a
-janela da coleta (por exemplo, em caso de race condition). O produto nao definiu
-o comportamento esperado nessa situacao.
+**Resolvido:** desempate por prioridade de status (Designado > Em Processamento > Pendente > Concluído > Cancelado). Uma única observação inicial por OS por comando. Ver ADR-021, seção D8.
 
-**Impacto se nao decidido:** duplicatas de estado atual ou historico inconsistente.
+### D9 — Entrega de credenciais ao Worker
 
-**Recomendacao da analista:** o Worker deve usar o **status mais recente** com
-base na ordem de consulta (Designado, Em Processamento, Pendente, Concluido,
-Cancelado) e registrar apenas uma observacao inicial. O criterio de desempate
-exato e decisao de produto.
-
-**Aguarda:** decisao do usuario.
-
----
-
-### D9 - Como o Worker recebe as credenciais decifradas do iService em runtime?
-
-> **Esta e a decisao de maior criticidade tecnica. E o bloqueador mais critico
-> de RF-009. A implementacao NAO deve prosseguir sem que um ADR de arquitetura e
-> seguranca seja aprovado para este ponto.**
-
-**Situacao:** ADR-004 define que credenciais sao cifradas com AES-256-GCM por
-chave de dados por integracao, com KMS externo. ADR-020 menciona "credencial
-opaca vinculada a tenant, integracao e provedor", mas o **mecanismo concreto de
-entrega ao Worker** (endpoint dedicado, Secrets Manager, variavel de ambiente
-injetada no deployment ou outro mecanismo) nao foi definido.
-
-**Impacto se nao decidido:** sem esse mecanismo, o Worker nao pode executar a
-coleta. Nenhum acesso real ao iService e possivel.
-
-**Recomendacao da analista:** esta e decisao de **arquitetura e seguranca**
-(software-architect e aws-architect), nao de produto. O requisito de produto e:
-o Worker recebe as credenciais apenas em tempo de execucao, isoladas por
-tenant/integracao, sem que aparecam em logs ou payloads. O mecanismo concreto
-deve ser definido em ADR antes de qualquer implementacao.
-
-**Aguarda:** decisao do software-architect e, se aplicavel, do aws-architect.
+**Resolvido:** variante B (API decifra, entrega credenciais em claro via TLS, Worker não recebe DEK nem chave mestra, não acessa tabela `IServiceCredentials`). Ver ADR-021, seção D9.
 
 ---
 
@@ -352,43 +374,52 @@ deve ser definido em ADR antes de qualquer implementacao.
 
 - RF-008 (implementado): cria o `ImmediateCollectionCommand` consumido por este
   requisito.
-- ADR-020: define a maquina de estados do comando (endpoints `claim` e `complete`
-  ainda nao implementados).
+- ADR-020: define a máquina de estados do comando; endpoints `claim` e `complete`
+  implementados (commit `44fdbef`).
+- ADR-021: resolve todas as decisões arquiteturais e de segurança de RF-009
+  (D1–D6, D8, D9). Status: `Aceita` (2026-08-30). D7 pendente de descoberta.
 - ADR-003: define Worker Service e isolamento por tenant.
 - ADR-004: define credenciais cifradas e KMS; mecanismo de entrega ao Worker
-  pendente (D9).
-- ADR-017: credencial de servico interno; limites do contrato de elegibilidade.
-- RF-010: historico de observacoes; a fronteira entre metadados do iService e
-  observacoes do ATUA esta definida na secao de escopo deste documento.
+  implementado (variante B em ADR-021, commit `44fdbef`).
+- ADR-017: credencial de serviço interno; limites do contrato de elegibilidade.
+- RF-010: histórico de observações; a fronteira entre metadados do iService e
+  observações do ATUA está definida na seção de escopo deste documento.
 
 ## Impactos
 
-- Requer implementacao dos endpoints `claim` e `complete` na Master API.
-- Requer implementacao do Worker Service .NET com Playwright para acesso ao
-  iService.
-- Requer mecanismo de entrega segura de credenciais ao Worker (D9 — arquitetura
-  pendente, bloqueador critico).
-- `ReconcileEligibility` pode entrar no escopo deste requisito dependendo da
-  decisao de D4.
-- Inicia o volume de dados de OS no MongoDB do tenant.
+### Lado API — ✅ Implementado (commit `44fdbef`)
+
+- ✅ Endpoints `claim` e `complete` implementados na Master API.
+- ✅ Decifragem de credenciais no `claim` via variante B (API decifra, Worker não).
+- ✅ BackgroundService de timeout de claim a cada 5 minutos.
+- ✅ Acesso ao `ReconcileEligibilityAsync` quando credencial é rejeitada.
+- ✅ Controle de escopo por tenant via policies de authorization.
+- ✅ Tratamento de concorrência na transição `Pending → Claimed`.
+
+### Lado Worker — ⏳ Pendente
+
+- ⏳ Implementação do loop de polling no Worker (`apps/collector`).
+- ⏳ Acesso real ao iService (scraping via Playwright, autenticação CAS).
+- ⏳ Paginação, throttling, backoff e tratamento de erro.
+- ⏳ Persistência em MongoDB.
+
+### Dependência pendente
+
+- ⏳ D7 (identificador externo da OS: `workOrderNo` vs `workOrderId`) — descoberta do iService real.
 
 ## Fora do escopo
 
 - Coleta recorrente (RF-011).
-- Atualizacao de OS ja existentes (RF-011).
-- Interpretacao de ausencia de OS (RF-012).
+- Atualização de OS já existentes (RF-011).
+- Interpretação de ausência de OS (RF-012).
 - Escrita no iService (RF-013).
-- Exibicao de OS no Office (RF futuro).
-- Aprovacao de implementacao ou validacao de QA.
+- Exibição de OS no Office (RF futuro).
 
-## Gate de implementacao
+## Gate de implementação
 
-RF-009 nao pode ser implementado sem que:
+**Lado API:** ✅ Implementado. Sem bloqueadores restantes.
 
-1. D9 (mecanismo de entrega de credenciais ao Worker) esteja definido em ADR
-   aprovado pelo software-architect e, se aplicavel, pelo aws-architect.
-2. Os endpoints `claim` e `complete` da Master API estejam implementados
-   (pendencia de ADR-020).
-3. As decisoes de produto D1, D3, D5, D6, D7 e D8 tenham sido respondidas pelo
-   usuario.
-4. As decisoes arquiteturais D2 e D4 tenham sido respondidas pelo software-architect.
+**Lado Worker:** bloqueado por:
+
+1. ⏳ D7 (chave de identidade da OS) — descoberta do iService real.
+2. ⏳ Implementação do loop de polling no Worker com acesso efetivo ao iService.

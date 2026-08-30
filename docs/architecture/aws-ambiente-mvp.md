@@ -145,9 +145,57 @@ scraping ou agendamento foi implantada (ver `infra/README.md` §6).
 
 **Buckets S3:**
 
-- `atua-462991286554-frontends`
-- `atua-462991286554-backups`
-- `atua-462991286554-releases`
+- `atua-462991286554-frontends` — hospeda aplicativos web estáticos (Landing, Office, Manager, Tecnica)
+- `atua-462991286554-backups` — backups de RDS
+- `atua-462991286554-releases` — artifacts de release
+
+### 5.1 Frontends publicados (2026-08-30)
+
+**Bucket:** `atua-462991286554-frontends`  
+**Região:** `sa-east-1`  
+**Tipo:** website estático (sem CloudFront)
+
+**URLs de acesso (website hosting):**
+
+| App | URL | Base path | Deploy |
+|---|---|---|---|
+| Landing | `http://atua-462991286554-frontends.s3-website-sa-east-1.amazonaws.com/landing/` | `/landing/` | `make deploy-landing` |
+| Office | `http://atua-462991286554-frontends.s3-website-sa-east-1.amazonaws.com/office/` | `/office/` | `make deploy-office` |
+| Manager | `http://atua-462991286554-frontends.s3-website-sa-east-1.amazonaws.com/manager/` | `/manager/` | `make deploy-manager` |
+| Tecnica | `http://atua-462991286554-frontends.s3-website-sa-east-1.amazonaws.com/tecnica/` | `/tecnica/` | `make deploy-tecnica` |
+
+**Configuração:**
+
+- Cada app usa base path condicional no `vite.config.ts`:
+  - Em `serve` (desenvolvimento): base path é `/`.
+  - Em `build` (produção): base path é `/<prefixo>/` (ex.: `/office/`).
+- Referências absolutas a `icons.svg` e outros assets foram migradas para `import.meta.env.BASE_URL` (commits `c4ed31d`, `0d5551f`, `8c75772`).
+- Bucket policy `PublicReadFrontends` no CDK cobre os 4 prefixos; a raiz do bucket (`/`) permanece `403 Forbidden`.
+
+**Estado do conteúdo (2026-08-30):**
+
+- Os 4 apps contêm scaffold do Vite — nenhum conteúdo de negócio implementado.
+- RF-018 (Landing com conteúdo) pendente.
+- Roteamento não está implementado; ao introduzir react-router, será necessário configurar `basename` com o prefixo correspondente.
+
+**Procedimento de deploy:**
+
+```bash
+cd infra/
+
+# Deploy individual
+make deploy-landing   # publica Landing em /landing/
+make deploy-office    # publica Office em /office/
+make deploy-manager   # publica Manager em /manager/
+make deploy-tecnica   # publica Tecnica em /tecnica/
+
+# Listar todos os alvos
+make help | grep deploy
+```
+
+Os alvos estão definidos em `infra/Makefile`. Cada um executa:
+1. `cd apps/<app> && pnpm run build` (vite build)
+2. `aws s3 sync dist/ s3://atua-462991286554-frontends/<prefixo>/` (upload)
 
 **Secrets (AWS Secrets Manager):**
 
@@ -201,6 +249,7 @@ Recomendações (não são decisões — dependem do `orchestrator`):
 | Policy de bootstrap do usuário | Temporária, remover após bootstrap | Permanece anexada, para reruns (§1.1) |
 | Retenção de backup do RDS | 7 dias | 1 dia, por restrição do Free Tier (§3.1) |
 | Budget mensal | US$ 5 | Projeção de uso 8h/dia excede o budget (§6) |
+| Conteúdo dos frontends | Aplicativos funcionais (Landing, Office, Manager, Tecnica) | Scaffold do Vite; conteúdo pendente (RF-018) (§5.1) |
 
 ---
 

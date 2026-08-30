@@ -125,10 +125,13 @@ minutos.
 
 #### RF-009 - Coleta inicial
 
-Status: `Pendente`
+Status: `Entregue (lado API)` — Worker e D7 pendentes
 
-A primeira coleta deve registrar o estado atual de todas as OS retornadas nos
-status suportados pelo iService e iniciar o historico observado pelo ATUA.
+**Data de entrega (lado API):** 2026-08-30, commit `44fdbef`. QA aprovada (148 testes passando).
+
+A primeira coleta é iniciada via `POST /api/internal/collector/commands/claim` (Master API). O Worker ainda não está implementado. A API decifra credenciais do iService via variante B (ADR-021) e as entrega em claro ao Worker via TLS. Decisões D1–D6, D8, D9 foram resolvidas; apenas D7 (identificador externo da OS) segue pendente de descoberta do iService real.
+
+Ver `docs/requirements/RF-009-coleta-inicial.md` e `docs/decisions/ADR-021-coleta-inicial-credenciais-timeout-e-falha-de-credencial.md` para detalhes técnicos.
 
 #### RF-010 - Historico observado
 
@@ -210,6 +213,8 @@ Status: `Pendente`
 
 A Landing deve apresentar o ATUA e disponibilizar navegacao para login e
 cadastro no Office.
+
+**Nota sobre publicação (2026-08-30):** Os aplicativos Landing, Office, Manager e Tecnica foram publicados no bucket S3 `atua-462991286554-frontends` (região `sa-east-1`). Contêm scaffold do Vite; conteúdo funcional (jornada pública, telas do Office, etc.) ainda é pendência de desenvolvimento (RF-005, RF-006, RF-018, etc.). URLs de acesso em `docs/architecture/aws-ambiente-mvp.md` §5.1.
 
 ## Requisitos de seguranca
 

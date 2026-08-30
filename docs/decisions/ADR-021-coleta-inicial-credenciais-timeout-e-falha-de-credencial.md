@@ -2,7 +2,9 @@
 
 ## Status
 
-Proposed
+Aceita (2026-08-30, implementada no commit `44fdbef`)
+
+**Data de aprovação:** 2026-08-30 (confirmação de implementação e QA).
 
 ## Contexto
 
