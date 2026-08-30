@@ -8,6 +8,7 @@ using Atua.Api.Application.Integrations.CollectorControl;
 using Atua.Api.Application.Tenants;
 using Atua.Api.Endpoints;
 using Atua.Api.Infrastructure.Email;
+using Atua.Api.Infrastructure.Jobs;
 using Atua.Api.Infrastructure.Persistence;
 using Atua.Api.Infrastructure.Security;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -77,6 +78,12 @@ builder.Services.AddAuthorization(options =>
     options.AddPolicy("CollectorEligibility", policy =>
         policy.AddAuthenticationSchemes(ServiceCredentialAuthenticationHandler.SchemeName)
             .RequireClaim("scope", ServiceCredentialAuthenticationHandler.EligibilityScope));
+    options.AddPolicy("CollectorCommandClaim", policy =>
+        policy.AddAuthenticationSchemes(ServiceCredentialAuthenticationHandler.SchemeName)
+            .RequireClaim("scope", ServiceCredentialAuthenticationHandler.ClaimScope));
+    options.AddPolicy("CollectorCommandComplete", policy =>
+        policy.AddAuthenticationSchemes(ServiceCredentialAuthenticationHandler.SchemeName)
+            .RequireClaim("scope", ServiceCredentialAuthenticationHandler.CompleteScope));
 });
 
 builder.Services.AddSingleton<IAmazonSimpleEmailServiceV2, AmazonSimpleEmailServiceV2Client>();
@@ -110,6 +117,10 @@ builder.Services.AddScoped<CollectorActivationService>();
 // TODO(ADR-018): substituir por implementação real quando o protocolo do
 // iService estiver especificado. Ver FakeIServiceAuthClient.
 builder.Services.AddSingleton<IIServiceAuthClient, FakeIServiceAuthClient>();
+builder.Services.Configure<ImmediateCollectionOptions>(
+    builder.Configuration.GetSection(ImmediateCollectionOptions.SectionName));
+builder.Services.AddScoped<ImmediateCollectionCommandService>();
+builder.Services.AddHostedService<ClaimTimeoutJob>();
 
 var app = builder.Build();
 
@@ -127,5 +138,6 @@ app.MapAuthEndpoints();
 app.MapTrialEndpoints();
 app.MapTenantEndpoints();
 app.MapCollectorActivationEndpoints();
+app.MapCollectorCommandEndpoints();
 
 app.Run();

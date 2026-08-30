@@ -17,6 +17,8 @@ public sealed class ServiceCredentialAuthenticationHandler(
 {
     public const string SchemeName = "ServiceCredential";
     public const string EligibilityScope = "collector.eligibility.read";
+    public const string ClaimScope = "collector.command.claim";
+    public const string CompleteScope = "collector.command.complete";
 
     protected override async Task<AuthenticateResult> HandleAuthenticateAsync()
     {
@@ -33,8 +35,7 @@ public sealed class ServiceCredentialAuthenticationHandler(
         var dbContext = Context.RequestServices.GetRequiredService<AtuaDbContext>();
         var credential = await dbContext.ServiceCredentials.AsNoTracking().SingleOrDefaultAsync(
             item => item.TokenHash == tokenHash &&
-                    item.RevokedAt == null &&
-                    item.Scope == EligibilityScope,
+                    item.RevokedAt == null,
             Context.RequestAborted);
         if (credential is null) return AuthenticateResult.Fail("Invalid service credential.");
 

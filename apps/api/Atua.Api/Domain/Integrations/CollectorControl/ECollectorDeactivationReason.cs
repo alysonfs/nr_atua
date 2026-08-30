@@ -8,5 +8,12 @@ public enum ECollectorDeactivationReason
 {
     Manual,
     TrialIneligible,
-    CredentialNotValidated
+    CredentialNotValidated,
+
+    /// <summary>
+    /// Timeout de re-claim: o Worker não concluiu o comando dentro do prazo
+    /// configurado (ADR-021/D2). O Agente permanece Active; apenas o comando
+    /// transita para Failed.
+    /// </summary>
+    ClaimTimeout
 }

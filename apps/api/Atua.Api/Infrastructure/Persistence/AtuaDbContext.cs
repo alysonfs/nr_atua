@@ -246,6 +246,9 @@ public sealed class AtuaDbContext(DbContextOptions<AtuaDbContext> options) : DbC
             .IsRequired();
         builder.Property(command => command.CancellationReason).HasConversion<string>()
             .HasMaxLength(32);
+        // ADR-021/C3: FailureReason é enum separado do CancellationReason.
+        builder.Property(command => command.FailureReason).HasConversion<string>()
+            .HasMaxLength(32);
         builder.Property(command => command.ConcurrencyToken).IsConcurrencyToken();
         builder.HasIndex(command => command.TenantId);
         // ADR-020: indice unico parcial garante no maximo um comando Pending
@@ -254,6 +257,9 @@ public sealed class AtuaDbContext(DbContextOptions<AtuaDbContext> options) : DbC
             .IsUnique()
             .HasFilter("\"Status\" = 'Pending'")
             .HasDatabaseName("IX_immediate_collection_commands_IntegrationId_Pending");
+        // ADR-021/D2: indice para varredura eficiente pelo ClaimTimeoutJob.
+        builder.HasIndex(command => new { command.Status, command.ClaimExpiresAtUtc })
+            .HasDatabaseName("IX_immediate_collection_commands_Status_ClaimExpiresAtUtc");
         builder.HasOne<Tenant>().WithMany().HasForeignKey(command => command.TenantId)
             .OnDelete(DeleteBehavior.Cascade);
         builder.HasOne<Integration>().WithMany().HasForeignKey(command => command.IntegrationId)
