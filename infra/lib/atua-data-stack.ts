@@ -87,6 +87,7 @@ export class AtuaDataStack extends cdk.Stack {
           this.frontendsBucket.arnForObjects('landing/*'),
           this.frontendsBucket.arnForObjects('office/*'),
           this.frontendsBucket.arnForObjects('manager/*'),
+          this.frontendsBucket.arnForObjects('tecnica/*'),
         ],
       }),
     );
