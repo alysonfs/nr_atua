@@ -1,0 +1,29 @@
+{
+  "name": "@atua/infra",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Infraestrutura AWS do ATUA MVP (ADR-012, plano v3) como código (AWS CDK).",
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc -w",
+    "synth": "cdk synth",
+    "diff": "cdk diff",
+    "deploy:network": "cdk deploy AtuaNetworkStack --require-approval never",
+    "deploy:data": "cdk deploy AtuaDataStack --require-approval never",
+    "deploy:compute": "cdk deploy AtuaComputeStack --require-approval never",
+    "destroy:compute": "cdk destroy AtuaComputeStack --force",
+    "destroy:all": "cdk destroy --all --force",
+    "cdk": "cdk"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "aws-cdk": "^2.1033.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.7.2"
+  },
+  "dependencies": {
+    "aws-cdk-lib": "^2.170.0",
+    "constructs": "^10.4.2",
+    "source-map-support": "^0.5.21"
+  }
+}
