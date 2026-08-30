@@ -157,6 +157,20 @@ public sealed class AtuaDbContext(DbContextOptions<AtuaDbContext> options) : DbC
             uri => uri.AbsoluteUri,
             value => new Uri(value)).HasMaxLength(2_048).IsRequired();
         builder.HasIndex(provider => provider.Name).IsUnique();
+
+        // Emenda ADR-018 ("Resolução de integrationId"): seed do provedor
+        // fixo "iService", referenciado por
+        // WellKnownIntegrationProviders.IServiceProviderId. Declarado aqui
+        // via HasData para que o EF Core registre o seed no model snapshot
+        // e não o considere drift em migrations futuras.
+        builder.HasData(new
+        {
+            Id = WellKnownIntegrationProviders.IServiceProviderId,
+            Name = "iService",
+            Manufacturer = "iService",
+            BaseUri = new Uri("https://iservice.example.com/"),
+            IsActive = true
+        });
     }
 
     private static void ConfigureIntegration(EntityTypeBuilder<Integration> builder)

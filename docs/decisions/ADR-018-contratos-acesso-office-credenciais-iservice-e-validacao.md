@@ -437,3 +437,140 @@ refeita.
 ## Substitui
 
 Não aplicável. Complementa ADR-004, ADR-005, ADR-015 e ADR-017.
+
+## Emenda 2026-08-29 - Resolução de `integrationId`
+
+### Status da emenda
+
+Accepted
+
+### Motivo
+
+Fábio (`frontend-engineer`), ao implementar a UI de RF-005/006/007, identificou
+um conflito real: os endpoints de credenciais/validação desta ADR exigem
+`integrationId` na rota (`/api/tenants/{tenantId}/integrations/{integrationId}/...`),
+mas nenhum contrato definido nesta ADR (ou em qualquer ADR anterior) permite
+ao frontend descobrir ou obter esse `integrationId`. Não existe:
+
+- `GET /api/tenants/{tenantId}/integrations`;
+- nenhuma lógica de auto-criação de `Integration` ao criar o `Tenant`.
+
+Esta é uma lacuna de especificação desta própria ADR (não um erro de
+implementação do `backend-engineer`, que implementou exatamente o que foi
+especificado). Corrige-se aqui.
+
+### Análise
+
+O modelo de domínio já modelado por ADR-005 prevê `Integration` como entidade
+1:N a partir de `Tenant` (`Integration.TenantId`, `Integration.ProviderId`).
+No MVP, `IntegrationProvider` possui exatamente um registro em uso: iService
+(o Agente Coletor, único consumidor de outras integrações futuras, está
+pausado). Não há, hoje, nenhum requisito ou UI que exija múltiplas
+integrações por tenant.
+
+Diante disso, avaliam-se as duas alternativas trazidas por Fábio:
+
+**(a) Auto-criação da `Integration` iService junto com o `Tenant`, retornando
+`integrationId` na resposta de `POST /api/tenants`.**
+
+- Simplicidade: alta. Nenhum novo endpoint; o client já chama `POST
+  /api/tenants` no fluxo de onboarding (RF-006) e já precisa do retorno dessa
+  chamada antes de prosseguir para configuração de credenciais.
+- Custo/manutenção: baixo. Adiciona uma linha de orquestração em
+  `TenantOnboardingService`, dentro da transação já existente.
+  Não introduz uma nova tabela nem uma nova rota.
+- Testabilidade: trivial (mesma suíte de testes de `TenantOnboardingService`
+  ganha uma asserção adicional).
+- Evolução futura: se o MVP evoluir para múltiplos providers por tenant,
+  basta então introduzir `GET /api/tenants/{tenantId}/integrations` sem
+  quebrar o contrato desta emenda (o campo `integrationId` da resposta de
+  `POST /api/tenants` continua válido como "a" integração iService).
+- Risco: nenhum identificado além do já mitigado pelo uso de `Guid` fixo
+  para o `IntegrationProvider` (ver abaixo).
+
+**(b) Criar `GET /api/tenants/{tenantId}/integrations`.**
+
+- Introduz um novo endpoint, uma nova rota autorizada, e obriga o frontend a
+  fazer uma chamada adicional só para obter um dado que, no MVP, é sempre o
+  mesmo (1 integração por tenant). É complexidade antecipada: não há, hoje,
+  necessidade de listar múltiplas integrações.
+
+**Decisão: opção (a).** É a solução mais simples que atende ao requisito
+real (permitir ao frontend montar a rota de credenciais) sem introduzir um
+endpoint cujo único propósito no MVP seria devolver uma lista de um único
+elemento.
+
+### Decisão técnica
+
+1. **Seed fixo do `IntegrationProvider` "iService"**: como não existe hoje
+   nenhum mecanismo de cadastro de `IntegrationProvider` (não é objetivo
+   desta ADR nem de nenhuma anterior criar um "admin de providers" no MVP),
+   o provider iService é inserido via migration com um `Guid` fixo e
+   conhecido em tempo de compilação:
+   `Atua.Api.Domain.Integrations.WellKnownIntegrationProviders.IServiceProviderId`
+   (`00000000-0000-0000-0000-0000000000e1`).
+2. **`TenantOnboardingService` passa a criar a `Integration`** referenciando
+   esse provider fixo, na mesma transação em que cria `Tenant`,
+   `TenantMembership` e associa o `TrialSubscription` — nenhuma mudança na
+   ordem de operações ou no tratamento de erro já existente.
+3. **`POST /api/tenants`** passa a retornar
+   `{ "tenantId": "uuid", "integrationId": "uuid" }` (`201 Created`),
+   substituindo o contrato anterior (`{ "tenantId": "uuid" }`). Como o
+   sistema está em MVP sem consumidores externos deste contrato além do
+   próprio frontend do Office (ainda em implementação, não em produção),
+   esta é tratada como evolução direta do contrato, não como breaking change
+   versionado.
+4. **`GET /api/users/me/tenants`** (RF-005.2, já definido nesta ADR) passa
+   também a incluir `integrationId` em cada item de `tenants[]`, cobrindo o
+   caso de um usuário que retorna ao Office em uma sessão nova e precisa
+   novamente montar a rota de credenciais sem repetir o fluxo de criação de
+   tenant.
+5. Nenhum endpoint `GET /api/tenants/{tenantId}/integrations` é criado nesta
+   emenda. Caso o MVP evolua para múltiplos providers por tenant, tal
+   endpoint deve ser desenhado em uma ADR futura, quando o requisito de
+   múltiplas integrações existir de fato.
+
+### Componentes afetados
+
+- `Atua.Api.Domain.Integrations` (nova classe estática
+  `WellKnownIntegrationProviders`);
+- `Application/Tenants/TenantOnboardingService` (cria `Integration` na
+  mesma transação; `CreateTenantResult` ganha `IntegrationId`);
+- `Endpoints/TenantEndpoints` (`CreateTenantResponse` e
+  `TenantMembershipResponse` ganham `IntegrationId`; `GetMyTenants` faz join
+  com `Integrations`);
+- nova migration EF Core de seed do `IntegrationProvider` "iService".
+
+### Impactos
+
+- Contrato de `POST /api/tenants` muda (campo adicional `integrationId`);
+  como não há consumidor em produção, não é necessário versionamento de API.
+- Contrato de `GET /api/users/me/tenants` muda (campo adicional
+  `integrationId` por item); mesma justificativa.
+- Nenhuma mudança em `AuthService`, `IRefreshTokenStore`, JWT, ou nos
+  endpoints de credenciais/validação já definidos nesta ADR.
+- Nenhuma nova tabela; apenas uma linha de seed em `integration_providers`.
+
+### Riscos
+
+- Se o MVP evoluir para múltiplos providers/integrações por tenant, o `Guid`
+  fixo de `WellKnownIntegrationProviders.IServiceProviderId` deixa de ser
+  suficiente e um endpoint de listagem real precisará ser desenhado (aceito
+  como evolução futura, não antecipado agora).
+
+### Agentes envolvidos nesta emenda
+
+- frontend-engineer (Fábio): identificou o conflito real durante a
+  implementação da UI.
+- software-architect (Sérgio): decisão e emenda desta ADR; implementação
+  mínima da mudança em `TenantOnboardingService`/`TenantEndpoints`/migration.
+- backend-engineer (Beto): deve revisar a implementação mínima já realizada
+  por Sérgio, criar/ajustar testes de integração cobrindo
+  `integrationId` na resposta de `POST /api/tenants` e de
+  `GET /api/users/me/tenants`, e gerar a migration definitiva com
+  `dotnet ef migrations` (a migration incluída nesta emenda foi escrita
+  manualmente seguindo o padrão das anteriores; deve ser validada/regenerada
+  pelo backend-engineer com o tooling do EF Core antes do deploy).
+- qa-engineer: validar que o fluxo de onboarding (criação de tenant →
+  configuração de credenciais) funciona de ponta a ponta com o
+  `integrationId` retornado automaticamente.

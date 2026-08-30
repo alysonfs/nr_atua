@@ -41,10 +41,16 @@ public static class TenantEndpoints
             .Where(membership => membership.UserId == userId)
             .Join(db.Tenants.AsNoTracking(), membership => membership.TenantId, tenant => tenant.Id,
                 (membership, tenant) => new { tenant.Id, tenant.Name, membership.Role })
+            .Join(db.Integrations.AsNoTracking(), left => left.Id, integration => integration.TenantId,
+                (left, integration) => new
+                {
+                    left.Id, left.Name, left.Role, IntegrationId = integration.Id
+                })
             .ToListAsync(cancellationToken);
 
         var tenants = memberships.Select(item =>
-            new TenantMembershipResponse(item.Id, item.Name, item.Role.ToString().ToUpperInvariant()))
+            new TenantMembershipResponse(item.Id, item.Name, item.Role.ToString().ToUpperInvariant(),
+                item.IntegrationId))
             .ToArray();
 
         Guid? defaultTenantId = tenants.Length == 1 ? tenants[0].TenantId : null;
@@ -64,7 +70,7 @@ public static class TenantEndpoints
         return result.Status switch
         {
             ECreateTenantStatus.Success => Results.Created($"/api/tenants/{result.TenantId}",
-                new CreateTenantResponse(result.TenantId!.Value)),
+                new CreateTenantResponse(result.TenantId!.Value, result.IntegrationId!.Value)),
             ECreateTenantStatus.InvalidCnpj => Results.BadRequest(new { error = "invalid_cnpj" }),
             ECreateTenantStatus.CnpjAlreadyRegistered => Results.Conflict(
                 new { error = "cnpj_already_registered" }),
@@ -132,12 +138,12 @@ public static class TenantEndpoints
         Guid.TryParse(user.FindFirstValue(type), out var value) ? value : null;
 }
 
-public sealed record TenantMembershipResponse(Guid TenantId, string Name, string Role);
+public sealed record TenantMembershipResponse(Guid TenantId, string Name, string Role, Guid IntegrationId);
 public sealed record GetMyTenantsResponse(IReadOnlyCollection<TenantMembershipResponse> Tenants,
     Guid? DefaultTenantId);
 
 public sealed record CreateTenantRequest(string Name, string Cnpj);
-public sealed record CreateTenantResponse(Guid TenantId);
+public sealed record CreateTenantResponse(Guid TenantId, Guid IntegrationId);
 
 public sealed record SetCredentialsRequest(string Username, string Password, string? BaseUrl);
 public sealed record GetCredentialsResponse(bool HasCredentials, string ValidationStatus,

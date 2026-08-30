@@ -1,4 +1,5 @@
 using Atua.Api.Domain.Billing;
+using Atua.Api.Domain.Integrations;
 using Atua.Api.Domain.Tenants;
 using Atua.Api.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -7,8 +8,9 @@ namespace Atua.Api.Application.Tenants;
 
 /// <summary>
 /// Orquestra a criação de tenant na primeira integração (RF-006/ADR-018):
-/// valida CNPJ, cria Tenant, cria TenantMembership OWNER e associa o Trial do
-/// usuário, tudo em uma única transação.
+/// valida CNPJ, cria Tenant, cria TenantMembership OWNER, cria a Integration
+/// do provedor iService (emenda "Resolução de integrationId" da ADR-018) e
+/// associa o Trial do usuário, tudo em uma única transação.
 /// </summary>
 public sealed class TenantOnboardingService(AtuaDbContext dbContext)
 {
@@ -75,6 +77,15 @@ public sealed class TenantOnboardingService(AtuaDbContext dbContext)
         dbContext.Tenants.Add(tenant);
         dbContext.TenantMemberships.Add(new TenantMembership(tenant.Id, userId, ETenantMembershipRole.Owner));
 
+        // Emenda ADR-018 ("Resolução de integrationId"): no MVP existe
+        // exatamente uma integração (iService) por tenant. A criação do
+        // Tenant já cria a Integration correspondente, para que o frontend
+        // obtenha o integrationId diretamente na resposta de POST
+        // /api/tenants, sem exigir um endpoint de listagem/descoberta.
+        var integration = new Integration(Guid.CreateVersion7(), tenant.Id,
+            WellKnownIntegrationProviders.IServiceProviderId, isEnabled: false);
+        dbContext.Integrations.Add(integration);
+
         try
         {
             trial.AssociateWithTenant(tenant.Id);
@@ -92,7 +103,7 @@ public sealed class TenantOnboardingService(AtuaDbContext dbContext)
             throw;
         }
 
-        return CreateTenantResult.Success(tenant.Id);
+        return CreateTenantResult.Success(tenant.Id, integration.Id);
     }
 
     private async Task<bool> CnpjRegisteredConcurrentlyAsync(string cnpj, CancellationToken cancellationToken) =>
@@ -108,10 +119,10 @@ public enum ECreateTenantStatus
     TrialNotFound
 }
 
-public sealed record CreateTenantResult(ECreateTenantStatus Status, Guid? TenantId)
+public sealed record CreateTenantResult(ECreateTenantStatus Status, Guid? TenantId, Guid? IntegrationId = null)
 {
-    public static CreateTenantResult Success(Guid tenantId) =>
-        new(ECreateTenantStatus.Success, tenantId);
+    public static CreateTenantResult Success(Guid tenantId, Guid integrationId) =>
+        new(ECreateTenantStatus.Success, tenantId, integrationId);
 
     public static CreateTenantResult Failure(ECreateTenantStatus status) =>
         new(status, null);
