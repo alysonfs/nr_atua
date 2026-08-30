@@ -1,6 +1,6 @@
 # RF-008 - Ativação do Agente Coletor
 
-Status: `Requisitos definidos`
+Status: `Implementado`
 
 ## Objetivo
 
@@ -164,3 +164,23 @@ segredos.
 - Agendamento recorrente.
 - Processamento de comandos Pendentes.
 - Aprovação de implementação ou validação de QA.
+
+## Gate de Aprovação Explícito para Fases Futuras
+
+O RF-008 define apenas o contrato e os limites locais da Master API. Os passos seguintes do Agente Coletor exigem **gate explícito do usuário** e portões de aprovação separados:
+
+### Próximas fases bloqueadas
+
+1. **Entrega de credenciais ao Worker**: O Worker ainda não recebe credenciais opacas vinculadas a tenant, integração e provedor. Implementar esse mecanismo exige aprovação da arquitetura e revisão de segurança.
+
+2. **Consumo de comandos pelo Worker**: Os endpoints `/api/internal/collector/commands/claim` e `/api/internal/collector/commands/{commandId}/complete` não estão implementados. O comando criado neste RF permanece inerte em estado `Pending`.
+
+3. **Acesso ao iService e coleta real**: Nenhum acesso ao provedor iService, scraping ou automação (Playwright) faz parte deste escopo. O Worker não consulta credenciais do usuário, não executa interações e não produz dados.
+
+4. **Reconciliação de elegibilidade**: A chamada a `CollectorActivationService.ReconcileEligibility` durante alteração de Trial ou credencial está documentada em ADR-020 mas permanece como prioridade para versão posterior.
+
+Qualquer implementação dessas fases deve ser precedida de:
+- Decisão arquitetural aprovada (novo ADR se necessário)
+- Aprovação explícita do product-analyst
+- Testes de segurança e isolamento de tenant
+- Validação de QA
