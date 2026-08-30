@@ -183,7 +183,7 @@ usuarios com essa permissao `ROOT` podem acessar a lista de clientes.
 Status: `Pendente`
 
 O Manager deve permitir ao superadministrador visualizar, para cada cliente,
-o plano Trial e sua validade, o resultado e instante da ultima validacao do
+o plano e sua validade, o resultado e instante da ultima validacao do
 iService e o estado atual do Agente Coletor.
 
 #### RF-016 - Gestao do plano pelo superadministrador

@@ -46,6 +46,24 @@ Decide questões relacionadas a:
 
 ---
 
+### Marca
+
+`brand-strategist`
+
+Decide questões relacionadas a:
+
+- posicionamento;
+- proposta de valor;
+- mensagens-chave;
+- tom de voz;
+- direcionamento estratégico de marca.
+
+As decisões de marca não alteram requisitos de produto, arquitetura, UI,
+aprovação de QA ou release. Quando uma decisão de marca afetar um desses
+domínios, ela deve ser coordenada pelo `orchestrator` com o responsável.
+
+---
+
 ### Arquitetura
 
 `software-architect`

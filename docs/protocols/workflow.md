@@ -77,6 +77,8 @@ Ações:
 A tarefa está sendo analisada.
 
 Dependendo do tipo da solicitação, o `orchestrator` pode solicitar a participação do `product-analyst`.
+Para iniciativas de marca, pode também delegar ao `brand-strategist` a análise
+de posicionamento, público, mensagens e tom de voz.
 
 Objetivo:
 
@@ -186,6 +188,11 @@ Podem ser atualizados:
 - decisões;
 - funcionalidades;
 - documentação técnica.
+
+Em iniciativas de marca, esta etapa pode incluir os documentos em `docs/brand/`.
+O `brand-guardian` revisa entregáveis de marca somente quando o `orchestrator`
+o definir como dependência; essa revisão não substitui a validação do
+`qa-engineer` nem cria um novo estado do workflow.
 
 ## 11. RELEASE_READY
 
