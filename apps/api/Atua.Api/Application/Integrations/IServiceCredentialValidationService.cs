@@ -17,6 +17,7 @@ public sealed class IServiceCredentialValidationService(
     ICredentialCipher cipher,
     IIServiceAuthClient authClient,
     TimeProvider timeProvider,
+    CollectorControl.CollectorActivationService collectorActivationService,
     ILogger<IServiceCredentialValidationService> logger)
 {
     public async Task<ValidateCredentialsResult?> ValidateAsync(Guid userId, Guid tenantId,
@@ -70,7 +71,25 @@ public sealed class IServiceCredentialValidationService(
 
         var now = timeProvider.GetUtcNow();
         credential.RecordValidation(status, now);
-        await dbContext.SaveChangesAsync(cancellationToken);
+
+        // ADR-020/RF-008.6: perder o estado Succeeded desativa o Agente e
+        // cancela o comando Pendente, na mesma unidade de trabalho.
+        if (dbContext.Database.IsRelational())
+        {
+            await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+            await dbContext.SaveChangesAsync(cancellationToken);
+            await collectorActivationService.ReconcileEligibilityAsync(tenantId, integrationId,
+                cancellationToken);
+            await dbContext.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+        }
+        else
+        {
+            await dbContext.SaveChangesAsync(cancellationToken);
+            await collectorActivationService.ReconcileEligibilityAsync(tenantId, integrationId,
+                cancellationToken);
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
 
         return ValidateCredentialsResult.Evaluated(status, now);
     }
