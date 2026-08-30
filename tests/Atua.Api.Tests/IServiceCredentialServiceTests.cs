@@ -1,6 +1,10 @@
+using Atua.Api.Application.Billing;
 using Atua.Api.Application.Integrations;
+using Atua.Api.Application.Integrations.CollectorControl;
+using Atua.Api.Domain.Billing;
 using Atua.Api.Domain.Identity;
 using Atua.Api.Domain.Integrations;
+using Atua.Api.Domain.Integrations.CollectorControl;
 using Atua.Api.Domain.Tenants;
 using Atua.Api.Infrastructure.Persistence;
 using Atua.Api.Infrastructure.Security;
@@ -16,7 +20,7 @@ public class IServiceCredentialServiceTests
     {
         await using var context = CreateContext();
         var (tenant, integration, owner, _) = await SeedAsync(context);
-        var service = new IServiceCredentialService(context, CreateCipher(), FixedTimeProvider(context));
+        var service = CreateCredentialService(context, CreateCipher(), FixedTimeProvider(context));
 
         var status = await service.SetCredentialsAsync(owner.Id, tenant.Id, integration.Id,
             "usuario.iservice", "senha-secreta", "https://iservice.example.com", CancellationToken.None);
@@ -38,7 +42,7 @@ public class IServiceCredentialServiceTests
     {
         await using var context = CreateContext();
         var (tenant, integration, _, admin) = await SeedAsync(context);
-        var service = new IServiceCredentialService(context, CreateCipher(), FixedTimeProvider(context));
+        var service = CreateCredentialService(context, CreateCipher(), FixedTimeProvider(context));
 
         var status = await service.SetCredentialsAsync(admin.Id, tenant.Id, integration.Id,
             "usuario", "senha", null, CancellationToken.None);
@@ -52,7 +56,7 @@ public class IServiceCredentialServiceTests
     {
         await using var context = CreateContext();
         var (tenant, integration, owner, admin) = await SeedAsync(context);
-        var service = new IServiceCredentialService(context, CreateCipher(), FixedTimeProvider(context));
+        var service = CreateCredentialService(context, CreateCipher(), FixedTimeProvider(context));
         await service.SetCredentialsAsync(owner.Id, tenant.Id, integration.Id, "usuario", "senha", null,
             CancellationToken.None);
 
@@ -67,7 +71,7 @@ public class IServiceCredentialServiceTests
     {
         await using var context = CreateContext();
         var (tenant, integration, owner, _) = await SeedAsync(context);
-        var service = new IServiceCredentialService(context, CreateCipher(), FixedTimeProvider(context));
+        var service = CreateCredentialService(context, CreateCipher(), FixedTimeProvider(context));
         await service.SetCredentialsAsync(owner.Id, tenant.Id, integration.Id, "usuario", "senha", null,
             CancellationToken.None);
 
@@ -83,6 +87,55 @@ public class IServiceCredentialServiceTests
         Assert.Null(reloaded.LastValidatedAtUtc);
     }
 
+    /// <summary>
+    /// G-1: RF-008.6/ADR-020 — trocar credencial (SetCredentialsAsync) zera o
+    /// ValidationStatus, tornando a elegibilidade falsa. O agente deve ser
+    /// desativado e o comando Pending cancelado na mesma unidade de trabalho.
+    /// </summary>
+    [Fact]
+    public async Task TrocarCredencialDesativaAgenteECancelaComandoPendente()
+    {
+        await using var context = CreateContext();
+        var (tenant, integration, owner, _) = await SeedAsync(context);
+        var cipher = CreateCipher();
+
+        // Seed: credencial com Succeeded e trial ativo para que a ativação funcione.
+        var trial = new Atua.Api.Domain.Billing.TrialSubscription(Guid.CreateVersion7(), owner.Id,
+            DateTimeOffset.UtcNow, DateTimeOffset.UtcNow.AddDays(7));
+        trial.AssociateWithTenant(tenant.Id);
+        context.TrialSubscriptions.Add(trial);
+        var credential = new Atua.Api.Domain.Integrations.IServiceCredential(Guid.CreateVersion7(),
+            tenant.Id, integration.Id, "cipher-user", "cipher-pass", null, [1], [2],
+            "cipher-key", Guid.NewGuid(), 1, DateTimeOffset.UtcNow);
+        credential.RecordValidation(EIServiceValidationStatus.Succeeded, DateTimeOffset.UtcNow);
+        context.IServiceCredentials.Add(credential);
+        await context.SaveChangesAsync();
+
+        // Ativa o agente.
+        var activationService = CreateCollectorActivationService(context);
+        var activationResult = await activationService.ActivateAsync(owner.Id, tenant.Id, integration.Id,
+            "chave-ativacao", CancellationToken.None);
+        Assert.Equal(ECollectorActivationStatusResult.Success, activationResult.Status);
+        Assert.Equal("Active", activationResult.View!.Status);
+        Assert.Single(context.ImmediateCollectionCommands);
+
+        // Substitui a credencial: ValidationStatus volta a NotValidated.
+        var credentialService = CreateCredentialService(context, cipher, FixedTimeProvider(context));
+        var setStatus = await credentialService.SetCredentialsAsync(owner.Id, tenant.Id, integration.Id,
+            "novo-usuario", "nova-senha", null, CancellationToken.None);
+        Assert.Equal(ESetCredentialsStatus.Success, setStatus);
+
+        // Agente deve estar Inactive e o comando deve ter sido cancelado com
+        // motivo CredentialNotValidated (RF-008.6).
+        var activation = await context.CollectorActivations.SingleAsync();
+        Assert.Equal(ECollectorActivationStatus.Inactive, activation.Status);
+        Assert.Equal(ECollectorDeactivationReason.CredentialNotValidated, activation.DeactivationReason);
+
+        var command = await context.ImmediateCollectionCommands.SingleAsync();
+        Assert.Equal(EImmediateCollectionCommandStatus.Cancelled, command.Status);
+        Assert.Equal(ECollectorDeactivationReason.CredentialNotValidated, command.CancellationReason);
+    }
+
     [Fact]
     public async Task UsuarioForaDoTenantNaoConsegueLerStatus()
     {
@@ -91,7 +144,7 @@ public class IServiceCredentialServiceTests
         var outsider = new User(Guid.CreateVersion7(), null, "outsider@atua.com", "hash");
         context.Users.Add(outsider);
         await context.SaveChangesAsync();
-        var service = new IServiceCredentialService(context, CreateCipher(), FixedTimeProvider(context));
+        var service = CreateCredentialService(context, CreateCipher(), FixedTimeProvider(context));
 
         var result = await service.GetStatusAsync(outsider.Id, tenant.Id, integration.Id,
             CancellationToken.None);
@@ -128,4 +181,18 @@ public class IServiceCredentialServiceTests
         }));
 
     private static TimeProvider FixedTimeProvider(AtuaDbContext _) => TimeProvider.System;
+
+    private static IServiceCredentialService CreateCredentialService(AtuaDbContext context,
+        ICredentialCipher cipher, TimeProvider timeProvider) =>
+        new(context, cipher, timeProvider, CreateCollectorActivationService(context));
+
+    /// <summary>
+    /// RF-008.6/ADR-020: gravar credencial reconcilia a ativação do coletor na
+    /// mesma unidade de trabalho.
+    /// </summary>
+    private static CollectorActivationService CreateCollectorActivationService(AtuaDbContext context) =>
+        new(context,
+            new CollectorEligibilityEvaluator(context,
+                new TrialEligibilityService(context, TimeProvider.System)),
+            TimeProvider.System);
 }

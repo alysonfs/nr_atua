@@ -1,6 +1,10 @@
+using Atua.Api.Application.Billing;
 using Atua.Api.Application.Integrations;
+using Atua.Api.Application.Integrations.CollectorControl;
+using Atua.Api.Domain.Billing;
 using Atua.Api.Domain.Identity;
 using Atua.Api.Domain.Integrations;
+using Atua.Api.Domain.Integrations.CollectorControl;
 using Atua.Api.Domain.Tenants;
 using Atua.Api.Infrastructure.Persistence;
 using Atua.Api.Infrastructure.Security;
@@ -18,7 +22,7 @@ public class IServiceCredentialValidationServiceTests
         await using var context = CreateContext();
         var (tenant, integration, owner) = await SeedAsync(context);
         var cipher = CreateCipher();
-        await new IServiceCredentialService(context, cipher, TimeProvider.System).SetCredentialsAsync(
+        await CreateCredentialService(context, cipher).SetCredentialsAsync(
             owner.Id, tenant.Id, integration.Id, "usuario", "senha-valida", null, CancellationToken.None);
 
         var service = CreateValidationService(context, cipher, new FakeIServiceAuthClient());
@@ -40,7 +44,7 @@ public class IServiceCredentialValidationServiceTests
         await using var context = CreateContext();
         var (tenant, integration, owner) = await SeedAsync(context);
         var cipher = CreateCipher();
-        await new IServiceCredentialService(context, cipher, TimeProvider.System).SetCredentialsAsync(
+        await CreateCredentialService(context, cipher).SetCredentialsAsync(
             owner.Id, tenant.Id, integration.Id, "usuario", "invalid", null, CancellationToken.None);
 
         var service = CreateValidationService(context, cipher, new FakeIServiceAuthClient());
@@ -55,7 +59,7 @@ public class IServiceCredentialValidationServiceTests
         await using var context = CreateContext();
         var (tenant, integration, owner) = await SeedAsync(context);
         var cipher = CreateCipher();
-        await new IServiceCredentialService(context, cipher, TimeProvider.System).SetCredentialsAsync(
+        await CreateCredentialService(context, cipher).SetCredentialsAsync(
             owner.Id, tenant.Id, integration.Id, "usuario", "senha-valida", null, CancellationToken.None);
 
         var service = CreateValidationService(context, cipher, new ThrowingAuthClient());
@@ -77,6 +81,57 @@ public class IServiceCredentialValidationServiceTests
         Assert.False(result!.CredentialsConfigured);
     }
 
+    /// <summary>
+    /// G-2: RF-008.6/ADR-020 — validação com resultado Failed torna a
+    /// elegibilidade falsa. O agente deve ser desativado e o comando Pending
+    /// cancelado na mesma unidade de trabalho.
+    /// </summary>
+    [Fact]
+    public async Task ValidacaoComResultadoFailedDesativaAgenteECancelaComandoPendente()
+    {
+        await using var context = CreateContext();
+        var (tenant, integration, owner) = await SeedAsync(context);
+        var cipher = CreateCipher();
+
+        // Seed: trial ativo.
+        var trial = new Atua.Api.Domain.Billing.TrialSubscription(Guid.CreateVersion7(), owner.Id,
+            DateTimeOffset.UtcNow, DateTimeOffset.UtcNow.AddDays(7));
+        trial.AssociateWithTenant(tenant.Id);
+        context.TrialSubscriptions.Add(trial);
+        await context.SaveChangesAsync();
+
+        // Cria credencial com senha válida e força ValidationStatus = Succeeded
+        // diretamente (SetCredentialsAsync zeraria o status após gravar).
+        await CreateCredentialService(context, cipher).SetCredentialsAsync(
+            owner.Id, tenant.Id, integration.Id, "usuario", "senha-valida", null, CancellationToken.None);
+        var credential = await context.IServiceCredentials.SingleAsync();
+        credential.RecordValidation(EIServiceValidationStatus.Succeeded, DateTimeOffset.UtcNow);
+        await context.SaveChangesAsync();
+
+        // Ativa o agente com credencial Succeeded e trial ativo.
+        var activationService = CreateCollectorActivationService(context);
+        var activationResult = await activationService.ActivateAsync(owner.Id, tenant.Id, integration.Id,
+            "chave-ativacao", CancellationToken.None);
+        Assert.Equal(ECollectorActivationStatusResult.Success, activationResult.Status);
+        Assert.Single(context.ImmediateCollectionCommands);
+
+        // Executa a validação com cliente que retorna Failed ("senha-valida"
+        // valida, mas o cliente fake rejeitará qualquer senha que a senha
+        // armazenada seja substituída — usamos ThrowingAuthClient para controle
+        // determinístico sem depender de internals de cifra).
+        var validationService = CreateValidationService(context, cipher, new ThrowingAuthClient());
+        await validationService.ValidateAsync(owner.Id, tenant.Id, integration.Id, CancellationToken.None);
+
+        // Agente deve estar Inactive com motivo CredentialNotValidated (RF-008.6).
+        var activation = await context.CollectorActivations.SingleAsync();
+        Assert.Equal(ECollectorActivationStatus.Inactive, activation.Status);
+        Assert.Equal(ECollectorDeactivationReason.CredentialNotValidated, activation.DeactivationReason);
+
+        var command = await context.ImmediateCollectionCommands.SingleAsync();
+        Assert.Equal(EImmediateCollectionCommandStatus.Cancelled, command.Status);
+        Assert.Equal(ECollectorDeactivationReason.CredentialNotValidated, command.CancellationReason);
+    }
+
     [Fact]
     public async Task RetornaNuloQuandoUsuarioNaoEMembro()
     {
@@ -93,10 +148,25 @@ public class IServiceCredentialValidationServiceTests
         Assert.Null(result);
     }
 
+    private static IServiceCredentialService CreateCredentialService(AtuaDbContext context,
+        ICredentialCipher cipher) =>
+        new(context, cipher, TimeProvider.System, CreateCollectorActivationService(context));
+
     private static IServiceCredentialValidationService CreateValidationService(AtuaDbContext context,
         ICredentialCipher cipher, IIServiceAuthClient authClient) =>
         new(context, cipher, authClient, TimeProvider.System,
+            CreateCollectorActivationService(context),
             NullLogger<IServiceCredentialValidationService>.Instance);
+
+    /// <summary>
+    /// RF-008.6/ADR-020: a validação reconcilia a ativação do coletor na mesma
+    /// unidade de trabalho.
+    /// </summary>
+    private static CollectorActivationService CreateCollectorActivationService(AtuaDbContext context) =>
+        new(context,
+            new CollectorEligibilityEvaluator(context,
+                new TrialEligibilityService(context, TimeProvider.System)),
+            TimeProvider.System);
 
     private static async Task<(Tenant Tenant, Atua.Api.Domain.Integrations.Integration Integration,
         User Owner)> SeedAsync(AtuaDbContext context)

@@ -13,7 +13,8 @@ namespace Atua.Api.Application.Integrations;
 public sealed class IServiceCredentialService(
     AtuaDbContext dbContext,
     ICredentialCipher cipher,
-    TimeProvider timeProvider)
+    TimeProvider timeProvider,
+    CollectorControl.CollectorActivationService collectorActivationService)
 {
     public async Task<ESetCredentialsStatus> SetCredentialsAsync(Guid userId, Guid tenantId,
         Guid integrationId, string username, string password, string? baseUrl,
@@ -70,7 +71,11 @@ public sealed class IServiceCredentialService(
                 dataKey.KmsKeyId, AlgorithmVersion, now);
         }
 
-        await dbContext.SaveChangesAsync(cancellationToken);
+        // ADR-020/RF-008.6: gravar a credencial zera o ValidationStatus
+        // (RN-006.3), o que pode tornar a elegibilidade falsa. A alteração é
+        // liberada e reconciliada na mesma unidade de trabalho, para que o
+        // Agente seja desativado e o comando Pendente cancelado.
+        await SaveWithReconciliationAsync(tenantId, integrationId, cancellationToken);
         return ESetCredentialsStatus.Success;
     }
 
@@ -99,6 +104,32 @@ public sealed class IServiceCredentialService(
             membership.Role == ETenantMembershipRole.Owner, cancellationToken);
 
     private const int AlgorithmVersion = 1;
+
+    /// <summary>
+    /// Persiste a alteração da credencial e reconcilia a ativação do coletor
+    /// na mesma transação (ADR-020/RF-008.6). A reconciliação consulta o estado
+    /// já liberado, por isso ocorre após o primeiro <c>SaveChanges</c>; o
+    /// commit só acontece quando ambas as gravações têm êxito.
+    /// </summary>
+    private async Task SaveWithReconciliationAsync(Guid tenantId, Guid integrationId,
+        CancellationToken cancellationToken)
+    {
+        if (!dbContext.Database.IsRelational())
+        {
+            await dbContext.SaveChangesAsync(cancellationToken);
+            await collectorActivationService.ReconcileEligibilityAsync(tenantId, integrationId,
+                cancellationToken);
+            await dbContext.SaveChangesAsync(cancellationToken);
+            return;
+        }
+
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        await collectorActivationService.ReconcileEligibilityAsync(tenantId, integrationId,
+            cancellationToken);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+    }
 
     private static string Pack(CipherResult cipherResult) =>
         Convert.ToBase64String(cipherResult.Nonce) + "." + Convert.ToBase64String(cipherResult.Tag) +

@@ -303,6 +303,10 @@ public class TenantEndpointsTests
         builder.Services.AddSingleton<ICredentialCipher, AesGcmCredentialCipher>();
         builder.Services.AddSingleton<IIServiceAuthClient, FakeIServiceAuthClient>();
         builder.Services.AddScoped<TenantOnboardingService>();
+        builder.Services.AddScoped<TrialEligibilityService>();
+        builder.Services.AddScoped<Atua.Api.Application.Integrations.CollectorControl.ICollectorEligibilityEvaluator,
+            Atua.Api.Application.Integrations.CollectorControl.CollectorEligibilityEvaluator>();
+        builder.Services.AddScoped<Atua.Api.Application.Integrations.CollectorControl.CollectorActivationService>();
         builder.Services.AddScoped<IServiceCredentialService>();
         builder.Services.AddScoped<IServiceCredentialValidationService>();
         builder.Services.AddAuthorization(options =>

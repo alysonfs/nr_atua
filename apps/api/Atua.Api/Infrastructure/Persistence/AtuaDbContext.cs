@@ -1,6 +1,7 @@
 using Atua.Api.Domain.Billing;
 using Atua.Api.Domain.Identity;
 using Atua.Api.Domain.Integrations;
+using Atua.Api.Domain.Integrations.CollectorControl;
 using Atua.Api.Domain.Tenants;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
@@ -29,6 +30,14 @@ public sealed class AtuaDbContext(DbContextOptions<AtuaDbContext> options) : DbC
 
     public DbSet<IServiceCredential> IServiceCredentials => Set<IServiceCredential>();
 
+    public DbSet<CollectorActivation> CollectorActivations => Set<CollectorActivation>();
+
+    public DbSet<ImmediateCollectionCommand> ImmediateCollectionCommands =>
+        Set<ImmediateCollectionCommand>();
+
+    public DbSet<CollectorControlIdempotency> CollectorControlIdempotencies =>
+        Set<CollectorControlIdempotency>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         ConfigureUser(modelBuilder.Entity<User>());
@@ -42,6 +51,9 @@ public sealed class AtuaDbContext(DbContextOptions<AtuaDbContext> options) : DbC
         ConfigureIntegrationProvider(modelBuilder.Entity<IntegrationProvider>());
         ConfigureIntegration(modelBuilder.Entity<Integration>());
         ConfigureIServiceCredential(modelBuilder.Entity<IServiceCredential>());
+        ConfigureCollectorActivation(modelBuilder.Entity<CollectorActivation>());
+        ConfigureImmediateCollectionCommand(modelBuilder.Entity<ImmediateCollectionCommand>());
+        ConfigureCollectorControlIdempotency(modelBuilder.Entity<CollectorControlIdempotency>());
     }
 
     private static void ConfigureAuthSession(EntityTypeBuilder<AuthSession> builder)
@@ -202,6 +214,74 @@ public sealed class AtuaDbContext(DbContextOptions<AtuaDbContext> options) : DbC
         builder.HasOne<Tenant>().WithMany().HasForeignKey(credential => credential.TenantId)
             .OnDelete(DeleteBehavior.Cascade);
         builder.HasOne<Integration>().WithMany().HasForeignKey(credential => credential.IntegrationId)
+            .OnDelete(DeleteBehavior.Cascade);
+    }
+
+    private static void ConfigureCollectorActivation(EntityTypeBuilder<CollectorActivation> builder)
+    {
+        builder.ToTable("collector_activations");
+        builder.HasKey(activation => activation.Id);
+        builder.Property(activation => activation.Id).ValueGeneratedNever();
+        builder.Property(activation => activation.Status).HasConversion<string>().HasMaxLength(16)
+            .IsRequired();
+        builder.Property(activation => activation.DeactivationReason).HasConversion<string>()
+            .HasMaxLength(32);
+        builder.Property(activation => activation.ConcurrencyToken).IsConcurrencyToken();
+        // ADR-020: uma ativacao por integracao.
+        builder.HasIndex(activation => activation.IntegrationId).IsUnique();
+        builder.HasIndex(activation => activation.TenantId);
+        builder.HasOne<Tenant>().WithMany().HasForeignKey(activation => activation.TenantId)
+            .OnDelete(DeleteBehavior.Cascade);
+        builder.HasOne<Integration>().WithMany().HasForeignKey(activation => activation.IntegrationId)
+            .OnDelete(DeleteBehavior.Cascade);
+    }
+
+    private static void ConfigureImmediateCollectionCommand(
+        EntityTypeBuilder<ImmediateCollectionCommand> builder)
+    {
+        builder.ToTable("immediate_collection_commands");
+        builder.HasKey(command => command.Id);
+        builder.Property(command => command.Id).ValueGeneratedNever();
+        builder.Property(command => command.Status).HasConversion<string>().HasMaxLength(16)
+            .IsRequired();
+        builder.Property(command => command.CancellationReason).HasConversion<string>()
+            .HasMaxLength(32);
+        builder.Property(command => command.ConcurrencyToken).IsConcurrencyToken();
+        builder.HasIndex(command => command.TenantId);
+        // ADR-020: indice unico parcial garante no maximo um comando Pending
+        // por integracao, inclusive sob ativacoes concorrentes (RN-008.4).
+        builder.HasIndex(command => command.IntegrationId)
+            .IsUnique()
+            .HasFilter("\"Status\" = 'Pending'")
+            .HasDatabaseName("IX_immediate_collection_commands_IntegrationId_Pending");
+        builder.HasOne<Tenant>().WithMany().HasForeignKey(command => command.TenantId)
+            .OnDelete(DeleteBehavior.Cascade);
+        builder.HasOne<Integration>().WithMany().HasForeignKey(command => command.IntegrationId)
+            .OnDelete(DeleteBehavior.Cascade);
+        builder.HasOne<IntegrationProvider>().WithMany().HasForeignKey(command => command.ProviderId)
+            .OnDelete(DeleteBehavior.Restrict);
+    }
+
+    private static void ConfigureCollectorControlIdempotency(
+        EntityTypeBuilder<CollectorControlIdempotency> builder)
+    {
+        builder.ToTable("collector_control_idempotencies");
+        builder.HasKey(record => record.Id);
+        builder.Property(record => record.Id).ValueGeneratedNever();
+        builder.Property(record => record.Operation).HasConversion<string>().HasMaxLength(16)
+            .IsRequired();
+        builder.Property(record => record.IdempotencyKey).HasMaxLength(128).IsRequired();
+        builder.Property(record => record.RequestHash).HasMaxLength(64).IsRequired();
+        builder.Property(record => record.ResponseSnapshot).IsRequired();
+        // ADR-020: unicidade (IntegrationId, Operation, IdempotencyKey).
+        builder.HasIndex(record => new
+        {
+            record.IntegrationId, record.Operation, record.IdempotencyKey
+        }).IsUnique();
+        builder.HasIndex(record => record.TenantId);
+        builder.HasOne<Tenant>().WithMany().HasForeignKey(record => record.TenantId)
+            .OnDelete(DeleteBehavior.Cascade);
+        builder.HasOne<Integration>().WithMany().HasForeignKey(record => record.IntegrationId)
             .OnDelete(DeleteBehavior.Cascade);
     }
 }
