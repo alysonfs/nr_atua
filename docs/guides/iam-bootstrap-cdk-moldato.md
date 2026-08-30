@@ -56,8 +56,13 @@ concluir a exclusão/reversão da stack ou permitir que o bootstrap a reconcilie
 ## 2. Permissão temporária para o bootstrap
 
 O administrador pode anexar temporariamente a policy abaixo **ao principal
-identificado pelo STS**, na mesma conta que receberá o bootstrap. Ela usa
-`${aws:PrincipalAccount}` e `${aws:Partition}` para não codificar ID de conta.
+identificado pelo STS**, na mesma conta que receberá o bootstrap. O IAM console
+não aceita `${aws:Partition}`/`${aws:PrincipalAccount}` como policy variables
+no campo `Resource` de policies identity-based; por isso os ARNs usam a
+partição literal `aws` e o ID de conta literal `462991286554` (conta-alvo
+`moldato`/`admin-devops`, região `sa-east-1`). Caso a policy precise ser
+reutilizada em outra conta, substitua `462991286554` pelo ID correspondente
+antes de anexar.
 O nome `AtuaCdkBootstrapExecutionPolicy` é uma policy gerenciada pelo cliente
 que o administrador deve criar previamente, com permissões de execução
 restritas (ver limites).
@@ -85,7 +90,7 @@ restritas (ver limites).
         "iam:PutRolePolicy",
         "iam:DeleteRolePolicy"
       ],
-      "Resource": "arn:${aws:Partition}:iam::${aws:PrincipalAccount}:role/cdk-hnb659fds-*"
+      "Resource": "arn:aws:iam::462991286554:role/cdk-hnb659fds-*"
     },
     {
       "Sid": "AttachOnlyRestrictedBootstrapExecutionPolicy",
@@ -95,8 +100,8 @@ restritas (ver limites).
         "iam:DetachRolePolicy"
       ],
       "Resource": [
-        "arn:${aws:Partition}:iam::${aws:PrincipalAccount}:role/cdk-hnb659fds-*",
-        "arn:${aws:Partition}:iam::${aws:PrincipalAccount}:policy/AtuaCdkBootstrapExecutionPolicy"
+        "arn:aws:iam::462991286554:role/cdk-hnb659fds-*",
+        "arn:aws:iam::462991286554:policy/AtuaCdkBootstrapExecutionPolicy"
       ]
     },
     {
@@ -131,8 +136,8 @@ restritas (ver limites).
         "s3:DeleteObjectVersion"
       ],
       "Resource": [
-        "arn:${aws:Partition}:s3:::cdk-hnb659fds-assets-*",
-        "arn:${aws:Partition}:s3:::cdk-hnb659fds-assets-*/*"
+        "arn:aws:s3:::cdk-hnb659fds-assets-*",
+        "arn:aws:s3:::cdk-hnb659fds-assets-*/*"
       ]
     },
     {
@@ -157,7 +162,7 @@ restritas (ver limites).
         "ecr:TagResource",
         "ecr:UntagResource"
       ],
-      "Resource": "arn:${aws:Partition}:ecr:sa-east-1:${aws:PrincipalAccount}:repository/cdk-hnb659fds-container-assets-*"
+      "Resource": "arn:aws:ecr:sa-east-1:462991286554:repository/cdk-hnb659fds-container-assets-*"
     },
     {
       "Sid": "ManageCdkBootstrapVersionParameter",
@@ -167,7 +172,7 @@ restritas (ver limites).
         "ssm:PutParameter",
         "ssm:DeleteParameter"
       ],
-      "Resource": "arn:${aws:Partition}:ssm:sa-east-1:${aws:PrincipalAccount}:parameter/cdk-bootstrap/hnb659fds/version"
+      "Resource": "arn:aws:ssm:sa-east-1:462991286554:parameter/cdk-bootstrap/hnb659fds/version"
     },
     {
       "Sid": "ReconcileCdkToolkit",
