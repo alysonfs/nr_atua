@@ -1,5 +1,9 @@
 # Instruções do projeto
 
+Este conjunto de agentes, skills e protocolos compõe o framework
+**Batuta**, com versionamento próprio (ver `.github/README.md`,
+`.github/VERSION` e `.github/CHANGELOG.md`).
+
 Este repositório utiliza um workflow multi-agente coordenado. Antes de
 executar qualquer tarefa de análise, arquitetura, implementação, QA,
 documentação ou release, consulte:
@@ -8,6 +12,7 @@ documentação ou release, consulte:
 - `docs/protocols/communication.md` — formato obrigatório de comunicação.
 - `docs/protocols/workflow.md` — estados e ciclo de vida da tarefa.
 - `docs/protocols/decisions.md` — quando e como registrar decisões (ADR).
+- `docs/protocols/model-and-context.md` — seleção de modelo de IA e gestão de contexto.
 
 Os agentes especializados estão definidos em `.github/agents/` (`orchestrator`,
 `product-analyst`, `software-architect`, `aws-architect`, `backend-engineer`,
