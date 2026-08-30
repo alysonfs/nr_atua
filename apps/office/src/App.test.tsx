@@ -37,6 +37,47 @@ vi.mock('./app/office/hooks/useTimezone', () => ({
   }),
 }))
 
+vi.mock('./app/office/hooks/useTenants', () => ({
+  useMyTenants: () => ({
+    tenants: [
+      { tenantId: 'tenant-1', name: 'Empresa Teste', role: 'OWNER', integrationId: 'integration-1' },
+    ],
+    defaultTenantId: 'tenant-1',
+    hasNoTenant: false,
+    requiresSelection: false,
+    isLoading: false,
+    isError: false,
+    refetch: vi.fn(),
+  }),
+  useCreateTenant: () => ({
+    createTenant: vi.fn(),
+    isSubmitting: false,
+  }),
+}))
+
+
+vi.mock('./app/office/hooks/useIServiceIntegration', () => ({
+  useIServiceCredentials: () => ({
+    status: {
+      hasCredentials: false,
+      validationStatus: 'NotValidated',
+      lastValidatedAtUtc: null,
+      updatedAtUtc: null,
+    },
+    isLoading: false,
+    isError: false,
+    refetch: vi.fn(),
+  }),
+  useSetIServiceCredentials: () => ({
+    setCredentials: vi.fn(),
+    isSubmitting: false,
+  }),
+  useValidateIServiceCredentials: () => ({
+    validate: vi.fn(),
+    isValidating: false,
+  }),
+}))
+
 describe('App', () => {
   it('renders the Trial and timezone preference sections', () => {
     render(<App />)
@@ -45,5 +86,17 @@ describe('App', () => {
     expect(screen.getByText('Trial Ativo')).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Preferências' })).toBeInTheDocument()
     expect(screen.getByText('Fuso Horário')).toBeInTheDocument()
+  })
+
+  it('renderiza o painel de integração com o iService usando o integrationId real vindo do backend (BUG-RF006-001)', () => {
+    render(<App />)
+
+    expect(
+      screen.getByRole('heading', { name: 'Integração com o iService' }),
+    ).toBeInTheDocument()
+    // O painel só é renderizado quando há tenantId + integrationId reais
+    // (sem mock de useIServiceIntegrationId), confirmando que App.tsx
+    // deriva o integrationId de useMyTenants().
+    expect(screen.queryByText('Preparando a configuração da integração...')).not.toBeInTheDocument()
   })
 })
