@@ -1,6 +1,7 @@
 ---
 name: frontend-engineer
 description: Implementa, testa e mantém o frontend da aplicação conforme requisitos e arquitetura definidos.
+model: claude-sonnet-4.6
 tools:
   - search
   - read

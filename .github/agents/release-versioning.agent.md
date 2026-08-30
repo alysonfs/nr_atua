@@ -1,6 +1,7 @@
 ---
 name: release-versioning
 description: Gerencia versionamento, changelog, commits, releases e preparação da entrega após aprovação do QA.
+model: claude-haiku-4.5
 tools:
   - search
   - read

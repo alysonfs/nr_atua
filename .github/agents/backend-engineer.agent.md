@@ -1,6 +1,7 @@
 ---
 name: backend-engineer
 description: Implementa, testa e mantém o backend da aplicação conforme requisitos e arquitetura definidos.
+model: claude-sonnet-4.6
 tools:
   - search
   - read

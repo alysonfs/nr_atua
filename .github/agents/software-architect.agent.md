@@ -2,6 +2,7 @@
 
 name: software-architect
 description: Define a arquitetura de software, decisões técnicas de alto nível e limites entre componentes do sistema.
+model: claude-sonnet-4.6
 tools:
   - search
   - read
