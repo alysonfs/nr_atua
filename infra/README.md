@@ -5,10 +5,41 @@ do MVP do ATUA, conforme `docs/decisions/ADR-012-mongodb-atlas-free-tier.md`
 e as decisões de ciclo de vida registradas nas conversas com o
 `orchestrator` (Plano v3: destroy+recreate como padrão de "desligar").
 
-**Nenhum recurso foi criado na AWS a partir deste código ainda.** Toda
-execução real (`cdk deploy`, `cdk bootstrap`, `make up`, `make down`,
-scripts de RDS) requer aprovação explícita e credenciais AWS configuradas
+> **Estado atual: PROVISIONADO.** Em **2026-08-30** o ambiente foi
+> efetivamente criado na conta **462991286554**, região **`sa-east-1`**,
+> usando o perfil **`moldato`**. O bootstrap do CDK está concluído e as
+> stacks Network/Data/Compute e o RDS estão implantados.
+>
+> Os IDs reais dos recursos, as decisões de custo e o **débito técnico
+> crítico da execution role** estão em
+> [`docs/architecture/aws-ambiente-mvp.md`](../docs/architecture/aws-ambiente-mvp.md).
+
+Toda execução real (`cdk deploy`, `make up`, `make down`, scripts de RDS)
+continua exigindo aprovação explícita e o perfil `moldato` configurado
 localmente por quem for executar.
+
+---
+
+## 0. Operação diária
+
+```bash
+cd infra
+
+AWS_PROFILE=moldato make up      # sobe o ambiente para trabalhar
+AWS_PROFILE=moldato make status  # confere o que está no ar agora
+AWS_PROFILE=moldato make down    # DESLIGA ao fim do dia
+```
+
+- `make up` — implanta Network + Data (idempotentes), restaura o RDS do
+  snapshot mais recente e cria as 2 EC2. Os IDs e IPs públicos das
+  instâncias **mudam a cada ciclo** (não há Elastic IP).
+- `make down` — destrói EC2 + EBS e o RDS (gerando um **snapshot final**).
+  Preserva Network, S3 e Secrets. Custo residual: **~US$ 1,20/mês**.
+- `make destroy` — remove também Network e Data (S3/Secrets ficam retidos
+  por `RemovalPolicy`).
+
+⚠️ **`make down` ao fim do dia não é opcional.** Ver a tabela de custos em
+§4: o padrão de uso projetado já excede o budget de US$ 5/mês configurado.
 
 ---
 
@@ -16,10 +47,10 @@ localmente por quem for executar.
 
 | Stack / recurso   | Ciclo de vida | Conteúdo | Custo aproximado |
 |---|---|---|---|
-| `AtuaNetworkStack` | Persistente (nunca precisa ser destruída) | VPC, subnets públicas/privadas isoladas, Internet Gateway, 3 Security Groups (API, RDS, Collector), Key Pair `atua-mvp-key` | US$ 0/mês |
-| `AtuaDataStack`    | Persistente (só remove com `destroy-all-data`) | S3 (`frontends`, `backups`, `releases`), Secrets Manager (3 placeholders, sem valores reais em código) | ~US$ 1,20-1,80/mês |
-| `AtuaComputeStack` | **Efêmero** (destruído/recriado a cada ciclo down/up) | EC2 t3.micro `atua-api-master` (API Master, com bootstrap real) **+** EC2 t3.micro `atua-collector-base` (apenas SO+rede, sem nenhuma lógica de coleta) | US$ 0/mês dentro do Free Tier (⚠️ ver risco no §4) |
-| RDS PostgreSQL     | **Semi-efêmero, gerenciado FORA do CDK** (ver §2) | `atua-postgres-mvp` (db.t3.micro) | US$ 0/mês dentro do Free Tier; ~centavos/mês quando "down" (snapshot) |
+| `AtuaNetworkStack` | Persistente (nunca precisa ser destruída) | VPC, subnet pública, subnets isoladas, Internet Gateway, **sem NAT Gateway**, 3 Security Groups (API, RDS, Collector), Key Pair `atua-mvp-key` | US$ 0/mês |
+| `AtuaDataStack`    | Persistente (só remove com `destroy-all-data`) | S3 (`frontends`, `backups`, `releases`), Secrets Manager (3 secrets, sem valores em código) | ~US$ 1,20/mês (3 × US$ 0,40) |
+| `AtuaComputeStack` | **Efêmero** (destruído/recriado a cada ciclo down/up) | EC2 t3.micro `atua-api-master` (API Master, com bootstrap real) **+** EC2 t3.micro `atua-collector-base` (apenas SO+rede, sem nenhuma lógica de coleta) | ~US$ 0,079/h fora do Free Tier (⚠️ ver §4) |
+| RDS PostgreSQL     | **Semi-efêmero, gerenciado FORA do CDK** (ver §2) | `atua-postgres-mvp` (PostgreSQL 16.13, db.t3.micro, 20GB gp2, Single-AZ, encriptado, retenção de backup 1 dia) | incluído na linha acima; ~centavos/mês quando "down" (snapshot) |
 
 **Confirmação final do usuário (nesta sessão)**: a instância `atua-collector-base`
 nasce e morre junto com a API Master no mesmo ciclo `up`/`down`. Ela **NÃO
@@ -92,27 +123,40 @@ destroy-all-data  -> Somente MongoDB Atlas (externo à AWS, não é afetado)
 
 ## 4. Custo esperado por estado
 
-| Estado | Custo aproximado/mês |
+Valores apurados após o provisionamento de 2026-08-30.
+
+| Estado | Custo |
 |---|---|
-| Ligado (`up`, dentro do Free Tier) | ~US$ 1,70 – 3,21 (Secrets Manager + S3; sem domínio/Route53) |
-| Desligado (`down`) | ~US$ 1,20 – 1,21 (Secrets Manager + storage do snapshot RDS, poucos centavos) |
-| Destruído (`destroy`) | ~US$ 1,20 (S3 + Secrets retidos) |
+| Ligado (`up`), **fora** do Free Tier | **~US$ 0,079/h** — ~US$ 0,64/dia em 8h; ~US$ 1,89/dia em 24h |
+| Ligado (`up`), **dentro** do Free Tier | custo incremental ~US$ 0 (ver ⚠️ abaixo) |
+| Desligado (`down`) | **~US$ 1,20/mês** (3 secrets × US$ 0,40 + S3 + snapshot RDS) |
+| Destruído (`destroy`) | ~US$ 1,20/mês (S3 + Secrets retidos) |
 | Destruído total (`destroy-all-data`) | ~US$ 0 |
 
-⚠️ **Risco de custo confirmado e aceito nesta sessão**: como
-`atua-collector-base` agora nasce junto com `atua-api-master` no mesmo
-ciclo `up`/`down`, as **duas** instâncias t3.micro rodam simultaneamente.
-O Free Tier de EC2 concede 750h/mês **combinadas** por conta (não por
-instância) — rodar as duas 24/7 consome ~1.460h/mês, ~710h acima do Free
-Tier. Isso pode gerar um custo extra estimado em **~US$ 8-9/mês**, não
-incluído nos números acima nem no ADR-012 original. Se o padrão de uso for
-"liga/desliga" (não 24/7 contínuo), esse excedente tende a ser bem menor
-ou nulo — mas deve ser monitorado via Cost Explorer sob demanda.
+⚠️ **Consumo dobrado do Free Tier de EC2**: as **duas** instâncias t3.micro
+sobem juntas no mesmo ciclo `up`/`down`. O Free Tier concede 750h/mês
+**combinadas** por conta (não por instância), então 2 instâncias consomem a
+cota em dobro — rodando 24/7, ela se **esgota em ~15 dias** e o restante do
+mês é cobrado a preço cheio.
+
+⚠️ **Alerta de orçamento**: o budget configurado é de **US$ 5/mês**
+("Five-Spend Budget", alerta em 80% do previsto). Com uso de **8h/dia útil
+fora do Free Tier**, o custo projetado é de **~US$ 14/mês**, que **excede o
+budget**. Mitigação imediata: disciplina de `make down` (§0). A revisão do
+valor do budget, ou a decisão de não subir a instância Collector enquanto
+ela não tiver função, cabe ao `orchestrator`.
+
+⚠️ **Restrição do Free Tier no RDS**: a conta está no Free Tier plan, que
+rejeitou `--backup-retention-period 7` com `FreeTierRestrictionError`. A
+retenção foi ajustada para **1 dia** (commit `ba2583a`). O RPO de PITR cai de
+7 para 1 dia; mitigado porque `make down` gera um snapshot final, que
+persiste independentemente da janela de retenção automática.
 
 Não incluídos nesta entrega (removidos/decididos pelo orchestrator):
 RDS Proxy, KMS CMK dedicada (usa chaves gerenciadas padrão `aws/rds` e
 `aws/secretsmanager`), domínio/Route53, Elastic IP (IP público dinâmico
-aceito).
+aceito), NAT Gateway (`natGateways: 0` — decisão de custo; as subnets
+privadas são isoladas, sem saída para a internet).
 
 ---
 
@@ -163,39 +207,47 @@ primeiro `make up`: isso busca o valor na SSM e salva localmente em
 
 ---
 
-## 8. O que falta para autorizar a execução real
+## 8. Pré-requisitos de execução — estado em 2026-08-30
 
-1. **Credenciais AWS configuradas** localmente, em um **perfil dedicado ao
-   projeto ATUA** (não usar os perfis já presentes na máquina para outros
-   clientes/projetos — ver nota de segurança abaixo), com permissão para
-   criar VPC/EC2/RDS/S3/Secrets/IAM na conta e região `sa-east-1`.
-2. `make bootstrap-cdk` — preparar a conta para assets do CDK (1x, custo
-   desprezível, cria só um bucket S3 interno do CDK).
-3. A regra de SSH (porta 22) do `sgApi` está restrita ao IP autorizado do
-   operador (`186.236.211.36/32`) em `lib/atua-network-stack.ts`.
-4. **Alerta de orçamento (Billing Alert)** configurado na conta AWS pelo
-   usuário — este arquiteto não cria alarmes de CloudWatch customizados
-   (restrição vigente), mas recomenda fortemente que o usuário configure
-   o alerta de billing padrão do AWS Billing Console antes do primeiro
-   `make up`, especialmente por causa do risco de Free Tier compartilhado
-   descrito em §4.
-5. **Confirmação final explícita do usuário**: "pode rodar `make up`" —
-   nenhum destes scripts deve ser executado sem esse sinal verde direto,
-   mesmo estando o código pronto e sintetizado com sucesso.
-6. (Opcional, mais tarde) Publicar o primeiro artefato de deploy em
-   `s3://atua-<account-id>-releases/latest/` — sem isso, a API sobe sem
-   processo de aplicação rodando (apenas SO + runtime prontos).
+1. ✅ **Credenciais AWS**: perfil dedicado **`moldato`** (usuário IAM
+   `admin-devops`, grupo `admin-devops` com `PowerUserAccess`), conta
+   `462991286554`, região `sa-east-1`. Use sempre `AWS_PROFILE=moldato`.
+2. ✅ **`make bootstrap-cdk`**: concluído. Stack `CDKToolkit` em
+   `CREATE_COMPLETE`, parâmetro `/cdk-bootstrap/hnb659fds/version` = `32`.
+   Foi necessário criar a customer managed policy
+   `AtuaCdkBootstrapExecutionPolicy` e anexá-la ao usuário, porque
+   `PowerUserAccess` exclui `iam:*` via `NotAction`. A policy **permanece
+   anexada** para permitir reruns.
+3. ✅ **SSH restrito** ao IP autorizado do operador (`186.236.211.36/32`)
+   em `lib/atua-network-stack.ts`.
+4. ✅ **Budget configurado**: "Five-Spend Budget", US$ 5/mês, alerta em 80%
+   do previsto. ⚠️ Ver o alerta de estouro de orçamento em §4.
+5. ✅ **Provisionamento executado** com autorização explícita do usuário.
+6. ⬜ **Pendente**: publicar o primeiro artefato de deploy em
+   `s3://atua-462991286554-releases/latest/`. Sem isso, a API sobe com
+   SO + runtime prontos, mas sem processo de aplicação rodando.
+
+### ⚠️ Débito técnico crítico em aberto
+
+A role `cdk-hnb659fds-cfn-exec-role-462991286554-sa-east-1` ficou com
+**`AdministratorAccess`** — padrão do CDK quando `cdk bootstrap` roda sem
+`--cloudformation-execution-policies`. Aceito conscientemente pelo
+`orchestrator` durante o MVP, por ser infra descartável e **sem dados de
+cliente**.
+
+**Deve ser substituída por uma execution policy restrita, derivada de
+`make synth`, antes de qualquer uso com dados reais de clientes.** Detalhes
+em [`docs/architecture/aws-ambiente-mvp.md`](../docs/architecture/aws-ambiente-mvp.md) §1.2.
 
 ### Nota de segurança sobre credenciais
 
-Durante a validação desta entrega, foi identificado que a máquina onde
-este código está sendo desenvolvido já tem credenciais AWS reais
-configuradas (`~/.aws/credentials`), associadas a **outros
-projetos/clientes**, não relacionadas ao ATUA. Antes de qualquer execução
-real, configure um perfil AWS **separado e dedicado** a este projeto
-(ex.: `aws configure --profile atua-mvp`) e use `AWS_PROFILE=atua-mvp` ao
-rodar os comandos deste `Makefile`, para evitar qualquer risco de tocar
-recursos de outra conta/cliente.
+A máquina de desenvolvimento tem credenciais AWS de **outros
+projetos/clientes** em `~/.aws/credentials`. Sempre passe
+`AWS_PROFILE=moldato` explicitamente ao rodar os comandos deste `Makefile`,
+para evitar tocar recursos de outra conta.
+
+Nunca registre em documentação, commits ou issues: valores de secrets,
+senhas do RDS ou o material privado do Key Pair. Apenas nomes e ARNs.
 
 ---
 
@@ -204,5 +256,9 @@ recursos de outra conta/cliente.
 - `docs/decisions/ADR-012-mongodb-atlas-free-tier.md`
 - `docs/decisions/DECISAO_FINAL_ADR012_APROVADA.md`
 - `docs/decisions/ADR-008-data-retention-backup-strategy.md`
+- [`docs/architecture/aws-ambiente-mvp.md`](../docs/architecture/aws-ambiente-mvp.md)
+  — estado real do ambiente provisionado, IDs dos recursos e débitos técnicos
+- [`docs/guides/iam-bootstrap-cdk-moldato.md`](../docs/guides/iam-bootstrap-cdk-moldato.md)
+  — permissões e recuperação do `cdk bootstrap`
 - Histórico de decisões do Plano v3 (destroy+recreate) — registrado nas
   conversas do `orchestrator` com o `aws-architect` nesta sessão.
