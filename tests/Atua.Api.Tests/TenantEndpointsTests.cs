@@ -75,6 +75,53 @@ public class TenantEndpointsTests
     }
 
     [Fact]
+    public async Task PostTenantsRetornaIntegrationIdValidoNaoNulo()
+    {
+        // Emenda ADR-018 ("Resolução de integrationId"): POST /api/tenants
+        // deve retornar o integrationId da Integration iService criada
+        // automaticamente, permitindo ao frontend montar a rota de
+        // credenciais sem um endpoint de descoberta.
+        var (app, databaseName) = await CreateApplicationAsync();
+        await using var appDisposable = app;
+        var userId = Guid.CreateVersion7();
+        await SeedUserWithTrialAsync(databaseName, userId);
+        var client = CreateAuthenticatedClient(app, userId);
+
+        var response = await client.PostAsJsonAsync("/api/tenants",
+            new CreateTenantRequest("Atua Refrigeração", "11122233000183"));
+        var body = await response.Content.ReadFromJsonAsync<CreateTenantResponse>();
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        Assert.NotNull(body);
+        Assert.NotEqual(Guid.Empty, body!.IntegrationId);
+
+        await using var context = CreateContext(databaseName);
+        var integration = await context.Integrations.SingleAsync(item => item.Id == body.IntegrationId);
+        Assert.Equal(body.TenantId, integration.TenantId);
+        Assert.False(integration.IsEnabled);
+    }
+
+    [Fact]
+    public async Task GetMyTenantsRetornaIntegrationIdCorretamente()
+    {
+        // Emenda ADR-018 ("Resolução de integrationId"): GET
+        // /api/users/me/tenants deve incluir o integrationId de cada
+        // tenant, cobrindo o caso de uma sessão nova sem repetir onboarding.
+        var (app, databaseName) = await CreateApplicationAsync();
+        await using var appDisposable = app;
+        var (tenantId, integrationId, ownerId) = await SeedTenantWithIntegrationAsync(databaseName);
+        var client = CreateAuthenticatedClient(app, ownerId);
+
+        var response = await client.GetAsync("/api/users/me/tenants");
+        var body = await response.Content.ReadFromJsonAsync<GetMyTenantsResponse>();
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var tenant = Assert.Single(body!.Tenants);
+        Assert.Equal(tenantId, tenant.TenantId);
+        Assert.Equal(integrationId, tenant.IntegrationId);
+    }
+
+    [Fact]
     public async Task PostTenantsRetorna409QuandoCnpjJaRegistrado()
     {
         var (app, databaseName) = await CreateApplicationAsync();
@@ -218,7 +265,11 @@ public class TenantEndpointsTests
         await using var context = CreateContext(databaseName);
         var tenant = new Tenant(Guid.CreateVersion7(), "Atua", "11122233000183", "America/Sao_Paulo");
         var user = new User(userId, null, "user@atua.com", "hash");
-        context.AddRange(tenant, user);
+        var provider = new IntegrationProvider(Guid.CreateVersion7(), "iService", "Fabricante",
+            new Uri("https://provider.example.com"), true);
+        var integration = new Atua.Api.Domain.Integrations.Integration(Guid.CreateVersion7(), tenant.Id,
+            provider.Id, false);
+        context.AddRange(tenant, user, provider, integration);
         context.TenantMemberships.Add(new TenantMembership(tenant.Id, userId, role));
         await context.SaveChangesAsync();
     }

@@ -1,6 +1,7 @@
 using Atua.Api.Application.Tenants;
 using Atua.Api.Domain.Billing;
 using Atua.Api.Domain.Identity;
+using Atua.Api.Domain.Integrations;
 using Atua.Api.Domain.Tenants;
 using Atua.Api.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -33,6 +34,34 @@ public class TenantOnboardingServiceTests
 
         var persistedTrial = await context.TrialSubscriptions.SingleAsync();
         Assert.Equal(result.TenantId, persistedTrial.TenantId);
+    }
+
+    [Fact]
+    public async Task CriaIntegrationIServiceDesabilitadaAoCriarTenant()
+    {
+        // Emenda ADR-018 ("Resolução de integrationId"): a criação do Tenant
+        // deve criar automaticamente a Integration do provedor iService,
+        // não habilitada por padrão (RF-008/ativação do coletor fora de
+        // escopo do MVP).
+        await using var context = CreateContext();
+        var user = new User(Guid.CreateVersion7(), null, "owner@atua.com", "hash");
+        context.Users.Add(user);
+        context.TrialSubscriptions.Add(new TrialSubscription(Guid.CreateVersion7(), user.Id,
+            DateTimeOffset.UtcNow, DateTimeOffset.UtcNow.AddDays(7)));
+        await context.SaveChangesAsync();
+
+        var result = await new TenantOnboardingService(context).ExecuteAsync(user.Id, "Atua Refrigeração",
+            "11122233000183", CancellationToken.None);
+
+        Assert.Equal(ECreateTenantStatus.Success, result.Status);
+        Assert.NotNull(result.IntegrationId);
+        Assert.NotEqual(Guid.Empty, result.IntegrationId!.Value);
+
+        var integration = await context.Integrations.SingleAsync();
+        Assert.Equal(result.IntegrationId, integration.Id);
+        Assert.Equal(result.TenantId, integration.TenantId);
+        Assert.Equal(WellKnownIntegrationProviders.IServiceProviderId, integration.ProviderId);
+        Assert.False(integration.IsEnabled);
     }
 
     [Fact]
