@@ -1,6 +1,8 @@
 import * as cdk from 'aws-cdk-lib';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as iam from 'aws-cdk-lib/aws-iam';
+import * as kms from 'aws-cdk-lib/aws-kms';
+import * as ssm from 'aws-cdk-lib/aws-ssm';
 import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 import { Construct } from 'constructs';
 
@@ -53,10 +55,98 @@ export class AtuaDataStack extends cdk.Stack {
   public readonly mongoSecret: secretsmanager.Secret;
   public readonly appSecret: secretsmanager.Secret;
 
+  /**
+   * CMK para cifragem de credenciais de integração (DEK envelope).
+   * Uma chave por ambiente (não por tenant — o isolamento por tenant vem
+   * da DEK por integração, que já existe no código da aplicação).
+   * removalPolicy: RETAIN — obrigatório. Perder a CMK = perder TODAS as
+   * credenciais cifradas de forma irreversível.
+   */
+  public readonly credentialCipherKey: kms.Key;
+
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
 
     const accountId = cdk.Stack.of(this).account;
+
+    // ================================================================
+    // CMK — Credential Cipher Key (D9)
+    // ================================================================
+    // Uma chave simétrica por ambiente. Usada para envelope encryption:
+    // a API gera uma DEK por integração, cifra-a com esta CMK (GenerateDataKey),
+    // e persiste apenas a DEK cifrada. Para decifrar, chama Decrypt.
+    // O Worker/Collector NÃO recebe nenhuma permissão KMS (Variante B aprovada).
+    //
+    // Por que na DataStack e não em stack separada:
+    //  - A CMK é um dado persistente, tal como secrets e buckets — deve
+    //    sobreviver a qualquer ciclo down/destroy/up.
+    //  - removalPolicy: RETAIN é mandatório: sem a CMK, todas as credenciais
+    //    cifradas tornam-se irrecuperáveis.
+    //  - Criar stack de segurança separada adicionaria overhead de deploy
+    //    sem benefício no MVP (único ambiente, sem isolamento de conta).
+    //  - A dependência compute → data já existe, então a CMK é visível à
+    //    ComputeStack sem criar dependências circulares.
+    //
+    // Custo: ~US$1,00/mês (1 CMK × US$1,00) + US$0,03/10.000 chamadas API.
+    this.credentialCipherKey = new kms.Key(this, 'CredentialCipherKey', {
+      description: 'CMK para envelope encryption de credenciais de integração (DEK por tenant). NÃO DESTRUIR.',
+      enableKeyRotation: true, // rotação automática anual — AWS gera novo material, mantém versões anteriores para decrypt
+      removalPolicy: cdk.RemovalPolicy.RETAIN, // OBRIGATÓRIO — perder = perder todas as credenciais cifradas irreversivelmente
+      // Alias NÃO declarado aqui. O CDK cria o AWS::KMS::Alias como recurso
+      // separado, mas ele NÃO herda o removalPolicy da chave — padrão CFN é Delete.
+      // Num ciclo destroy+up o alias seria deletado enquanto a chave persiste,
+      // e o próximo `cdk deploy` falharia com AlreadyExistsException (se a chave
+      // retida ainda tiver o alias apontando para ela no KMS) ou deixaria o alias
+      // órfão (se deletado). O alias é criado abaixo via `addAlias` com RETAIN
+      // aplicado explicitamente no CfnAlias.
+    });
+
+    // Alias com removalPolicy: RETAIN explícito no recurso CloudFormation.
+    // `key.addAlias()` retorna um `kms.Alias` construído como filho da chave —
+    // seu `node.defaultChild` é o `CfnAlias`, e é nele que aplicamos o RETAIN.
+    // Isso garante que num ciclo `cdk destroy AtuaDataStack` + `cdk deploy`:
+    //  1. A chave é retida (DeletionPolicy: Retain na CfnKey).
+    //  2. O alias também é retido (DeletionPolicy: Retain no CfnAlias).
+    //  3. O próximo deploy encontra o alias já existente e não tenta recriá-lo
+    //     (CDK detecta o recurso físico existente via describe-key/list-aliases).
+    // Comportamento esperado se o alias sobrar sem stack:
+    //  - O alias "solto" no KMS ainda aponta para a chave retida.
+    //  - O próximo `cdk deploy AtuaDataStack` re-adota o recurso existente
+    //    sem AlreadyExistsException, porque o CDK usa o mesmo logical ID
+    //    (derivado de 'CredentialCipherKey/Alias/Resource') e encontra o
+    //    recurso físico `alias/atua-credential-cipher-dev-mvp` já presente.
+    const credentialCipherKeyAlias = this.credentialCipherKey.addAlias('alias/atua-credential-cipher-dev-mvp');
+    const cfnAlias = credentialCipherKeyAlias.node.defaultChild as kms.CfnAlias;
+    cfnAlias.applyRemovalPolicy(cdk.RemovalPolicy.RETAIN);
+
+    // SSM Parameter Standard (gratuito) com o ARN da CMK.
+    // O ARN não é segredo — é apenas o identificador público da chave.
+    // A aplicação lê este parâmetro no boot via user-data e o injeta como
+    // variável de ambiente ATUA_KMS_KEY_ARN.
+    // Alternativas consideradas e descartadas:
+    //  - Novo Secret: US$0,40/mês extra sem necessidade (ARN não é dado sensível).
+    //  - Hardcode no user-data: quebraria se a chave fosse recriada (RETAIN impede,
+    //    mas seria má prática mesmo assim).
+    //  - Variável de ambiente direto no user-data CDK: o ARN é token resolvido
+    //    em deploy time, então funciona — mas SSM documenta o valor na AWS Console
+    //    e facilita auditoria.
+    new ssm.StringParameter(this, 'CredentialCipherKeyArnParam', {
+      parameterName: '/atua/dev-mvp/kms/credential-cipher-key-arn',
+      stringValue: this.credentialCipherKey.keyArn,
+      description: 'ARN da CMK usada para envelope encryption de credenciais de integração (D9). Não é segredo.',
+      tier: ssm.ParameterTier.STANDARD, // gratuito
+    });
+
+    new cdk.CfnOutput(this, 'CredentialCipherKeyArn', {
+      exportName: 'AtuaCredentialCipherKeyArn',
+      value: this.credentialCipherKey.keyArn,
+      description: 'ARN da CMK de cifragem de credenciais (D9)',
+    });
+
+    new cdk.CfnOutput(this, 'CredentialCipherKeyAlias', {
+      value: 'alias/atua-credential-cipher-dev-mvp',
+      description: 'Alias da CMK de cifragem de credenciais (D9)',
+    });
 
     // --- S3: frontends (estático, leitura pública apenas dos objetos publicados) ---
     this.frontendsBucket = new s3.Bucket(this, 'FrontendsBucket', {

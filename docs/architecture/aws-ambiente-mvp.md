@@ -207,13 +207,54 @@ Os alvos estão definidos em `infra/Makefile`. Cada um executa:
 > endpoints com credenciais e chaves privadas **nunca** devem ser registrados
 > em documentação, commits ou issues.
 
+### 5.2 CMK — Credential Cipher Key (D9)
+
+**Status:** Implementado (2026-08-30).
+
+| Atributo | Valor |
+|---|---|
+| Key ID | `93ad01dc-9907-41ba-a926-5f6f17f3c3da` |
+| Alias | `alias/atua-credential-cipher-dev-mvp` |
+| ARN | `arn:aws:kms:sa-east-1:462991286554:key/93ad01dc-9907-41ba-a926-5f6f17f3c3da` |
+| Tipo | Simétrica (`ENCRYPT_DECRYPT`, `AWS_KMS`) |
+| Estado | `Enabled` |
+| Rotação automática | `true` — anual (365 dias), próxima: 2027-08-30 |
+| `removalPolicy` | `RETAIN` — **obrigatório**, nunca destruir |
+| Stack | `AtuaDataStack` (dado persistente, sobrevive a `down`/`destroy`) |
+
+**Modelo de uso (envelope encryption):**
+
+- A API gera uma DEK por integração via `kms:GenerateDataKey`.
+- A DEK em texto claro cifra a credencial; só a DEK cifrada é persistida.
+- Para decifrar, a API chama `kms:Decrypt` com a DEK cifrada.
+- O isolamento por tenant vem da **DEK por integração** (no código da aplicação), não de uma CMK por tenant.
+
+**Permissões IAM:**
+
+| Role | Permissões KMS |
+|---|---|
+| `atua-api-ec2-role` | `kms:GenerateDataKey`, `kms:Decrypt`, `kms:DescribeKey` (apenas nesta CMK) |
+| `atua-collector-ec2-role` | **Nenhuma** — Variante B aprovada |
+
+**Identificador em runtime:**
+
+O ARN da CMK é armazenado em SSM Parameter Standard (gratuito):
+`/atua/dev-mvp/kms/credential-cipher-key-arn`
+
+O user-data da instância da API lê este parâmetro no boot e injeta como
+variável de ambiente `ATUA_KMS_KEY_ARN` em `/etc/environment`.
+
+**SSM Parameter Standard** foi escolhido em vez de um novo Secret porque o ARN
+da CMK não é dado sensível (não é a chave em si). Custo: US$0 vs US$0,40/mês
+de um Secret adicional.
+
 ---
 
 ## 6. Custos observados
 
 | Estado | Custo |
 |---|---|
-| Infra parada (`down`: Network + S3 + Secrets) | **~US$ 1,20/mês** — dominado por 3 secrets × US$ 0,40 |
+| Infra parada (`down`: Network + S3 + Secrets + CMK) | **~US$ 2,20/mês** — 3 secrets × US$ 0,40 + 1 CMK × US$ 1,00 |
 | Infra ligada (`up`), fora do Free Tier | **~US$ 0,079/h** |
 | Ligada 8h/dia útil | ~US$ 0,64/dia |
 | Ligada 24h/dia | ~US$ 1,89/dia |
@@ -228,6 +269,9 @@ Dentro do Free Tier, o custo **incremental** de ligar a infra é ~0. Porém:
 
 O budget configurado pelo usuário é de **US$ 5/mês** ("Five-Spend Budget",
 alerta em 80% do previsto).
+
+O custo fixo da infra parada é agora **~US$ 2,20/mês** (3 secrets + 1 CMK),
+consumindo 44% do budget só com recursos permanentes.
 
 Com um padrão de uso de **8h/dia útil fora do Free Tier**, o custo projetado
 é de **~US$ 14/mês**, o que **excede o budget em quase 3×**.

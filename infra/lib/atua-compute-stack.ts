@@ -1,6 +1,7 @@
 import * as cdk from 'aws-cdk-lib';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as iam from 'aws-cdk-lib/aws-iam';
+import * as kms from 'aws-cdk-lib/aws-kms';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 import { Construct } from 'constructs';
@@ -15,6 +16,12 @@ export interface AtuaComputeStackProps extends cdk.StackProps {
   appSecret: secretsmanager.ISecret;
   /** Key Pair dedicado do projeto, criado na AtuaNetworkStack. */
   keyPair: ec2.IKeyPair;
+  /**
+   * CMK para envelope encryption de credenciais de integração (D9).
+   * Concedida à apiRole com as 3 ações mínimas necessárias.
+   * A collectorRole NÃO recebe nenhuma permissão desta chave.
+   */
+  credentialCipherKey: kms.IKey;
 }
 
 /**
@@ -93,6 +100,33 @@ export class AtuaComputeStack extends cdk.Stack {
       }),
     );
 
+    // KMS (D9 — Variante B aprovada): exatamente 3 ações, apenas nesta CMK.
+    // GenerateDataKey: gerar DEK por integração (envelope encryption).
+    // Decrypt: desembrulhar DEK cifrada para uso em runtime.
+    // DescribeKey: verificar metadados da chave (alias, estado, rotação).
+    // A collectorRole NÃO recebe nenhuma permissão KMS — verificado explicitamente abaixo.
+    apiRole.addToPolicy(
+      new iam.PolicyStatement({
+        sid: 'KmsCredentialCipher',
+        effect: iam.Effect.ALLOW,
+        actions: ['kms:GenerateDataKey', 'kms:Decrypt', 'kms:DescribeKey'],
+        resources: [props.credentialCipherKey.keyArn],
+      }),
+    );
+
+    // SSM: leitura do parâmetro com o ARN da CMK (necessário para o user-data).
+    // O ARN não é segredo, por isso está em SSM Parameter Standard (gratuito).
+    apiRole.addToPolicy(
+      new iam.PolicyStatement({
+        sid: 'ReadKmsArnParam',
+        effect: iam.Effect.ALLOW,
+        actions: ['ssm:GetParameter'],
+        resources: [
+          `arn:aws:ssm:sa-east-1:${cdk.Stack.of(this).account}:parameter/atua/dev-mvp/kms/credential-cipher-key-arn`,
+        ],
+      }),
+    );
+
     // Nenhuma permissão com Action:"*"/Resource:"*" - princípio de menor privilégio.
 
     // --- User data: bootstrap mínimo (sem publicar artefato real ainda) ---
@@ -104,7 +138,63 @@ export class AtuaComputeStack extends cdk.Stack {
       '# 1) Runtime .NET (ASP.NET Core) - instalado no boot, pois a instância é efêmera.',
       'dnf install -y dotnet-runtime-8.0 || yum install -y dotnet-runtime-8.0 || true',
       '',
-      '# 2) Tenta baixar o artefato de deploy mais recente do bucket de releases.',
+      '# 2) Variável de ambiente: ARN da CMK de cifragem de credenciais (D9).',
+      '#    O ARN não é segredo; é lido do SSM Parameter Standard (gratuito).',
+      '#',
+      '#    Retry de até 5 tentativas com backoff de 5s cada:',
+      '#    - IAM/SSM pode ter latência de propagação nos primeiros segundos do boot.',
+      '#    - AWS CLI v2 com --query pode retornar "None" (string) com exit 0',
+      '#      quando o parâmetro não foi encontrado; o `set -e` não captura isso.',
+      '#    - A validação explícita abaixo detecta string vazia OU "None" e aborta.',
+      'for _retry in 1 2 3 4 5; do',
+      `  ATUA_KMS_KEY_ARN=$(aws ssm get-parameter --name '/atua/dev-mvp/kms/credential-cipher-key-arn' --query 'Parameter.Value' --output text --region sa-east-1 2>/dev/null || true)`,
+      '  if [[ -n "$ATUA_KMS_KEY_ARN" && "$ATUA_KMS_KEY_ARN" != "None" ]]; then',
+      '    break',
+      '  fi',
+      '  echo "WARN: tentativa $_retry/5 — ARN da CMK vazio ou None, aguardando 5s..."',
+      '  sleep 5',
+      'done',
+      '[[ -n "$ATUA_KMS_KEY_ARN" && "$ATUA_KMS_KEY_ARN" != "None" ]] || {',
+      '  echo "FATAL: nao foi possivel obter o ARN da CMK do SSM apos 5 tentativas."',
+      '  echo "FATAL: parametro=/atua/dev-mvp/kms/credential-cipher-key-arn regiao=sa-east-1"',
+      '  echo "FATAL: verifique a permissao ssm:GetParameter na role da instancia e a existencia do parametro."',
+      '  exit 1',
+      '}',
+      '',
+      '# Escreve as variáveis de ambiente da aplicação em /etc/atua-api.env.',
+      '#',
+      '# POR QUE /etc/atua-api.env e NÃO /etc/environment:',
+      '#   /etc/environment é lido por PAM em sessões de login interativo,',
+      '#   mas NÃO é herdado por units systemd (o systemd não usa PAM no',
+      '#   ExecStart). A forma confiável de injetar variáveis em um serviço',
+      '#   systemd é EnvironmentFile= na unit, que lê pares chave=valor',
+      '#   de um arquivo dedicado — exatamente este.',
+      '#',
+      '# INSTRUÇÃO PARA O BACKEND-ENGINEER:',
+      '#   Inclua na unit do serviço atua-api.service:',
+      '#     [Service]',
+      '#     EnvironmentFile=/etc/atua-api.env',
+      '#   Isso garante que o processo da API herde as variáveis abaixo.',
+      '#',
+      '# CONVENÇÃO DE NOMES .NET:',
+      '#   O ASP.NET Core usa duplo underscore (__) como separador de nível',
+      '#   hierárquico em variáveis de ambiente. A chave de configuração',
+      '#   `Integrations:CredentialCipher:KmsKeyArn` é lida da variável',
+      '#   `Integrations__CredentialCipher__KmsKeyArn`.',
+      '#   O nome ATUA_KMS_KEY_ARN é mantido como alias de diagnóstico',
+      '#   (útil em shell/ssh, não consumido pela aplicação).',
+      'mkdir -p /etc/atua-api.env.d',
+      'cat > /etc/atua-api.env <<EOF',
+      '# Gerado pelo user-data no boot. Não editar manualmente.',
+      '# Recarregado a cada `make up` (instância efêmera).',
+      'Integrations__CredentialCipher__KmsKeyArn=${ATUA_KMS_KEY_ARN}',
+      'ATUA_KMS_KEY_ARN=${ATUA_KMS_KEY_ARN}',
+      'EOF',
+      'chmod 640 /etc/atua-api.env',
+      '# Apenas root e membros do grupo que executar a API lêm o arquivo.',
+      '# O ARN não é segredo, mas seguimos o princípio de menor exposição.',
+      '',
+      '# 3) Tenta baixar o artefato de deploy mais recente do bucket de releases.',
       `RELEASES_BUCKET="${props.releasesBucket.bucketName}"`,
       'mkdir -p /opt/atua-api',
       'if aws s3 ls "s3://$RELEASES_BUCKET/latest/" >/dev/null 2>&1; then',
@@ -113,7 +203,7 @@ export class AtuaComputeStack extends cdk.Stack {
       '  echo "Nenhum artefato publicado ainda em s3://$RELEASES_BUCKET/latest/. Bootstrap de rede/OS concluído; deploy da aplicacao fica pendente (responsabilidade do backend-engineer/release-versioning)."',
       'fi',
       '',
-      '# 3) Nenhum systemd service é habilitado automaticamente nesta entrega -',
+      '# 4) Nenhum systemd service é habilitado automaticamente nesta entrega -',
       '#    isso evita subir um processo indefinido/incompleto sem artefato real.',
       '#    O backend-engineer deve fornecer o unit file e habilitá-lo quando o',
       '#    artefato de deploy estiver publicado.',
@@ -150,6 +240,11 @@ export class AtuaComputeStack extends cdk.Stack {
     // --- IAM Role MÍNIMA: nenhuma policy anexada. A instância não
     // precisa (e não deve) acessar secrets, S3 ou qualquer outro
     // recurso até que sua implementação real seja aprovada explicitamente.
+    //
+    // IMPORTANTE (D9 — Variante B): a collectorRole NÃO recebe NENHUMA
+    // permissão KMS. A CMK e as operações de cifragem/decifragem de DEKs
+    // são responsabilidade exclusiva da API. O Collector nunca chama
+    // GenerateDataKey, Decrypt ou DescribeKey sobre a CMK.
     const collectorRole = new iam.Role(this, 'CollectorInstanceRole', {
       roleName: 'atua-collector-ec2-role',
       assumedBy: new iam.ServicePrincipal('ec2.amazonaws.com'),
