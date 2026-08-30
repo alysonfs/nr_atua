@@ -43,8 +43,12 @@ código.
 - A credencial do iService está cifrada por AES-256-GCM com chave de dados
   por integração, chave de dados cifrada por AWS KMS (ADR-004, ADR-018,
   entidade `IServiceCredential`). Os campos cifrados são
-  `UsernameCiphertext`, `PasswordCiphertext`, `BaseUrlCiphertext`, com
-  `Nonce`, `Tag` e `DataKeyCiphertext` (chave de dados cifrada por KMS).
+  `UsernameCiphertext`, `PasswordCiphertext`, `BaseUrlCiphertext`. Os campos
+  `Nonce` e `Tag` da entidade pertencem exclusivamente ao `UsernameCiphertext`;
+  `PasswordCiphertext` e `BaseUrlCiphertext` armazenam nonce e tag próprios
+  embutidos no formato empacotado `Base64(Nonce).Base64(Tag).Base64(Ciphertext)`
+  (ver `IServiceCredentialService.Pack`/`Unpack`, linhas 134–142).
+  `DataKeyCiphertext` é a chave de dados cifrada por KMS.
   O campo `AlgorithmVersion` está presente na entidade.
 
 ## Decisão
@@ -111,11 +115,15 @@ fluxo do `claim` — a decifragem é uma instrução adicional de custo zero.
    - Busca `IServiceCredential` da `IntegrationId` do comando.
    - Chama `ICredentialCipher.UnwrapDataKey(DataKeyCiphertext, KmsKeyId)` →
      obtém a DEK em claro.
-   - Chama `ICredentialCipher.Decrypt(dek, UsernameCiphertext, Nonce, Tag)` →
+   - Chama `ICredentialCipher.Decrypt(dek, UsernameCiphertext, credential.Nonce, credential.Tag)` →
      `username` em claro.
-   - Chama `ICredentialCipher.Decrypt(dek, PasswordCiphertext, Nonce, Tag)` →
+   - Chama `IServiceCredentialService.Unpack(PasswordCiphertext)` → obtém
+     `(nonce_pw, tag_pw, ciphertext_pw)`; chama
+     `ICredentialCipher.Decrypt(dek, ciphertext_pw, nonce_pw, tag_pw)` →
      `password` em claro.
-   - Chama `ICredentialCipher.Decrypt(dek, BaseUrlCiphertext, Nonce, Tag)` →
+   - Chama `IServiceCredentialService.Unpack(BaseUrlCiphertext)` → obtém
+     `(nonce_url, tag_url, ciphertext_url)`; chama
+     `ICredentialCipher.Decrypt(dek, ciphertext_url, nonce_url, tag_url)` →
      `baseUrl` em claro (se presente).
    - Zera a DEK da memória imediatamente após as três decifragens.
    - Inclui as credenciais em claro na resposta do `claim`, protegida por TLS.
@@ -290,58 +298,44 @@ participa de nenhuma operação de chave.
 
 ---
 
-### ⚠️ BUG DE SEGURANÇA CRÍTICO — Nonce e Tag compartilhados (pré-existente)
+### Verificação do uso de nonce/tag em AES-GCM (falso positivo esclarecido)
 
-**Confirmado no código real (`AesGcmCredentialCipher.cs` + `IServiceCredential.cs`).**
+Uma revisão anterior desta ADR registrou uma suspeita de reutilização de nonce
+entre os três campos cifrados (`UsernameCiphertext`, `PasswordCiphertext`,
+`BaseUrlCiphertext`), baseando-se na observação de que a entidade
+`IServiceCredential` expõe apenas um par `Nonce`/`Tag`. A verificação no código
+real refutou a suspeita — não há falha criptográfica.
 
-`IServiceCredential` armazena um único `Nonce` (byte[]) e um único `Tag`
-(byte[]) para os três campos cifrados (`UsernameCiphertext`,
-`PasswordCiphertext`, `BaseUrlCiphertext`).
+**Mecanismo verificado no código:**
 
-`AesGcmCredentialCipher.Encrypt()` gera um nonce aleatório por chamada e
-retorna um `CipherResult(CiphertextBase64, Nonce, Tag)`. Porém, ao persistir
-três campos cifrados, o código que chama `Encrypt()` três vezes produz três
-nonces e três tags distintos — mas a entidade `IServiceCredential` só tem
-campos para armazenar **um** nonce e **uma** tag. Isso significa que, na
-prática, o código de persistência salva apenas o nonce/tag de um dos campos
-(provavelmente o último) e usa esse mesmo par para autenticar/decifrar os
-outros dois.
+- `IServiceCredentialService.Pack` (linhas 134–136) serializa cada cifragem de
+  `PasswordCiphertext` e `BaseUrlCiphertext` no formato autocontido
+  `Base64(Nonce) + "." + Base64(Tag) + "." + Base64(Ciphertext)`, gravando esse
+  pacote diretamente na coluna correspondente.
+- `IServiceCredentialService.Unpack` (linhas 138–142) realiza o split e
+  recupera o nonce e tag exclusivos de cada campo antes de passar para
+  `Decrypt`.
+- `IServiceCredentialValidationService` (linhas 38–46) usa `Unpack` para
+  `PasswordCiphertext` e `BaseUrlCiphertext`, passando ao `Decrypt` o nonce/tag
+  correto de cada campo; `UsernameCiphertext` usa `credential.Nonce` e
+  `credential.Tag` diretamente da entidade.
+- `AesGcmCredentialCipher.Encrypt` gera um nonce aleatório independente a cada
+  chamada.
 
-**Consequências criptográficas:**
+**Conclusão:** cada um dos três campos é cifrado com seu próprio nonce e tag.
+AES-GCM está utilizado corretamente. Não há falha criptográfica; nenhuma
+correção é bloqueante para a entrada em produção.
 
-1. **Reutilização de nonce com a mesma DEK:** AES-GCM com nonce reutilizado
-   permite recuperar o XOR dos plaintexts dos campos que compartilham o mesmo
-   nonce. Um atacante com dois ciphertexts gerados com o mesmo (DEK, nonce)
-   obtém `PT1 XOR PT2`.
-2. **Tag única autenticando três cifragens:** o AES-GCM Tag autentica apenas
-   o ciphertext com o qual foi gerado. Usar um Tag de um campo para verificar
-   outro campo significa que a autenticação dos dois campos restantes **não é
-   verificada** — a decifragem pode retornar dados corrompidos sem levantar
-   exceção.
+**Débito de clareza (não bloqueante):** o schema da entidade sugere um nonce
+compartilhado (campos `Nonce`/`Tag` sem sufixo de campo), e o mecanismo de
+empacotamento é assimétrico e implícito — `username` usa colunas dedicadas
+enquanto `password` e `baseUrl` usam string empacotada. Isso dificulta a
+leitura do código e pode induzir revisores a erro (como ocorreu nesta ADR).
 
-**Correção recomendada (não implementar agora — registrar para RF posterior):**
-
-Opção preferida: **cifrar um único payload serializado** com os três campos
-juntos. Um nonce, uma DEK, um tag, um ciphertext. A decifragem retorna o
-payload completo. Alinhado com o princípio de autenticar tudo ou nada.
-
-```
-plaintext: JSON({ username, password, baseUrl })
-→ AES-256-GCM(dek, nonce, plaintext) → (ciphertext, nonce, tag)
-```
-
-A entidade `IServiceCredential` passaria a ter um único campo de ciphertext
-(ou manter os três para compatibilidade com `AlgorithmVersion`).
-
-Alternativa: nonce e tag distintos por campo — três campos de nonce e três de
-tag no schema. Mais verboso, menos limpo.
-
-**Impacto atual:** todos os registros de `IServiceCredential` estão
-potencialmente mal-autenticados. A decifragem de `username` com o nonce/tag
-correto pode funcionar; a de `password` e `baseUrl` com nonce/tag errados
-pode falhar silenciosamente ou retornar dados incorretos dependendo da
-implementação. **Este defeito deve ser corrigido antes da entrada em produção
-com dados reais de clientes.**
+Melhoria opcional futura: cifrar um único payload
+`JSON({ username, password, baseUrl })` com um único envelope AES-GCM, sob novo
+`AlgorithmVersion`. Isso elimina a assimetria, simplifica o schema e torna a
+autenticação atômica para o conjunto das três credenciais.
 
 ---
 
@@ -768,9 +762,10 @@ Rejeitada. Gera estado inválido: Agente `Active` com credencial inválida.
   consistência operacional.
 
 **Negativas / trade-offs:**
-- **Bug crítico pré-existente** de nonce/tag compartilhados em
-  `IServiceCredential` deve ser corrigido antes de produção com dados reais
-  (ver seção "Bug de Segurança Crítico" em D9).
+- ~~Bug crítico de nonce/tag compartilhados~~ — **falso positivo verificado**:
+  `password` e `baseUrl` têm nonce/tag próprios embutidos via `Pack`/`Unpack`;
+  resta apenas débito de clareza opcional no schema (ver seção de verificação
+  em D9).
 - `MasterKeyBase64` exposta em `appsettings.Development.json` deve ser
   removida antes de qualquer merge (C6).
 - KMS real ainda não implementado em C# — `backend-engineer` precisa
@@ -797,7 +792,9 @@ Rejeitada. Gera estado inválido: Agente `Active` com credencial inválida.
   D7 com ponto de troca explícito. Worker não implementa criptografia.
 - `backend-engineer` (transversal): remover `MasterKeyBase64` de
   `appsettings.Development.json`; implementar `AWSSDK.KeyManagementService`
-  em `AesGcmCredentialCipher`; planejar correção do bug de nonce/tag.
+  em `AesGcmCredentialCipher`; avaliar melhoria opcional de payload único
+  `{username, password, baseUrl}` sob novo `AlgorithmVersion` (débito de
+  clareza não bloqueante, ver seção de verificação de nonce/tag em D9).
 - `aws-architect`: provisionar CMK real no KMS; IAM role da API com
   `kms:GenerateDataKey` + `kms:Decrypt`; Worker sem permissões KMS nem
   acesso a `IServiceCredentials` no Postgres.
