@@ -189,9 +189,7 @@ public class IServiceCredentialValidationServiceTests
     private static ICredentialCipher CreateCipher() => new AesGcmCredentialCipher(Options.Create(
         new CredentialCipherOptions
         {
-            MasterKeyBase64 = Convert.ToBase64String(new byte[32]),
-            KmsKeyId = Guid.NewGuid(),
-            AlgorithmVersion = 1
+            MasterKeyBase64 = Convert.ToBase64String(new byte[32])
         }));
 
     private sealed class ThrowingAuthClient : IIServiceAuthClient

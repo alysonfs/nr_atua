@@ -94,7 +94,7 @@ public sealed class ImmediateCollectionCommandService(
             return null;
         }
 
-        var (username, password, baseUrl) = DecryptCredentials(credential);
+        var (username, password, baseUrl) = await DecryptCredentialsAsync(credential, cancellationToken);
 
         return new ClaimCommandResult(
             command.Id,
@@ -260,10 +260,11 @@ public sealed class ImmediateCollectionCommandService(
     /// Decifra as três credenciais usando a DEK; zera a DEK da memória
     /// imediatamente após o uso (ADR-021/D9-B).
     /// </summary>
-    private (string Username, string Password, string? BaseUrl) DecryptCredentials(
-        IServiceCredential credential)
+    private async Task<(string Username, string Password, string? BaseUrl)> DecryptCredentialsAsync(
+        IServiceCredential credential, CancellationToken cancellationToken)
     {
-        var dek = cipher.UnwrapDataKey(credential.DataKeyCiphertext, credential.KmsKeyId);
+        var dek = await cipher.UnwrapDataKeyAsync(
+            credential.DataKeyCiphertext, credential.KmsKeyId, credential.AlgorithmVersion, cancellationToken);
         try
         {
             var username = cipher.Decrypt(dek, credential.UsernameCiphertext,

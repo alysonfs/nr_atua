@@ -298,7 +298,6 @@ public class TenantEndpointsTests
         builder.Services.Configure<CredentialCipherOptions>(options =>
         {
             options.MasterKeyBase64 = Convert.ToBase64String(new byte[32]);
-            options.KmsKeyId = Guid.NewGuid();
         });
         builder.Services.AddSingleton<ICredentialCipher, AesGcmCredentialCipher>();
         builder.Services.AddSingleton<IIServiceAuthClient, FakeIServiceAuthClient>();

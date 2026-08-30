@@ -3,17 +3,12 @@ using System.Security.Cryptography;
 namespace Atua.Api.Infrastructure.Security;
 
 /// <summary>
-/// Implementação de <see cref="ICredentialCipher"/> usando AES-256-GCM
-/// (ADR-004/ADR-018), com "envelope encryption": cada integração recebe uma
-/// chave de dados (DEK) aleatória, que por sua vez é cifrada por uma chave
-/// mestra.
+/// Implementação de <see cref="ICredentialCipher"/> usando AES-256-GCM local
+/// (AlgorithmVersion=1, ADR-004/ADR-018). Usada em desenvolvimento e testes,
+/// e para decifrar registros v1 legados quando a implementação KMS estiver ativa.
 ///
-/// TODO(ADR-004/infra): a chave mestra usada aqui vem de configuração
-/// (<see cref="CredentialCipherOptions.MasterKeyBase64"/>) como placeholder de
-/// desenvolvimento/teste. A integração real com AWS KMS (wrap/unwrap da DEK
-/// via KMS, rotação e IAM de menor privilégio) é uma decisão de infraestrutura
-/// a ser conduzida pelo aws-architect; este componente isola essa
-/// substituição futura sem exigir mudança no restante da aplicação.
+/// A chave mestra nunca deve ser versionada — configure via
+/// <c>dotnet user-secrets</c> em desenvolvimento.
 /// </summary>
 public sealed class AesGcmCredentialCipher(
     Microsoft.Extensions.Options.IOptions<CredentialCipherOptions> options) : ICredentialCipher
@@ -21,13 +16,18 @@ public sealed class AesGcmCredentialCipher(
     private const int NonceSizeBytes = 12;
     private const int TagSizeBytes = 16;
     private const int DataKeySizeBytes = 32; // AES-256
+    private const int AlgorithmVersion = 1;
     private readonly CredentialCipherOptions cipherOptions = options.Value;
 
-    public EncryptedDataKey CreateDataKey()
+    public Task<EncryptedDataKey> CreateDataKeyAsync(CancellationToken cancellationToken = default)
     {
         var dataKeyPlaintext = RandomNumberGenerator.GetBytes(DataKeySizeBytes);
         var wrapped = WrapDataKey(dataKeyPlaintext);
-        return new EncryptedDataKey(dataKeyPlaintext, wrapped, cipherOptions.KmsKeyId);
+        // KmsKeyId para v1 é o valor de configuração (opaco, não um ARN real).
+        var keyId = string.IsNullOrWhiteSpace(cipherOptions.KmsKeyArn)
+            ? "local-v1"
+            : cipherOptions.KmsKeyArn;
+        return Task.FromResult(new EncryptedDataKey(dataKeyPlaintext, wrapped, keyId, AlgorithmVersion));
     }
 
     public CipherResult Encrypt(byte[] dataKeyPlaintext, string plaintext)
@@ -54,8 +54,10 @@ public sealed class AesGcmCredentialCipher(
         return System.Text.Encoding.UTF8.GetString(plaintextBytes);
     }
 
-    public byte[] UnwrapDataKey(string dataKeyCiphertextBase64, Guid kmsKeyId)
+    public Task<byte[]> UnwrapDataKeyAsync(string dataKeyCiphertextBase64, string kmsKeyId,
+        int algorithmVersion, CancellationToken cancellationToken = default)
     {
+        // v1: unwrap local com AES-GCM usando a chave mestra de configuração.
         var masterKey = GetMasterKey();
         var payload = Convert.FromBase64String(dataKeyCiphertextBase64);
         var nonce = payload[..NonceSizeBytes];
@@ -66,7 +68,7 @@ public sealed class AesGcmCredentialCipher(
         using var aesGcm = new AesGcm(masterKey, TagSizeBytes);
         aesGcm.Decrypt(nonce, ciphertext, tag, plaintext);
 
-        return plaintext;
+        return Task.FromResult(plaintext);
     }
 
     private string WrapDataKey(byte[] dataKeyPlaintext)
@@ -92,7 +94,9 @@ public sealed class AesGcmCredentialCipher(
         if (string.IsNullOrWhiteSpace(cipherOptions.MasterKeyBase64))
         {
             throw new InvalidOperationException(
-                "Integrations:CredentialCipher:MasterKeyBase64 deve estar configurada.");
+                "Integrations:CredentialCipher:MasterKeyBase64 deve estar configurada para " +
+                "AlgorithmVersion=1. Configure via 'dotnet user-secrets set " +
+                "\"Integrations:CredentialCipher:MasterKeyBase64\" \"$(openssl rand -base64 32)\"'.");
         }
 
         var key = Convert.FromBase64String(cipherOptions.MasterKeyBase64);

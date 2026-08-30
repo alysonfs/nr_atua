@@ -15,7 +15,7 @@ public sealed class IServiceCredential
     public IServiceCredential(Guid id, Guid tenantId, Guid integrationId,
         string usernameCiphertext, string passwordCiphertext,
         string? baseUrlCiphertext, byte[] nonce, byte[] tag,
-        string dataKeyCiphertext, Guid kmsKeyId, int algorithmVersion,
+        string dataKeyCiphertext, string kmsKeyId, int algorithmVersion,
         DateTimeOffset createdAtUtc)
     {
         Id = id;
@@ -44,7 +44,7 @@ public sealed class IServiceCredential
     public byte[] Nonce { get; private set; } = null!;
     public byte[] Tag { get; private set; } = null!;
     public string DataKeyCiphertext { get; private set; } = null!; // chave de dados cifrada por KMS
-    public Guid KmsKeyId { get; private set; }
+    public string KmsKeyId { get; private set; } = null!;
     public int AlgorithmVersion { get; private set; }
 
     public DateTimeOffset CreatedAtUtc { get; private set; }
@@ -55,7 +55,7 @@ public sealed class IServiceCredential
 
     public void ReplaceSecret(string usernameCiphertext, string passwordCiphertext,
         string? baseUrlCiphertext, byte[] nonce, byte[] tag, string dataKeyCiphertext,
-        Guid kmsKeyId, int algorithmVersion, DateTimeOffset now)
+        string kmsKeyId, int algorithmVersion, DateTimeOffset now)
     {
         UsernameCiphertext = usernameCiphertext;
         PasswordCiphertext = passwordCiphertext;

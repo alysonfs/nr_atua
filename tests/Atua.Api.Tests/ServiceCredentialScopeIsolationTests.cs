@@ -241,8 +241,8 @@ public class ServiceCredentialScopeIsolationTests
 
     private sealed class FakeCipher : ICredentialCipher
     {
-        public EncryptedDataKey CreateDataKey() =>
-            new(new byte[32], "fake-dek", Guid.Empty);
+        public Task<EncryptedDataKey> CreateDataKeyAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult(new EncryptedDataKey(new byte[32], "fake-dek", "local-v1", 1));
 
         public CipherResult Encrypt(byte[] dataKeyPlaintext, string plaintext) =>
             new("fake-ciphertext", new byte[12], new byte[16]);
@@ -250,7 +250,8 @@ public class ServiceCredentialScopeIsolationTests
         public string Decrypt(byte[] dataKeyPlaintext, string ciphertextBase64,
             byte[] nonce, byte[] tag) => "fake-decrypted";
 
-        public byte[] UnwrapDataKey(string dataKeyCiphertextBase64, Guid kmsKeyId) =>
-            new byte[32];
+        public Task<byte[]> UnwrapDataKeyAsync(string dataKeyCiphertextBase64, string kmsKeyId,
+            int algorithmVersion, CancellationToken cancellationToken = default) =>
+            Task.FromResult(new byte[32]);
     }
 }

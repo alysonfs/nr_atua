@@ -450,9 +450,7 @@ public class ImmediateCollectionCommandServiceTests
     private static ICredentialCipher CreateCipher() => new AesGcmCredentialCipher(Options.Create(
         new CredentialCipherOptions
         {
-            MasterKeyBase64 = Convert.ToBase64String(new byte[32]),
-            KmsKeyId = Guid.NewGuid(),
-            AlgorithmVersion = 1
+            MasterKeyBase64 = Convert.ToBase64String(new byte[32])
         }));
 
     private static TimeProvider FakeTimeProvider(DateTimeOffset fixedNow)
@@ -546,7 +544,7 @@ public class ImmediateCollectionCommandServiceTests
         string username, string password, string? baseUrl,
         EIServiceValidationStatus? validationStatus = null)
     {
-        var dataKey = cipher.CreateDataKey();
+        var dataKey = await cipher.CreateDataKeyAsync();
         var usernameCipher = cipher.Encrypt(dataKey.Plaintext, username);
         var passwordCipher = cipher.Encrypt(dataKey.Plaintext, password);
         var packedPassword = Pack(passwordCipher);
@@ -562,7 +560,7 @@ public class ImmediateCollectionCommandServiceTests
             Guid.CreateVersion7(), tenantId, integrationId,
             usernameCipher.CiphertextBase64, packedPassword, packedBaseUrl,
             usernameCipher.Nonce, usernameCipher.Tag,
-            dataKey.CiphertextBase64, dataKey.KmsKeyId, 1,
+            dataKey.CiphertextBase64, dataKey.KmsKeyId, dataKey.AlgorithmVersion,
             DateTimeOffset.UtcNow);
 
         if (validationStatus is not null)

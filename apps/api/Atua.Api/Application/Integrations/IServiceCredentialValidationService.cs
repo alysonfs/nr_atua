@@ -31,19 +31,32 @@ public sealed class IServiceCredentialValidationService(
             item => item.IntegrationId == integrationId && item.TenantId == tenantId, cancellationToken);
         if (credential is null) return ValidateCredentialsResult.NotConfigured();
 
-        var dataKeyPlaintext = cipher.UnwrapDataKey(credential.DataKeyCiphertext, credential.KmsKeyId);
+        var dataKeyPlaintext = await cipher.UnwrapDataKeyAsync(
+            credential.DataKeyCiphertext, credential.KmsKeyId, credential.AlgorithmVersion, cancellationToken);
 
-        var username = cipher.Decrypt(dataKeyPlaintext, credential.UsernameCiphertext,
-            credential.Nonce, credential.Tag);
-        var (passwordNonce, passwordTag, passwordCiphertext) =
-            IServiceCredentialService.Unpack(credential.PasswordCiphertext);
-        var password = cipher.Decrypt(dataKeyPlaintext, passwordCiphertext, passwordNonce, passwordTag);
-        string? baseUrl = null;
-        if (credential.BaseUrlCiphertext is not null)
+        string username;
+        string password;
+        string? baseUrl;
+        try
         {
-            var (baseUrlNonce, baseUrlTag, baseUrlCiphertext) =
-                IServiceCredentialService.Unpack(credential.BaseUrlCiphertext);
-            baseUrl = cipher.Decrypt(dataKeyPlaintext, baseUrlCiphertext, baseUrlNonce, baseUrlTag);
+            username = cipher.Decrypt(dataKeyPlaintext, credential.UsernameCiphertext,
+                credential.Nonce, credential.Tag);
+            var (passwordNonce, passwordTag, passwordCiphertext) =
+                IServiceCredentialService.Unpack(credential.PasswordCiphertext);
+            password = cipher.Decrypt(dataKeyPlaintext, passwordCiphertext, passwordNonce, passwordTag);
+            baseUrl = null;
+            if (credential.BaseUrlCiphertext is not null)
+            {
+                var (baseUrlNonce, baseUrlTag, baseUrlCiphertext) =
+                    IServiceCredentialService.Unpack(credential.BaseUrlCiphertext);
+                baseUrl = cipher.Decrypt(dataKeyPlaintext, baseUrlCiphertext, baseUrlNonce, baseUrlTag);
+            }
+        }
+        finally
+        {
+            // Zera a DEK da memória imediatamente após as decifragens
+            // (ADR-021/D9-B — controle de vazamento).
+            Array.Clear(dataKeyPlaintext, 0, dataKeyPlaintext.Length);
         }
 
         EIServiceValidationStatus status;

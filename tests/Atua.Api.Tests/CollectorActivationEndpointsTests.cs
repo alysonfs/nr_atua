@@ -213,7 +213,7 @@ public class CollectorActivationEndpointsTests
         if (credentialStatus is not null)
         {
             var credential = new IServiceCredential(Guid.CreateVersion7(), tenant.Id, integration.Id,
-                "cipher-user", "cipher-pass", null, [1], [2], "cipher-key", Guid.NewGuid(), 1,
+                "cipher-user", "cipher-pass", null, [1], [2], "cipher-key", "local-v1", 1,
                 DateTimeOffset.UtcNow);
             credential.RecordValidation(credentialStatus.Value, DateTimeOffset.UtcNow);
             context.IServiceCredentials.Add(credential);

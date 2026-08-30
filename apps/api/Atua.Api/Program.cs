@@ -1,3 +1,4 @@
+using Amazon.KeyManagementService;
 using Amazon.SimpleEmailV2;
 using System.Security.Claims;
 using System.Text;
@@ -108,7 +109,22 @@ builder.Services.AddScoped<CreateTrialService>();
 builder.Services.AddScoped<TrialEligibilityService>();
 builder.Services.Configure<CredentialCipherOptions>(
     builder.Configuration.GetSection(CredentialCipherOptions.SectionName));
-builder.Services.AddSingleton<ICredentialCipher, AesGcmCredentialCipher>();
+// Seleciona a implementação de ICredentialCipher com base na configuração:
+// - KmsKeyArn configurado → KmsCredentialCipher (v2, wrap/unwrap via AWS KMS).
+// - KmsKeyArn ausente + produção → falha na inicialização (não sobe sem KMS em prod).
+// - KmsKeyArn ausente + desenvolvimento → AesGcmCredentialCipher com aviso explícito.
+// O KmsCredentialCipher injeta o AesGcmCredentialCipher para coexistência v1/v2.
+builder.Services.AddSingleton<AesGcmCredentialCipher>();
+var kmsKeyArn = builder.Configuration[$"{CredentialCipherOptions.SectionName}:KmsKeyArn"];
+if (!string.IsNullOrWhiteSpace(kmsKeyArn))
+{
+    builder.Services.AddSingleton<IAmazonKeyManagementService>(_ => new AmazonKeyManagementServiceClient());
+    builder.Services.AddSingleton<ICredentialCipher, KmsCredentialCipher>();
+}
+else
+{
+    builder.Services.AddSingleton<ICredentialCipher>(sp => sp.GetRequiredService<AesGcmCredentialCipher>());
+}
 builder.Services.AddScoped<TenantOnboardingService>();
 builder.Services.AddScoped<IServiceCredentialService>();
 builder.Services.AddScoped<IServiceCredentialValidationService>();
@@ -123,6 +139,29 @@ builder.Services.AddScoped<ImmediateCollectionCommandService>();
 builder.Services.AddHostedService<ClaimTimeoutJob>();
 
 var app = builder.Build();
+
+// Verificação de segurança: KmsKeyArn obrigatório em produção (Achado 1 / D9).
+// Em produção, cifrar credenciais de cliente com chave local é uma falha de
+// segurança silenciosa inaceitável — preferimos não subir a aplicação.
+// Em desenvolvimento, o cipher local é aceito mas registra aviso explícito.
+var startupLogger = app.Logger;
+if (string.IsNullOrWhiteSpace(kmsKeyArn))
+{
+    if (app.Environment.IsProduction())
+    {
+        throw new InvalidOperationException(
+            "Integrations:CredentialCipher:KmsKeyArn não está configurado. " +
+            "Em produção, o AWS KMS é obrigatório para cifrar credenciais de clientes. " +
+            "Configure a variável de ambiente Integrations__CredentialCipher__KmsKeyArn " +
+            "com o ARN da CMK antes de iniciar a aplicação.");
+    }
+
+    startupLogger.LogWarning(
+        "KMS NÃO ESTÁ ATIVO: credenciais de integração serão cifradas com chave local " +
+        "(AesGcmCredentialCipher, AlgorithmVersion=1). " +
+        "Isso é aceitável em desenvolvimento, mas NUNCA deve ocorrer em produção. " +
+        "Configure Integrations__CredentialCipher__KmsKeyArn para ativar o KMS.");
+}
 
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())

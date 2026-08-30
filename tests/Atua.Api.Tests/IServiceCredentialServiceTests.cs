@@ -106,7 +106,7 @@ public class IServiceCredentialServiceTests
         context.TrialSubscriptions.Add(trial);
         var credential = new Atua.Api.Domain.Integrations.IServiceCredential(Guid.CreateVersion7(),
             tenant.Id, integration.Id, "cipher-user", "cipher-pass", null, [1], [2],
-            "cipher-key", Guid.NewGuid(), 1, DateTimeOffset.UtcNow);
+            "cipher-key", "local-v1", 1, DateTimeOffset.UtcNow);
         credential.RecordValidation(EIServiceValidationStatus.Succeeded, DateTimeOffset.UtcNow);
         context.IServiceCredentials.Add(credential);
         await context.SaveChangesAsync();
@@ -175,9 +175,7 @@ public class IServiceCredentialServiceTests
     private static ICredentialCipher CreateCipher() => new AesGcmCredentialCipher(Options.Create(
         new CredentialCipherOptions
         {
-            MasterKeyBase64 = Convert.ToBase64String(new byte[32]),
-            KmsKeyId = Guid.NewGuid(),
-            AlgorithmVersion = 1
+            MasterKeyBase64 = Convert.ToBase64String(new byte[32])
         }));
 
     private static TimeProvider FixedTimeProvider(AtuaDbContext _) => TimeProvider.System;

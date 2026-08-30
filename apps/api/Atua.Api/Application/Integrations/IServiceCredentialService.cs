@@ -41,7 +41,9 @@ public sealed class IServiceCredentialService(
         var existing = await dbContext.IServiceCredentials.SingleOrDefaultAsync(
             item => item.IntegrationId == integrationId, cancellationToken);
 
-        var dataKey = cipher.CreateDataKey();
+        var dataKey = await cipher.CreateDataKeyAsync(cancellationToken);
+        try
+        {
         var usernameCipher = cipher.Encrypt(dataKey.Plaintext, username);
         // Reutiliza o mesmo nonce lógico por campo: cada campo cifrado carrega
         // seu próprio nonce/tag; persistimos apenas o do username e senha
@@ -61,14 +63,14 @@ public sealed class IServiceCredentialService(
             var credential = new IServiceCredential(Guid.CreateVersion7(), tenantId, integrationId,
                 usernameCipher.CiphertextBase64, packedPassword, packedBaseUrl,
                 usernameCipher.Nonce, usernameCipher.Tag, dataKey.CiphertextBase64,
-                dataKey.KmsKeyId, AlgorithmVersion, now);
+                dataKey.KmsKeyId, dataKey.AlgorithmVersion, now);
             dbContext.IServiceCredentials.Add(credential);
         }
         else
         {
             existing.ReplaceSecret(usernameCipher.CiphertextBase64, packedPassword, packedBaseUrl,
                 usernameCipher.Nonce, usernameCipher.Tag, dataKey.CiphertextBase64,
-                dataKey.KmsKeyId, AlgorithmVersion, now);
+                dataKey.KmsKeyId, dataKey.AlgorithmVersion, now);
         }
 
         // ADR-020/RF-008.6: gravar a credencial zera o ValidationStatus
@@ -76,6 +78,13 @@ public sealed class IServiceCredentialService(
         // liberada e reconciliada na mesma unidade de trabalho, para que o
         // Agente seja desativado e o comando Pendente cancelado.
         await SaveWithReconciliationAsync(tenantId, integrationId, cancellationToken);
+        }
+        finally
+        {
+            // Zera a DEK da memória imediatamente após as cifragens
+            // (ADR-021/D9-B — controle de vazamento).
+            Array.Clear(dataKey.Plaintext, 0, dataKey.Plaintext.Length);
+        }
         return ESetCredentialsStatus.Success;
     }
 
@@ -102,8 +111,6 @@ public sealed class IServiceCredentialService(
         await dbContext.TenantMemberships.AsNoTracking().AnyAsync(membership =>
             membership.UserId == userId && membership.TenantId == tenantId &&
             membership.Role == ETenantMembershipRole.Owner, cancellationToken);
-
-    private const int AlgorithmVersion = 1;
 
     /// <summary>
     /// Persiste a alteração da credencial e reconcilia a ativação do coletor
