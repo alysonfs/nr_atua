@@ -43,6 +43,12 @@ Cada requisito funcional possui um status de entrega:
 - `Implementado`: codigo e testes do requisito foram concluidos.
 - `Validado`: o `qa-engineer` aprovou os criterios de aceite aplicaveis.
 
+Nota de validacao (2026-08-29): RF-003 e RF-004 foram validados pelo
+`qa-engineer` com 41 testes de frontend e 54 testes de backend cobrindo o
+ciclo de vida do Trial (ADR-015) e a precedencia de fuso horario
+(sessao -> Tenant -> sugestao por idioma -> UTC). Ver ADR-015 e ADR-017 para
+o contrato tecnico correspondente.
+
 ### Cadastro e Trial
 
 #### RF-001 - Cadastro de cliente
@@ -64,7 +70,7 @@ valido por 15 minutos.
 
 #### RF-003 - Plano Trial
 
-Status: `Pendente`
+Status: `Validado`
 
 Ao confirmar o codigo recebido por e-mail, o cliente deve receber o plano Trial
 com validade ate o fim do setimo dia contado em UTC. Enquanto o e-mail nao for
@@ -73,7 +79,7 @@ Trial em andamento deve ser associado a ele sem alterar sua validade.
 
 #### RF-004 - Preferencia de fuso horario
 
-Status: `Pendente`
+Status: `Validado`
 
 O cliente deve possuir um fuso horario no formato IANA. O valor inicial deve
 ser sugerido pelo idioma selecionado e o usuario deve poder altera-lo nas
