@@ -27,6 +27,8 @@ public sealed class AtuaDbContext(DbContextOptions<AtuaDbContext> options) : DbC
 
     public DbSet<Integration> Integrations => Set<Integration>();
 
+    public DbSet<IServiceCredential> IServiceCredentials => Set<IServiceCredential>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         ConfigureUser(modelBuilder.Entity<User>());
@@ -39,6 +41,7 @@ public sealed class AtuaDbContext(DbContextOptions<AtuaDbContext> options) : DbC
         ConfigureTrialSubscription(modelBuilder.Entity<TrialSubscription>());
         ConfigureIntegrationProvider(modelBuilder.Entity<IntegrationProvider>());
         ConfigureIntegration(modelBuilder.Entity<Integration>());
+        ConfigureIServiceCredential(modelBuilder.Entity<IServiceCredential>());
     }
 
     private static void ConfigureAuthSession(EntityTypeBuilder<AuthSession> builder)
@@ -167,5 +170,24 @@ public sealed class AtuaDbContext(DbContextOptions<AtuaDbContext> options) : DbC
             .HasForeignKey(integration => integration.ProviderId)
             .OnDelete(DeleteBehavior.Restrict);
         builder.HasIndex(integration => integration.TenantId);
+    }
+
+    private static void ConfigureIServiceCredential(EntityTypeBuilder<IServiceCredential> builder)
+    {
+        builder.ToTable("iservice_credentials");
+        builder.HasKey(credential => credential.Id);
+        builder.Property(credential => credential.Id).ValueGeneratedNever();
+        builder.Property(credential => credential.UsernameCiphertext).IsRequired();
+        builder.Property(credential => credential.PasswordCiphertext).IsRequired();
+        builder.Property(credential => credential.DataKeyCiphertext).IsRequired();
+        builder.Property(credential => credential.Nonce).IsRequired();
+        builder.Property(credential => credential.Tag).IsRequired();
+        builder.Property(credential => credential.ValidationStatus).HasConversion<string>()
+            .HasMaxLength(16).IsRequired();
+        builder.HasIndex(credential => credential.IntegrationId).IsUnique();
+        builder.HasOne<Tenant>().WithMany().HasForeignKey(credential => credential.TenantId)
+            .OnDelete(DeleteBehavior.Cascade);
+        builder.HasOne<Integration>().WithMany().HasForeignKey(credential => credential.IntegrationId)
+            .OnDelete(DeleteBehavior.Cascade);
     }
 }

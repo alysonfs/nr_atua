@@ -3,6 +3,8 @@ using System.Security.Claims;
 using System.Text;
 using Atua.Api.Application.Billing;
 using Atua.Api.Application.Identity;
+using Atua.Api.Application.Integrations;
+using Atua.Api.Application.Tenants;
 using Atua.Api.Endpoints;
 using Atua.Api.Infrastructure.Email;
 using Atua.Api.Infrastructure.Persistence;
@@ -96,6 +98,15 @@ builder.Services.AddScoped<AuthService>();
 builder.Services.AddScoped<TimeZonePreferenceService>();
 builder.Services.AddScoped<CreateTrialService>();
 builder.Services.AddScoped<TrialEligibilityService>();
+builder.Services.Configure<CredentialCipherOptions>(
+    builder.Configuration.GetSection(CredentialCipherOptions.SectionName));
+builder.Services.AddSingleton<ICredentialCipher, AesGcmCredentialCipher>();
+builder.Services.AddScoped<TenantOnboardingService>();
+builder.Services.AddScoped<IServiceCredentialService>();
+builder.Services.AddScoped<IServiceCredentialValidationService>();
+// TODO(ADR-018): substituir por implementação real quando o protocolo do
+// iService estiver especificado. Ver FakeIServiceAuthClient.
+builder.Services.AddSingleton<IIServiceAuthClient, FakeIServiceAuthClient>();
 
 var app = builder.Build();
 
@@ -111,5 +122,6 @@ app.UseAuthentication();
 app.UseAuthorization();
 app.MapAuthEndpoints();
 app.MapTrialEndpoints();
+app.MapTenantEndpoints();
 
 app.Run();
