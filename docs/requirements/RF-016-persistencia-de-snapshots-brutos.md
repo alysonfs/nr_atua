@@ -173,66 +173,40 @@ Credenciais do iService e dados de sessão CAS não devem ser incluídos no
 
 ## Decisões pendentes
 
-### DP-016.1 — Idempotência de re-execução do mesmo `command_id`
+### DP-016.1 — ~~Idempotência de re-execução do mesmo `command_id`~~ ✅ Resolvido (2026-08-31)
 
-**Situação:** O modelo anterior garantia idempotência por índice único em
-`(tenantId, providerOrderId, commandId)` na coleção `work_order_observations`.
-No novo modelo, `work_order_snapshots` é append-only e não possui esse índice
-de unicidade. Se o Worker falhar parcialmente e re-executar a mesma coleta com
-o mesmo `command_id`, múltiplos snapshots com o mesmo `command_id` para a
-mesma OS serão inseridos.
+**Decisão do usuário:** opção (b) — adicionar índice de unicidade em
+`(tenant_id, provider_id, command_id)` em `work_order_snapshots`. Re-execução
+da mesma coleta (mesmo `command_id`) para a mesma OS não gera duplicata: a
+segunda tentativa de inserção é rejeitada pelo índice único (ou tratada como
+no-op/upsert idempotente pelo Worker).
 
-**Impacto:** Sem definição, re-execuções parciais produzem duplicatas
-rastreáveis (têm `command_id` igual) mas não são bloqueadas. Isso pode ou não
-ser aceitável dependendo da decisão de produto.
+### DP-016.2 — ~~Quem dispara o processamento snapshot → work_order / work_order_history~~ ✅ Resolvido (2026-08-31)
 
-**Opções:**
-- (a) Aceitar duplicatas por `command_id` — re-execução é rara e os duplicatas
-  são identificáveis pelo mesmo `command_id`; o consumidor filtra.
-- (b) Adicionar índice de unicidade em `(tenant_id, provider_id, command_id)` —
-  retorna ao comportamento anterior de idempotência por comando, mas introduz
-  uma restrição de schema que pode conflitar com o princípio de append-only
-  irrestrito.
-- (c) O Worker controla idempotência em memória (não reinsere OS já inseridas
-  no ciclo atual).
+**Decisão do usuário:** opção (b) — um processo separado, via **consumer de
+fila**. O Worker apenas insere o snapshot em `work_order_snapshots` e publica
+uma mensagem (evento de novo snapshot) em uma fila; um consumer dedicado lê a
+fila e realiza o upsert em `work_order` + append em `work_order_history`
+(RF-017). Isso desacopla o Worker do conhecimento sobre o mapeamento de
+status para as entidades agnósticas — o Worker só produz dado bruto.
 
-**Aguarda:** decisão do usuário sobre comportamento aceitável em re-execução.
+**Consequência de arquitetura (a cargo do `software-architect`):** escolha da
+tecnologia de fila (ex.: SQS) e desenho do consumer (novo serviço, ou parte
+da API existente).
 
-### DP-016.2 — Quem dispara o processamento snapshot → work_order / work_order_history
+### DP-016.3 — ~~Tecnologia de persistência de `work_order_snapshots`~~ ✅ Resolvido (2026-08-31)
 
-**Situação:** Após inserir um documento em `work_order_snapshots`, é necessário
-mapear o status (agnóstico de provedor) para `work_order_history` (append) e
-atualizar `work_order` (upsert) — ver RF-017. Não está definido quem dispara
-esse processamento:
-
-- (a) O próprio Worker, de forma síncrona, no mesmo ciclo de inserção do snapshot.
-- (b) Um processo separado (ex.: change stream do MongoDB, job na API, consumer
-  de fila) que reage à inserção do snapshot.
-
-**Impacto:** A opção (a) torna o Worker responsável por dois passos de
-persistência e exige que ele conheça a lógica de mapeamento de status. A opção
-(b) desacopla os dois passos mas introduz latência e um novo componente de
-infraestrutura. A decisão afeta a arquitetura do Worker e da API.
-
-**Aguarda:** decisão do `software-architect`.
-
-### DP-016.3 — Tecnologia de persistência de `work_order_snapshots`
-
-**Situação:** O modelo anterior usava MongoDB Atlas (ADR-012) para
-`work_order_snapshots`. O novo modelo mantém o nome da coleção e o dado bruto
-(BsonDocument/JSON), o que é naturalmente compatível com MongoDB. No entanto,
-dado que `work_order` e `work_order_history` (RF-017) têm schema mais
-estruturado, não está decidido se essas entidades vivem no mesmo banco
-(MongoDB) ou em bancos distintos.
-
-**Aguarda:** decisão do `software-architect`.
+**Decisão do usuário:** `work_order_snapshots` é persistido em **MongoDB
+Atlas** (mesma tecnologia já usada pelo Worker — ADR-012), consistente com o
+dado bruto/sem schema formalizado.
 
 ## Dependências
 
 - RF-009 (coleta inicial): define o fluxo de coleta que produz os snapshots.
 - RF-017 (novo): define as entidades agnósticas de provedor que são alimentadas
-  a partir dos snapshots.
-- ADR-012: define MongoDB Atlas como banco de dados do Worker.
+  a partir dos snapshots, consumidas via fila (DP-016.2).
+- ADR-012: define MongoDB Atlas como banco de dados do Worker — confirmado
+  para `work_order_snapshots` (DP-016.3).
 - ADR-021 (D7): define `workOrderId` como `provider_id` para o iService no MVP.
 
 ## Impactos
@@ -244,6 +218,9 @@ estruturado, não está decidido se essas entidades vivem no mesmo banco
   (RF-016.6).
 - RF-012 (ausência de OS) é compatível com este modelo: OS ausentes simplesmente
   não geram novos snapshots; o último snapshot da OS permanece como estava.
+- Novo componente de infraestrutura: fila de mensagens entre o Worker e o
+  consumer que processa `work_order`/`work_order_history` (DP-016.2) — a
+  definir pelo `software-architect`.
 
 ## Fora do escopo
 

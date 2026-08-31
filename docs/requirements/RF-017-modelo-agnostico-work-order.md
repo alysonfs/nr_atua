@@ -95,13 +95,12 @@ work_order_history {
 }
 ```
 
-Representa o **histórico de status observados**. É append-only: cada vez que
-um snapshot gera um processamento, um novo registro é inserido aqui, mesmo que
-o status não tenha mudado em relação ao registro anterior.
-
-> **Nota:** a decisão de inserir uma entrada por snapshot (independentemente de
-> mudança de status) ou apenas quando o status muda é uma **decisão pendente**
-> — ver DP-017.1.
+Representa o **histórico de status observados**. É append-only, mas **não**
+recebe uma entrada a cada snapshot processado: uma nova entrada só é inserida
+quando o status observado difere do último registro de histórico para aquela
+OS (ver DP-017.1, resolvida). Snapshots que reafirmam o mesmo status não
+geram novo registro em `work_order_history` — apenas atualizam `updated_at`
+em `work_order`.
 
 ### Status: string crua do provedor (sem enum, sem catálogo)
 
@@ -137,12 +136,16 @@ o registro correspondente em `work_order`:
 - Se a OS já existir: atualizar `status` e `updated_at` com os valores do
   snapshot processado.
 
-### RF-017.2 - Append em `work_order_history` ao processar um snapshot
+### RF-017.2 - Append em `work_order_history` apenas quando o status muda
 
-Quando um snapshot de uma OS for processado, o sistema deve inserir um novo
-registro em `work_order_history` com o status (string crua) e a referência ao
-snapshot (`work_order_snapshot_id`). Registros anteriores de histórico não
-devem ser alterados.
+Quando um snapshot de uma OS for processado, o sistema deve comparar o status
+do snapshot com o status atual em `work_order`. Se forem diferentes (ou se a
+OS ainda não existir em `work_order`), o sistema deve inserir um novo
+registro em `work_order_history` com o status (string crua) e a referência
+ao snapshot (`work_order_snapshot_id`). Se o status for igual ao atual,
+nenhum registro é inserido em `work_order_history` — apenas `work_order` é
+atualizado (RF-017.1). Registros anteriores de histórico não devem ser
+alterados.
 
 ### RF-017.3 - Status armazenado como string crua, sem mapeamento
 
@@ -174,8 +177,8 @@ Dois tenants distintos podem ter OSs com o mesmo `provider_id` sem conflito.
 
 | Número   | Regra                                                                                                                                        |
 |----------|----------------------------------------------------------------------------------------------------------------------------------------------|
-| RN-017.1 | Cada snapshot processado resulta em upsert em `work_order` (estado atual) e append em `work_order_history` (histórico).                     |
-| RN-017.2 | `work_order_history` é append-only; registros anteriores não são alterados nem removidos.                                                    |
+| RN-017.1 | Cada snapshot processado resulta em upsert em `work_order` (estado atual sempre atualizado).                                                |
+| RN-017.2 | `work_order_history` recebe uma nova entrada apenas quando o status do snapshot difere do status atual em `work_order` (ou na primeira vez que a OS é vista); é append-only e registros anteriores não são alterados nem removidos. |
 | RN-017.3 | O status em `work_order` e `work_order_history` é a string crua retornada pelo provedor; não há enum nem vocabulário canônico comum.         |
 | RN-017.4 | Cada registro de `work_order_history` referencia o `work_order_snapshot_id` que o originou.                                                  |
 | RN-017.5 | OS sem valor de status extraível do snapshot são descartadas (sem inserção) com log `Warning`.                                               |
@@ -197,8 +200,9 @@ Dois tenants distintos podem ter OSs com o mesmo `provider_id` sem conflito.
 
 3. Dado que a OS X já existe em `work_order` com `status = "Designado"`,
    quando um snapshot da mesma OS com o mesmo status "Designado" for processado,
-   então o comportamento de `work_order_history` (inserir ou não nova entrada
-   quando o status não mudou) segue a decisão **DP-017.1**.
+   então `work_order.updated_at` deve ser atualizado, mas **nenhum** novo
+   registro deve ser inserido em `work_order_history` (DP-017.1 resolvida:
+   histórico só registra mudanças de status).
 
 4. Dado que o provedor retornou uma OS sem valor de status no payload,
    quando o Worker tentar processar o snapshot,
@@ -217,20 +221,13 @@ Dois tenants distintos podem ter OSs com o mesmo `provider_id` sem conflito.
 
 ## Decisões pendentes
 
-### DP-017.1 — Inserção em `work_order_history` a cada snapshot ou apenas em mudança de status
+### DP-017.1 — ~~Inserção em `work_order_history` a cada snapshot ou apenas em mudança de status~~ ✅ Resolvido (2026-08-31)
 
-**Situação:** Não está definido se `work_order_history` deve receber uma entrada
-para cada snapshot processado (mesmo sem mudança de status) ou apenas quando o
-status observado difere do último registro de histórico.
-
-**Impacto:**
-- Inserção a cada snapshot: histórico mais denso, rastreabilidade total de
-  quando a OS foi vista em cada coleta, mas volume de dados potencialmente alto
-  em coletas recorrentes frequentes.
-- Inserção apenas em mudança: histórico mais enxuto, focado em transições, mas
-  perde a informação de "quantas coletas viram a OS sem mudança de status".
-
-**Aguarda:** decisão de produto.
+**Decisão do usuário:** apenas em mudança de status. `work_order_history`
+recebe uma nova entrada somente quando o status observado no snapshot difere
+do status atual em `work_order` (ver RF-017.2). Snapshots que reafirmam o
+mesmo status atualizam apenas `work_order.updated_at`, sem gerar entrada de
+histórico.
 
 ### DP-017.2 — ~~Enum `WorkOrderStatus` em ADR ou apenas em RF~~ ✅ Resolvido (2026-08-31)
 
@@ -242,17 +239,18 @@ outro provedor futuro pode ter outro parcialmente sobreposto); um enum fixo
 em código reintroduziria o problema que este redesenho pretendia evitar.
 Nenhum ADR é necessário para um enum que não existe.
 
-### DP-017.3 — Tecnologia de persistência de `work_order` e `work_order_history`
+### DP-017.3 — ~~Tecnologia de persistência de `work_order` e `work_order_history`~~ ✅ Resolvido (2026-08-31)
 
-**Situação:** Não está definido se `work_order` e `work_order_history` vivem em
-MongoDB (junto com `work_order_snapshots`) ou em PostgreSQL (junto com as demais
-entidades relacionais do ATUA). O schema estruturado dessas entidades (FK,
-upsert condicional) é mais natural em PostgreSQL; o dado bruto de
-`work_order_snapshots` é mais natural em MongoDB. Sem enum de status, o
-argumento de "schema relacional" fica mais fraco — o campo `status` agora é
-apenas uma string, como qualquer outro campo textual.
+**Decisão do usuário:** `work_order` e `work_order_history` ficam no
+**PostgreSQL** (junto com as demais entidades relacionais do ATUA), separado
+de `work_order_snapshots` (MongoDB — DP-016.3). Consistente com o schema
+estruturado dessas entidades (FK entre `work_order_history.work_order_id` e
+`work_order.id`, upsert condicional).
 
-**Aguarda:** decisão do `software-architect`.
+**Consequência de arquitetura:** o componente definido em DP-016.2 (consumer
+de fila) precisa acesso a ambos os bancos — lê o evento de novo snapshot
+(originado no MongoDB) e escreve em `work_order`/`work_order_history`
+(PostgreSQL).
 
 ### DP-017.4 — Validação de transições de status
 
@@ -266,8 +264,8 @@ reporta. Não está definido se o ATUA deve rejeitar transições inválidas no 
 
 - RF-016 (persistência de snapshots brutos): produz os snapshots que alimentam
   as entidades deste requisito.
-- DP-016.2: define quem dispara o processamento snapshot → work_order/history
-  (Worker síncrono ou processo separado).
+- DP-016.2 (resolvida): consumer de fila dispara o processamento
+  snapshot → work_order/history.
 - ADR-021 (D7): define `workOrderId` como `provider_id` para o iService no MVP.
 - RF-009 (coleta inicial): define o fluxo de coleta que origina os primeiros
   snapshots.
@@ -280,8 +278,12 @@ reporta. Não está definido se o ATUA deve rejeitar transições inválidas no 
 - RF futuro de exibição de OS no Office dependerá das entidades definidas aqui.
 - RF futuro de coleta recorrente definirá o que acontece com `work_order` e
   `work_order_history` quando a mesma OS aparecer em coletas subsequentes —
-  RF-017.1 e RF-017.2 já cobrem o comportamento esperado, mas o critério de
-  aceite RF-017.3 fica pendente até DP-017.1 ser resolvido.
+  RF-017.1 e RF-017.2 já cobrem o comportamento esperado (upsert sempre;
+  histórico só em mudança de status, DP-017.1 resolvida).
+- `work_order` e `work_order_history` vivem em PostgreSQL (DP-017.3 resolvida),
+  separado do MongoDB usado por `work_order_snapshots` (RF-016/DP-016.3) —
+  novo esquema relacional a ser desenhado pelo `software-architect`, incluindo
+  migração/tabela e índices para `(tenant_id, provider_id)`.
 
 ## Fora do escopo
 
