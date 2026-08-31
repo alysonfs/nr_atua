@@ -1,7 +1,7 @@
 ---
 name: brand-copywriter
 description: Cria textos institucionais e mensagens coerentes com a voz do ATUA.
-model: claude-haiku-4.5
+model: Claude Haiku 4.5 (copilot)
 tools:
   - search
   - read

@@ -1,7 +1,7 @@
 ---
 name: brand-content
 description: Planeja conteudos e narrativas de canais para a marca ATUA.
-model: claude-haiku-4.5
+model: Claude Haiku 4.5 (copilot)
 tools:
   - search
   - read

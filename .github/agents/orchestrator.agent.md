@@ -1,7 +1,7 @@
 ---
 name: orchestrator
 description: Orquestra a equipe de desenvolvimento
-model: claude-sonnet-4.6
+model: Claude Sonnet 5 (copilot)
 tools:
   - agent
   - read

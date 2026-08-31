@@ -2,7 +2,7 @@
 
 name: aws-architect
 description: Define arquitetura AWS, infraestrutura, segurança, custos, escalabilidade e infraestrutura como código.
-model: claude-sonnet-4.6
+model: Claude Sonnet 5 (copilot)
 tools:
   - search
   - read

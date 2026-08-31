@@ -1,7 +1,7 @@
 ---
 name: documentation
 description: Mantém a documentação técnica e funcional do projeto sincronizada com requisitos, arquitetura, decisões e implementação.
-model: claude-haiku-4.5
+model: Claude Haiku 4.5 (copilot)
 tools:
   - search
   - read

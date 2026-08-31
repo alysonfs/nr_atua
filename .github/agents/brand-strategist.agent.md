@@ -1,7 +1,7 @@
 ---
 name: brand-strategist
 description: Define o posicionamento, a proposta de valor e a estrategia de marca do ATUA.
-model: claude-haiku-4.5
+model: Claude Haiku 4.5 (copilot)
 tools:
   - search
   - read

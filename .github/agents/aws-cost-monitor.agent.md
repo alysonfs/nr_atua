@@ -1,7 +1,7 @@
 ---
 name: aws-cost-monitor
 description: Monitora gastos AWS sob demanda usando consultas somente leitura via AWS CLI, Cost Explorer e Budgets.
-model: claude-haiku-4.5
+model: Claude Haiku 4.5 (copilot)
 tools:
   - search
   - read

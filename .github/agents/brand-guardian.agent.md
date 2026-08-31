@@ -1,7 +1,7 @@
 ---
 name: brand-guardian
 description: Revisa sob demanda a consistencia dos entregaveis de marca do ATUA.
-model: claude-haiku-4.5
+model: Claude Haiku 4.5 (copilot)
 tools:
   - search
   - read

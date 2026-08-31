@@ -1,7 +1,7 @@
 ---
 name: qa-engineer
 description: Valida funcionalidades, requisitos, critérios de aceite, qualidade e regressões antes da conclusão de uma tarefa.
-model: claude-sonnet-4.6
+model: Claude Sonnet 5 (copilot)
 tools:
   - search
   - read

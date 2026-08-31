@@ -2,7 +2,7 @@
 
 name: product-analyst
 description: Analisa requisitos, regras de negócio, escopo e critérios de aceite do produto.
-model: claude-haiku-4.5
+model: Claude Haiku 4.5 (copilot)
 tools:
   - search
   - read
