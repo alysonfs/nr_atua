@@ -3,6 +3,7 @@ using Atua.Api.Domain.Identity;
 using Atua.Api.Domain.Integrations;
 using Atua.Api.Domain.Integrations.CollectorControl;
 using Atua.Api.Domain.Tenants;
+using Atua.Api.Domain.WorkOrders;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
@@ -38,6 +39,12 @@ public sealed class AtuaDbContext(DbContextOptions<AtuaDbContext> options) : DbC
     public DbSet<CollectorControlIdempotency> CollectorControlIdempotencies =>
         Set<CollectorControlIdempotency>();
 
+    public DbSet<WorkOrder> WorkOrders => Set<WorkOrder>();
+
+    public DbSet<WorkOrderHistory> WorkOrderHistories => Set<WorkOrderHistory>();
+
+    public DbSet<ConsumerState> ConsumerStates => Set<ConsumerState>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         ConfigureUser(modelBuilder.Entity<User>());
@@ -54,6 +61,9 @@ public sealed class AtuaDbContext(DbContextOptions<AtuaDbContext> options) : DbC
         ConfigureCollectorActivation(modelBuilder.Entity<CollectorActivation>());
         ConfigureImmediateCollectionCommand(modelBuilder.Entity<ImmediateCollectionCommand>());
         ConfigureCollectorControlIdempotency(modelBuilder.Entity<CollectorControlIdempotency>());
+        ConfigureWorkOrder(modelBuilder.Entity<WorkOrder>());
+        ConfigureWorkOrderHistory(modelBuilder.Entity<WorkOrderHistory>());
+        ConfigureConsumerState(modelBuilder.Entity<ConsumerState>());
     }
 
     private static void ConfigureAuthSession(EntityTypeBuilder<AuthSession> builder)
@@ -289,5 +299,47 @@ public sealed class AtuaDbContext(DbContextOptions<AtuaDbContext> options) : DbC
             .OnDelete(DeleteBehavior.Cascade);
         builder.HasOne<Integration>().WithMany().HasForeignKey(record => record.IntegrationId)
             .OnDelete(DeleteBehavior.Cascade);
+    }
+
+    private static void ConfigureWorkOrder(EntityTypeBuilder<WorkOrder> builder)
+    {
+        builder.ToTable("work_orders");
+        builder.HasKey(wo => wo.Id);
+        builder.Property(wo => wo.Id).ValueGeneratedNever();
+        builder.Property(wo => wo.ProviderId).HasMaxLength(256).IsRequired();
+        builder.Property(wo => wo.Status).IsRequired();
+        // Chave de identidade: (tenant_id, provider_id) — RF-017.6
+        builder.HasIndex(wo => new { wo.TenantId, wo.ProviderId })
+            .IsUnique()
+            .HasDatabaseName("uq_work_orders_tenant_provider");
+        builder.HasIndex(wo => wo.TenantId);
+    }
+
+    private static void ConfigureWorkOrderHistory(EntityTypeBuilder<WorkOrderHistory> builder)
+    {
+        builder.ToTable("work_order_histories");
+        builder.HasKey(h => h.Id);
+        builder.Property(h => h.Id).ValueGeneratedNever();
+        builder.Property(h => h.ProviderId).HasMaxLength(256).IsRequired();
+        builder.Property(h => h.Status).IsRequired();
+        // WorkOrderSnapshotId é referência de aplicação, sem FK de banco (ADR-023)
+        builder.Property(h => h.WorkOrderSnapshotId).IsRequired();
+        builder.HasIndex(h => h.WorkOrderId)
+            .HasDatabaseName("ix_work_order_histories_work_order_id");
+        builder.HasIndex(h => h.TenantId)
+            .HasDatabaseName("ix_work_order_histories_tenant_id");
+        builder.HasOne<WorkOrder>().WithMany()
+            .HasForeignKey(h => h.WorkOrderId)
+            .OnDelete(DeleteBehavior.Cascade);
+    }
+
+    private static void ConfigureConsumerState(EntityTypeBuilder<ConsumerState> builder)
+    {
+        builder.ToTable("consumer_states");
+        builder.HasKey(cs => cs.ConsumerId);
+        builder.Property(cs => cs.ConsumerId).HasMaxLength(128).IsRequired();
+        // resume_token é JSONB no Postgres
+        builder.Property(cs => cs.ResumeToken)
+            .HasColumnType("jsonb");
     }
 }

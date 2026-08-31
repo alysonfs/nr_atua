@@ -6,14 +6,11 @@ using Microsoft.Extensions.Logging;
 namespace Atua.Collector.Persistence;
 
 /// <summary>
-/// Implementação do repositório de ordens de serviço usando MongoDB Atlas.
+/// Implementação do repositório de snapshots de ordens de serviço usando MongoDB Atlas (RF-016).
 ///
-/// Coleções (ADR-021):
-/// - <c>work_order_snapshots</c>: estado atual de cada OS — upsert idempotente por (tenantId, providerOrderId).
-/// - <c>work_order_observations</c>: observação imutável por OS por coleta — índice único em (tenantId, providerOrderId, commandId).
-///
-/// A inicialização dos índices é feita em <see cref="EnsureIndexesAsync"/> e deve
-/// ser chamada uma vez na inicialização da aplicação.
+/// Coleção: <c>work_order_snapshots</c> — append-only, um documento por OS por coleta.
+/// Índice único em (tenant_id, provider_id, command_id) garante idempotência de re-execução
+/// (DP-016.1): duplicata é ignorada silenciosamente, não falha o processo inteiro.
 /// </summary>
 public sealed class WorkOrderRepository(
     IMongoDatabase database,
@@ -21,7 +18,6 @@ public sealed class WorkOrderRepository(
     : IWorkOrderRepository
 {
     private const string SnapshotsCollection = "work_order_snapshots";
-    private const string ObservationsCollection = "work_order_observations";
 
     /// <summary>
     /// Cria os índices necessários se ainda não existirem.
@@ -29,159 +25,111 @@ public sealed class WorkOrderRepository(
     /// </summary>
     public async Task EnsureIndexesAsync(CancellationToken cancellationToken = default)
     {
-        // work_order_snapshots: índice de idempotência (tenantId, providerOrderId)
-        var snapshots = database.GetCollection<WorkOrderSnapshotDocument>(SnapshotsCollection);
-        var snapshotIndex = new CreateIndexModel<WorkOrderSnapshotDocument>(
+        var collection = database.GetCollection<WorkOrderSnapshotDocument>(SnapshotsCollection);
+
+        // Índice único (tenant_id, provider_id, command_id) — idempotência de re-execução (DP-016.1)
+        var uniqueIndex = new CreateIndexModel<WorkOrderSnapshotDocument>(
             Builders<WorkOrderSnapshotDocument>.IndexKeys
                 .Ascending(d => d.TenantId)
-                .Ascending(d => d.ProviderOrderId),
-            new CreateIndexOptions { Unique = true, Name = "idx_tenant_provider_order" });
-
-        await snapshots.Indexes.CreateOneAsync(snapshotIndex, cancellationToken: cancellationToken);
-
-        // work_order_observations: índice de idempotência (tenantId, providerOrderId, commandId)
-        var observations = database.GetCollection<WorkOrderObservationDocument>(ObservationsCollection);
-        var observationIndex = new CreateIndexModel<WorkOrderObservationDocument>(
-            Builders<WorkOrderObservationDocument>.IndexKeys
-                .Ascending(d => d.TenantId)
-                .Ascending(d => d.ProviderOrderId)
+                .Ascending(d => d.ProviderId)
                 .Ascending(d => d.CommandId),
-            new CreateIndexOptions { Unique = true, Name = "idx_tenant_provider_order_command" });
+            new CreateIndexOptions { Unique = true, Name = "idx_tenant_provider_command" });
 
-        await observations.Indexes.CreateOneAsync(observationIndex, cancellationToken: cancellationToken);
+        await collection.Indexes.CreateOneAsync(uniqueIndex, cancellationToken: cancellationToken);
 
-        logger.LogDebug("[MONGO] Índices garantidos para {Snapshots} e {Observations}.",
-            SnapshotsCollection, ObservationsCollection);
+        logger.LogDebug("[MONGO] Índices garantidos para {Collection}.", SnapshotsCollection);
     }
 
     /// <inheritdoc/>
-    public async Task UpsertSnapshotsAsync(
+    public async Task InsertSnapshotsAsync(
         Guid tenantId,
         Guid commandId,
+        string providerType,
         CollectionResult result,
         CancellationToken cancellationToken = default)
     {
         var collection = database.GetCollection<WorkOrderSnapshotDocument>(SnapshotsCollection);
         var now = DateTimeOffset.UtcNow;
-        var upsertCount = 0;
+
+        var documents = new List<WorkOrderSnapshotDocument>();
         var skipCount = 0;
 
         foreach (var (_, orders) in result.OrdersByStatus)
         {
             foreach (var rawOrder in orders)
             {
-                var rawDict = ToStringObjectDict(rawOrder);
-                var providerOrderId = WorkOrderMapper.ExtractProviderOrderId(rawDict);
-
-                if (providerOrderId is null)
+                if (rawOrder is not IDictionary<string, object?> orderDict)
                 {
-                    logger.LogWarning(
-                        "[MONGO] OS sem providerOrderId ignorada no upsert de snapshots. CommandId={CommandId}",
-                        commandId);
                     skipCount++;
-                    continue;
-                }
-
-                var rawBson = BsonDocument.Parse(System.Text.Json.JsonSerializer.Serialize(rawDict));
-
-                var filter = Builders<WorkOrderSnapshotDocument>.Filter.And(
-                    Builders<WorkOrderSnapshotDocument>.Filter.Eq(d => d.TenantId, tenantId),
-                    Builders<WorkOrderSnapshotDocument>.Filter.Eq(d => d.ProviderOrderId, providerOrderId));
-
-                var update = Builders<WorkOrderSnapshotDocument>.Update
-                    .SetOnInsert(d => d.Id, Guid.CreateVersion7())
-                    .SetOnInsert(d => d.TenantId, tenantId)
-                    .SetOnInsert(d => d.ProviderOrderId, providerOrderId)
-                    .Set(d => d.CommandId, commandId)
-                    .Set(d => d.CapturedAtUtc, result.CapturedAtUtc)
-                    .Set(d => d.UpdatedAtUtc, now)
-                    .Set(d => d.RawData, rawBson);
-
-                await collection.UpdateOneAsync(
-                    filter, update,
-                    new UpdateOptions { IsUpsert = true },
-                    cancellationToken);
-
-                upsertCount++;
-            }
-        }
-
-        logger.LogInformation(
-            "[MONGO] Upsert de snapshots concluído. TenantId={TenantId} CommandId={CommandId} Upserted={Upserted} Skipped={Skipped}",
-            tenantId, commandId, upsertCount, skipCount);
-    }
-
-    /// <inheritdoc/>
-    public async Task InsertObservationsAsync(
-        Guid tenantId,
-        Guid commandId,
-        CollectionResult result,
-        CancellationToken cancellationToken = default)
-    {
-        var collection = database.GetCollection<WorkOrderObservationDocument>(ObservationsCollection);
-        var docs = new List<WorkOrderObservationDocument>();
-
-        foreach (var (_, orders) in result.OrdersByStatus)
-        {
-            foreach (var rawOrder in orders)
-            {
-                var rawDict = ToStringObjectDict(rawOrder);
-                var providerOrderId = WorkOrderMapper.ExtractProviderOrderId(rawDict);
-
-                if (providerOrderId is null)
-                {
                     logger.LogWarning(
-                        "[MONGO] OS sem providerOrderId ignorada na inserção de observações. CommandId={CommandId}",
+                        "[REPO] OS descartada: payload não é dicionário. CommandId={CommandId}.",
                         commandId);
                     continue;
                 }
 
-                var rawBson = BsonDocument.Parse(System.Text.Json.JsonSerializer.Serialize(rawDict));
+                var providerId = WorkOrderMapper.ExtractProviderOrderId(orderDict);
 
-                docs.Add(new WorkOrderObservationDocument
+                if (string.IsNullOrWhiteSpace(providerId))
                 {
-                    Id = Guid.CreateVersion7(),
+                    skipCount++;
+                    logger.LogWarning(
+                        "[REPO] OS descartada: provider_id ausente/inválido (RF-016.5). CommandId={CommandId}.",
+                        commandId);
+                    continue;
+                }
+
+                // Converte o rawOrder para BsonDocument preservando todos os campos (RF-016.2)
+                var rawDoc = new BsonDocument(
+                    orderDict.Where(kv => kv.Value is not null)
+                             .Select(kv => new BsonElement(kv.Key, BsonValue.Create(kv.Value))));
+
+                documents.Add(new WorkOrderSnapshotDocument
+                {
                     TenantId = tenantId,
-                    ProviderOrderId = providerOrderId,
+                    ProviderId = providerId,
+                    ProviderType = providerType,
                     CommandId = commandId,
-                    CapturedAtUtc = result.CapturedAtUtc,
-                    RawData = rawBson
+                    RawData = rawDoc,
+                    CreatedAt = now
                 });
             }
         }
 
-        if (docs.Count == 0)
+        if (documents.Count == 0)
         {
             logger.LogInformation(
-                "[MONGO] Nenhuma observação a inserir. TenantId={TenantId} CommandId={CommandId}",
-                tenantId, commandId);
+                "[REPO] Nenhum snapshot a inserir. CommandId={CommandId} Descartadas={SkipCount}.",
+                commandId, skipCount);
             return;
         }
 
-        // InsertMany com ordered:false — continua mesmo que algum documento duplique
-        // o índice único (coleta re-executada para o mesmo commandId).
-        await collection.InsertManyAsync(
-            docs,
-            new InsertManyOptions { IsOrdered = false },
-            cancellationToken);
+        try
+        {
+            // IsOrdered=false: continua inserindo mesmo se um documento violar o índice único
+            // (re-execução do mesmo commandId — DP-016.1). Duplicatas são ignoradas, não falham.
+            await collection.InsertManyAsync(
+                documents,
+                new InsertManyOptions { IsOrdered = false },
+                cancellationToken);
 
-        logger.LogInformation(
-            "[MONGO] Observações inseridas. TenantId={TenantId} CommandId={CommandId} Count={Count}",
-            tenantId, commandId, docs.Count);
-    }
-
-    // -------------------------------------------------------------------------
-    // Helpers
-    // -------------------------------------------------------------------------
-
-    private static Dictionary<string, object?> ToStringObjectDict(object rawOrder)
-    {
-        if (rawOrder is Dictionary<string, object?> dict)
-            return dict;
-
-        // Fallback: serializa/deserializa via JSON para garantir IDictionary<string, object?>
-        var json = System.Text.Json.JsonSerializer.Serialize(rawOrder);
-        return System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, object?>>(json)
-               ?? new Dictionary<string, object?>();
+            logger.LogInformation(
+                "[REPO] {Count} snapshot(s) inserido(s). TenantId={TenantId} CommandId={CommandId} Descartadas={SkipCount}.",
+                documents.Count, tenantId, commandId, skipCount);
+        }
+        catch (MongoBulkWriteException ex) when (ex.WriteErrors.All(e => e.Category == ServerErrorCategory.DuplicateKey))
+        {
+            // Todos os erros são duplicatas: re-execução idempotente do mesmo commandId (DP-016.1)
+            logger.LogInformation(
+                "[REPO] InsertMany: {DupCount} duplicata(s) ignorada(s) por índice único. TenantId={TenantId} CommandId={CommandId}.",
+                ex.WriteErrors.Count, tenantId, commandId);
+        }
+        catch (MongoBulkWriteException ex) when (ex.WriteErrors.Any(e => e.Category == ServerErrorCategory.DuplicateKey))
+        {
+            // Inserções parciais: parte dos docs foi inserida, parte eram duplicatas
+            var inserted = documents.Count - ex.WriteErrors.Count;
+            logger.LogInformation(
+                "[REPO] InsertMany parcial: {Inserted} inserido(s), {DupCount} duplicata(s) ignorada(s). TenantId={TenantId} CommandId={CommandId}.",
+                inserted, ex.WriteErrors.Count, tenantId, commandId);
+        }
     }
 }

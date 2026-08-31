@@ -91,10 +91,8 @@ public class WorkerEligibilityTests
             Arg.Any<int>(), Arg.Any<CancellationToken>());
 
         // Nenhuma persistência no Mongo
-        await repo.DidNotReceive().UpsertSnapshotsAsync(
-            Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<CollectionResult>(), Arg.Any<CancellationToken>());
-        await repo.DidNotReceive().InsertObservationsAsync(
-            Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<CollectionResult>(), Arg.Any<CancellationToken>());
+        await repo.DidNotReceive().InsertSnapshotsAsync(
+            Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<CollectionResult>(), Arg.Any<CancellationToken>());
 
         // CompleteAsync deve ter sido chamado com "Cancelled"
         await apiClient.Received(1).CompleteAsync(

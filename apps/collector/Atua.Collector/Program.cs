@@ -1,6 +1,7 @@
 using Atua.Collector;
 using Atua.Collector.Api;
 using Atua.Collector.Configuration;
+using Atua.Collector.Consumer;
 using Atua.Collector.IService;
 using Atua.Collector.Persistence;
 using Microsoft.Extensions.Options;
@@ -14,6 +15,9 @@ builder.Services.Configure<CollectorWorkerOptions>(
 
 builder.Services.Configure<MongoDbOptions>(
     builder.Configuration.GetSection(MongoDbOptions.SectionName));
+
+builder.Services.Configure<PostgresOptions>(
+    builder.Configuration.GetSection(PostgresOptions.SectionName));
 
 // MongoDB Atlas — IMongoClient singleton, IMongoDatabase scoped por banco (ADR-012)
 builder.Services.AddSingleton<IMongoClient>(sp =>
@@ -43,6 +47,22 @@ builder.Services
 // Serviços
 builder.Services.AddSingleton<IIServiceCollector, IServiceCollectorService>();
 builder.Services.AddHostedService<Worker>();
+
+// Consumer de Change Streams (ADR-023)
+builder.Services.AddSingleton<WorkOrderPgRepository>(sp =>
+{
+    var opts = sp.GetRequiredService<IOptions<PostgresOptions>>().Value;
+    var logger = sp.GetRequiredService<ILogger<WorkOrderPgRepository>>();
+    return new WorkOrderPgRepository(opts.ConnectionString, logger);
+});
+
+builder.Services.AddSingleton<IReadOnlyDictionary<string, ISnapshotAdapter>>(_ =>
+    new Dictionary<string, ISnapshotAdapter>(StringComparer.OrdinalIgnoreCase)
+    {
+        ["iservice"] = new IServiceSnapshotAdapter()
+    });
+
+builder.Services.AddHostedService<SnapshotConsumerWorker>();
 
 var host = builder.Build();
 

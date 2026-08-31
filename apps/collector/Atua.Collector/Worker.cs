@@ -169,7 +169,7 @@ public sealed class Worker(
     }
 
     /// <summary>
-    /// Persiste o resultado da coleta no MongoDB (snapshots + observações).
+    /// Persiste o resultado da coleta no MongoDB — append-only (RF-016).
     /// A persistência ocorre ANTES de CompleteAsync — falha aqui é falha da coleta (ADR-021).
     /// Exceções de escrita no Mongo propagam para serem tratadas no caller (RunCycleAsync).
     /// </summary>
@@ -185,15 +185,10 @@ public sealed class Worker(
             result.CapturedAtUtc,
             result.StatusCounts);
 
-        await workOrderRepository.UpsertSnapshotsAsync(
+        await workOrderRepository.InsertSnapshotsAsync(
             command.TenantId,
             command.CommandId,
-            result,
-            cancellationToken);
-
-        await workOrderRepository.InsertObservationsAsync(
-            command.TenantId,
-            command.CommandId,
+            "iservice",
             result,
             cancellationToken);
 

@@ -4,8 +4,10 @@ using MongoDB.Bson.Serialization.Attributes;
 namespace Atua.Collector.Persistence;
 
 /// <summary>
-/// Documento da coleção <c>work_order_snapshots</c>.
-/// Estado atual de cada OS — upsert idempotente por (tenantId, providerOrderId).
+/// Documento append-only da coleção <c>work_order_snapshots</c> (RF-016).
+/// Cada coleta de uma OS gera um novo documento — sem upsert.
+/// Índice único em (tenant_id, provider_id, command_id) garante idempotência
+/// de re-execução (DP-016.1).
 /// Pode conter PII (ADR-021/D5).
 /// </summary>
 public sealed class WorkOrderSnapshotDocument
@@ -14,38 +16,40 @@ public sealed class WorkOrderSnapshotDocument
     [BsonRepresentation(BsonType.String)]
     public Guid Id { get; init; } = Guid.CreateVersion7();
 
-    /// <summary>Identificador do tenant — indexado (ADR-021/D5).</summary>
-    [BsonElement("tenantId")]
+    /// <summary>Identificador do tenant (RF-016.3).</summary>
+    [BsonElement("tenant_id")]
     [BsonRepresentation(BsonType.String)]
     public Guid TenantId { get; init; }
 
     /// <summary>
-    /// Chave externa do iService — campo provisório: workOrderNo (ADR-021/D7).
-    /// // TODO(D7): substituir workOrderNo por workOrderId após descoberta do iService real.
-    /// Isolado em <see cref="WorkOrderMapper"/> — nenhuma outra parte do código deve
-    /// referenciar o campo do iService diretamente.
+    /// Identificador externo da OS no provedor (RF-016.3).
+    /// Isolado em <see cref="WorkOrderMapper"/> — nenhuma outra parte do código
+    /// deve referenciar o campo do iService diretamente (RF-016.6).
     /// </summary>
-    [BsonElement("providerOrderId")]
-    public string ProviderOrderId { get; init; } = string.Empty;
+    [BsonElement("provider_id")]
+    public string ProviderId { get; init; } = string.Empty;
 
-    /// <summary>Identificador do comando de coleta que gerou este snapshot.</summary>
-    [BsonElement("commandId")]
+    /// <summary>
+    /// Identificador do provedor de origem do snapshot (RF-016.3, RF-016 RN-016.7).
+    /// Usado pelo consumer (ADR-023) para selecionar o SnapshotAdapter correto.
+    /// Ex.: "iservice".
+    /// </summary>
+    [BsonElement("provider_type")]
+    public string ProviderType { get; init; } = string.Empty;
+
+    /// <summary>Identificador do comando de coleta que gerou este snapshot (RF-016.3).</summary>
+    [BsonElement("command_id")]
     [BsonRepresentation(BsonType.String)]
     public Guid CommandId { get; init; }
 
-    /// <summary>Momento UTC da captura.</summary>
-    [BsonElement("capturedAtUtc")]
-    public DateTimeOffset CapturedAtUtc { get; init; }
-
-    /// <summary>Momento UTC da última atualização deste snapshot.</summary>
-    [BsonElement("updatedAtUtc")]
-    public DateTimeOffset UpdatedAtUtc { get; init; }
-
     /// <summary>
-    /// Dados brutos da OS conforme retornados pelo iService.
-    /// Schema não formalizado — preservado como documento dinâmico
-    /// enquanto não há RF definindo o schema completo.
+    /// Dados brutos da OS conforme retornados pelo provedor (RF-016.2).
+    /// Schema não formalizado — preservado integralmente sem mapeamento.
     /// </summary>
-    [BsonElement("rawData")]
+    [BsonElement("rawdata")]
     public BsonDocument RawData { get; init; } = new();
+
+    /// <summary>Timestamp UTC de inserção (RF-016.4) — nunca usar datas do provedor aqui.</summary>
+    [BsonElement("created_at")]
+    public DateTimeOffset CreatedAt { get; init; }
 }
