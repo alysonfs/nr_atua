@@ -258,7 +258,13 @@ de fila) precisa acesso a ambos os bancos — lê o evento de novo snapshot
 de `Concluido` para `Designado`). O sistema apenas registra o que o provedor
 reporta. Não está definido se o ATUA deve rejeitar transições inválidas no MVP.
 
-**Aguarda:** decisão de produto.
+**Decisão do usuário (2026-08-31):** adiada para depois do MVP. Sem
+validação de transição por enquanto — o sistema registra qualquer status
+reportado pelo provedor, mesmo que pareça retroceder. Revisitar quando
+houver mais visibilidade sobre o comportamento real do iService/outros
+provedores.
+
+**Aguarda:** revisão pós-MVP.
 
 ## Dependências
 
