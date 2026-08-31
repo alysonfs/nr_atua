@@ -128,16 +128,53 @@ Office ou qualquer outro mecanismo externo ao fluxo de coleta.
 
 ### DP-010.1 — Formato e campos expostos do histórico ao Office
 
-**Situação:** Os documentos de observação persistem `rawData` (BsonDocument
-com o payload bruto do iService). Não está definido quais campos do `rawData`
-são expostos ao Office, qual é a estrutura do objeto de histórico na resposta
-de API, nem se há paginação ou limite de observações por OS.
+**Status:** ✅ Resolvido (2026-08-31)
 
-**Impacto se não decidido:** o RF de exibição do histórico não pode ser
-especificado e a API de consulta não pode ser implementada.
+**Decisão:** todos os campos não-nulos retornados pelo iService na consulta
+da OS são expostos ao Office — não há lista reduzida nem mascaramento
+adicional pelo ATUA além do que o próprio iService já aplica na origem (ex.:
+`address`, `phoneNumber1/2/3`, `name`, `email` já chegam parcialmente
+mascarados do provedor). Isso é consistente com D5 (coletar tudo, inclusive
+PII do cliente final).
 
-**Aguarda:** decisão de produto (usuário) sobre campos expostos; decisão de
-arquitetura sobre paginação.
+Campos tipicamente presentes (exemplo real, campos nulos omitidos):
+`workOrderId`, `workOrderNo`, `serviceRequestId`, `divisionCode`,
+`customerType`, `custAccountId`, `woSubType`, `woType`, `woStatus`, `aspId`,
+`aspCode`, `useSystem`, `assignmentTimes`, `visitStartTime`, `serviceWay`,
+`sourceCode`, `aspNameLocal`, `openDays`, `requestDate`, `urgencyCode`,
+`repairDocId`, `quotaEnableAspFlag`, `amcCustomer`, `address`, `stateCode`,
+`stateName`, `cityName`, `productBrand`, `pdCode`, `productCategoryCode`,
+`productLineCode`, `productCode`, `productModel`, `name`, `firstName`,
+`middleName`, `lastName`, `phoneNumber1`, `phoneNumber2`, `phoneNumber3`,
+`phoneCountryCode1`, `phoneCountryCode2`, `phoneCountryCode3`, `zipcode`,
+`countryCode`, `countryName`, `email`, `symptom`, `symptomDescription`,
+`countStatus`, `expectedDate`, `notesAllList`, `outWarrantyCnt`,
+`inWarrantyCnt`, `srNumber`, `custAddressId`, `productStatus`, `modelId`,
+`indoorId`, `productQty`, `lockedWoFlag`, `appType`, `attFlag`,
+`fullSource`, `auditPassQty`, `auditTotalQty`, `woVisitStartTime`,
+`srVisitStartTime`, `productGroup`, `serviceArea`, `sistema`.
+
+Como o conjunto de campos retornados pelo iService pode variar entre OSs
+(campos ausentes/nulos em uma OS podem existir em outra), a regra de
+implementação é: **expor o `rawData` inteiro da observação, filtrando
+apenas chaves com valor `null`** — não uma allowlist fixa de nomes de
+campo. Isso evita que o ATUA precise ser atualizado a cada novo campo que
+o iService passe a retornar.
+
+**Ainda em aberto (arquitetura, não bloqueia especificação):** paginação e
+limite de observações por OS na API de consulta — fica a critério do
+`software-architect` ao desenhar o endpoint de exibição do histórico.
+
+### DP-010.2 — Comportamento de observações com `providerOrderId` ausente
+
+**Situação:** `WorkOrderRepository` já registra um `LogWarning` e descarta
+OS sem `providerOrderId` durante a persistência. Não está definido se esse
+descarte deve ser registrado como evento auditável ou se basta o log.
+
+**Impacto se não decidido:** descarte silencioso pode dificultar diagnóstico
+operacional.
+
+**Aguarda:** decisão de produto sobre necessidade de auditoria de descartes.
 
 ### DP-010.2 — Comportamento de observações com `providerOrderId` ausente
 
@@ -156,4 +193,4 @@ operacional.
 - Interpretação da ausência de OS (RF-012).
 - Escrita no iService (RF-013).
 - Exibição do histórico no Office (RF futuro).
-- Paginação do histórico (decisão pendente DP-010.1).
+- Paginação do histórico (decisão de arquitetura, ver DP-010.1).
