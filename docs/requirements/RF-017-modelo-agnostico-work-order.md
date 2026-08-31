@@ -35,15 +35,16 @@ alimentadas a partir dos snapshots brutos definidos em RF-016.
 
 ## Escopo
 
-RF-017 cobre as entidades `work_order` e `work_order_history`, o enum de status
-agnóstico de provedor, e as regras de manutenção dessas entidades a partir dos
-snapshots. Não cobre o dado bruto (`work_order_snapshots` — RF-016) nem a
-camada de exibição no Office (RF futuro).
+RF-017 cobre as entidades `work_order` e `work_order_history`, mantendo o
+status como string crua do provedor (sem enum), e as regras de manutenção
+dessas entidades a partir dos snapshots. Não cobre o dado bruto
+(`work_order_snapshots` — RF-016) nem a camada de exibição no Office (RF
+futuro).
 
 ### O que É RF-017
 
 - Definição das entidades `work_order` e `work_order_history`.
-- Definição do enum de status agnóstico de provedor.
+- Definição do status como string crua do provedor, sem enum nem catálogo.
 - Regras de upsert em `work_order` e append em `work_order_history` quando
   um novo snapshot é processado.
 - Rastreabilidade entre snapshot bruto e registro de histórico.
@@ -69,7 +70,7 @@ work_order {
   id:          UUID (UUIDv7, chave primária interna do ATUA)
   tenant_id:   UUID
   provider_id: string (identificador externo da OS no provedor)
-  status:      enum WorkOrderStatus
+  status:      string (valor cru retornado pelo provedor, sem mapeamento)
   created_at:  timestamp UTC — instante em que a OS foi vista pela primeira vez
   updated_at:  timestamp UTC — instante da atualização mais recente
 }
@@ -88,7 +89,7 @@ work_order_history {
   work_order_snapshot_id: UUID (FK → work_order_snapshots.id — rastreabilidade)
   tenant_id:              UUID
   provider_id:            string
-  status:                 enum WorkOrderStatus
+  status:                 string (valor cru retornado pelo provedor)
   created_at:             timestamp UTC — instante de inserção deste registro
   updated_at:             timestamp UTC
 }
@@ -102,28 +103,26 @@ o status não tenha mudado em relação ao registro anterior.
 > mudança de status) ou apenas quando o status muda é uma **decisão pendente**
 > — ver DP-017.1.
 
-### Enum `WorkOrderStatus`
+### Status: string crua do provedor (sem enum, sem catálogo)
 
-```
-WorkOrderStatus {
-  Designado,
-  EmProcessamento,
-  Pendente,
-  Concluido,
-  Cancelado
-}
-```
+**Decisão (2026-08-31, resolve DP-017.2):** o `status` não é um enum fixo em
+código. É armazenado exatamente como o provedor o retorna (string), sem
+tradução para um vocabulário canônico comum.
 
-**Origem dos valores:** observados no iService (contagens nas capturas reais de
-produção: Designado, Em Processamento, Pendente, Concluído, Cancelado). Tratados
-como enum inicial de status agnóstico de provedor — o mapeamento de outros
-provedores futuros para este enum é trabalho futuro.
+**Motivo:** provedores diferentes têm conjuntos de status distintos e sem
+correspondência garantida — ex.: iService tem um conjunto de status, um
+provedor futuro (ex.: LG) pode ter outro conjunto parcialmente sobreposto e
+parcialmente diferente. Um enum único no código exigiria decidir a priori um
+mapeamento canônico entre vocabulários de provedores que ainda não são
+conhecidos, o que reintroduziria o mesmo problema que motivou este redesenho
+(ver RF-016: guardar o dado bruto primeiro, mapear depois).
 
-> **Nota sobre ADR:** a Otto perguntou se este enum deve ir para um ADR. A
-> recomendação da analista é: **sim, registrar em ADR**, porque é uma decisão de
-> modelo de dados com impacto em múltiplos componentes (Worker, API, Office) e
-> com consequências para provedores futuros. Aguarda confirmação do orchestrator
-> — ver **DP-017.2**.
+**Consequência para os requisitos abaixo:** toda menção a "enum
+`WorkOrderStatus`" e a "mapeamento de status" (RF-017.3, RF-017.5, RN-017.3,
+RN-017.5, critério de aceite 4) fica sem efeito — não há mapeamento nem
+descarte por status não reconhecido nesta fase. Um catálogo de status válidos
+por provedor, ou um vocabulário canônico comum, pode ser desenhado no futuro
+quando houver mais provedores conhecidos — fora de escopo deste RF.
 
 ## Requisitos funcionais
 
@@ -133,7 +132,7 @@ Quando um snapshot de uma OS for processado, o sistema deve criar ou atualizar
 o registro correspondente em `work_order`:
 
 - Se a OS não existir (`tenant_id` + `provider_id` ainda não cadastrados):
-  inserir novo registro com o status mapeado do snapshot e `created_at` =
+  inserir novo registro com o status (string crua) do snapshot e `created_at` =
   instante atual.
 - Se a OS já existir: atualizar `status` e `updated_at` com os valores do
   snapshot processado.
@@ -141,16 +140,15 @@ o registro correspondente em `work_order`:
 ### RF-017.2 - Append em `work_order_history` ao processar um snapshot
 
 Quando um snapshot de uma OS for processado, o sistema deve inserir um novo
-registro em `work_order_history` com o status mapeado e a referência ao
+registro em `work_order_history` com o status (string crua) e a referência ao
 snapshot (`work_order_snapshot_id`). Registros anteriores de histórico não
 devem ser alterados.
 
-### RF-017.3 - Mapeamento de status: agnóstico de provedor
+### RF-017.3 - Status armazenado como string crua, sem mapeamento
 
-O status armazenado em `work_order` e `work_order_history` deve ser um valor
-do enum `WorkOrderStatus`, não um valor bruto do provedor. O mapeamento entre
-o valor do provedor (ex.: string do iService) e o enum é responsabilidade do
-componente que processa o snapshot (Worker ou processo separado — ver DP-016.2).
+O status armazenado em `work_order` e `work_order_history` é a string exata
+retornada pelo provedor no snapshot, sem tradução para um enum ou vocabulário
+canônico comum entre provedores (ver seção "Status: string crua do provedor").
 
 ### RF-017.4 - Rastreabilidade: `work_order_snapshot_id`
 
@@ -158,12 +156,14 @@ Cada registro em `work_order_history` deve referenciar o `id` do snapshot
 (`work_order_snapshot_id`) que originou aquele registro, permitindo auditoria
 e reconciliação futura entre dado bruto e dado mapeado.
 
-### RF-017.5 - OS sem status mapeável são descartadas com log
+### RF-017.5 - OS sem status extraível são descartadas com log
 
-Se o status retornado pelo provedor não puder ser mapeado para nenhum valor
-do enum `WorkOrderStatus`, a OS não deve gerar registro em `work_order` nem
-em `work_order_history`. O descarte deve ser registrado em log com nível
-`Warning`.
+Se o Worker não conseguir extrair um valor de status do payload do snapshot
+(campo de status ausente ou vazio), a OS não deve gerar registro em
+`work_order` nem em `work_order_history`. O descarte deve ser registrado em
+log com nível `Warning`. Isso é diferente de "status não reconhecido": não há
+mais lista de status válidos para reconhecer — o critério de descarte é
+apenas ausência do valor.
 
 ### RF-017.6 - Identidade da OS: `tenant_id` + `provider_id`
 
@@ -176,9 +176,9 @@ Dois tenants distintos podem ter OSs com o mesmo `provider_id` sem conflito.
 |----------|----------------------------------------------------------------------------------------------------------------------------------------------|
 | RN-017.1 | Cada snapshot processado resulta em upsert em `work_order` (estado atual) e append em `work_order_history` (histórico).                     |
 | RN-017.2 | `work_order_history` é append-only; registros anteriores não são alterados nem removidos.                                                    |
-| RN-017.3 | O status em `work_order` e `work_order_history` é um valor do enum `WorkOrderStatus`; valores brutos do provedor não são armazenados aqui.   |
+| RN-017.3 | O status em `work_order` e `work_order_history` é a string crua retornada pelo provedor; não há enum nem vocabulário canônico comum.         |
 | RN-017.4 | Cada registro de `work_order_history` referencia o `work_order_snapshot_id` que o originou.                                                  |
-| RN-017.5 | OS com status não mapeável são descartadas (sem inserção) com log `Warning`.                                                                 |
+| RN-017.5 | OS sem valor de status extraível do snapshot são descartadas (sem inserção) com log `Warning`.                                               |
 | RN-017.6 | A identidade da OS em `work_order` é `(tenant_id, provider_id)`; isolamento entre tenants é garantido pelo `tenant_id`.                     |
 
 ## Critérios de aceite
@@ -186,23 +186,22 @@ Dois tenants distintos podem ter OSs com o mesmo `provider_id` sem conflito.
 1. Dado que a OS X (tenant T, provider_id P) não existe em `work_order`,
    quando um snapshot dessa OS com status "Designado" for processado,
    então deve ser inserido um registro em `work_order` com
-   `status = Designado`, e um registro em `work_order_history` referenciando
-   o `work_order_snapshot_id` correspondente.
+   `status = "Designado"` (string crua), e um registro em `work_order_history`
+   referenciando o `work_order_snapshot_id` correspondente.
 
-2. Dado que a OS X já existe em `work_order` com `status = Designado`,
+2. Dado que a OS X já existe em `work_order` com `status = "Designado"`,
    quando um snapshot da mesma OS com status "Em Processamento" for processado,
-   então `work_order.status` deve ser atualizado para `EmProcessamento`,
+   então `work_order.status` deve ser atualizado para `"Em Processamento"`,
    e um novo registro deve ser inserido em `work_order_history` com
-   `status = EmProcessamento`, sem alterar registros anteriores do histórico.
+   `status = "Em Processamento"`, sem alterar registros anteriores do histórico.
 
-3. Dado que a OS X já existe em `work_order` com `status = Designado`,
+3. Dado que a OS X já existe em `work_order` com `status = "Designado"`,
    quando um snapshot da mesma OS com o mesmo status "Designado" for processado,
    então o comportamento de `work_order_history` (inserir ou não nova entrada
    quando o status não mudou) segue a decisão **DP-017.1**.
 
-4. Dado que o provedor retornou uma OS com status não presente no enum
-   `WorkOrderStatus`,
-   quando o processamento tentar mapear o status,
+4. Dado que o provedor retornou uma OS sem valor de status no payload,
+   quando o Worker tentar processar o snapshot,
    então nenhum registro deve ser criado em `work_order` ou `work_order_history`,
    e uma entrada de log `Warning` deve ser gerada.
 
@@ -233,22 +232,25 @@ status observado difere do último registro de histórico.
 
 **Aguarda:** decisão de produto.
 
-### DP-017.2 — Enum `WorkOrderStatus` em ADR ou apenas em RF
+### DP-017.2 — ~~Enum `WorkOrderStatus` em ADR ou apenas em RF~~ ✅ Resolvido (2026-08-31)
 
-**Situação:** O enum `WorkOrderStatus` é uma decisão de modelo de dados com
-impacto em múltiplos componentes (Worker, API, Office) e consequências para
-provedores futuros. A analista recomenda registrá-lo em ADR, mas aguarda
-confirmação do orchestrator.
-
-**Aguarda:** confirmação do orchestrator (Otto).
+**Decisão do usuário:** não há enum `WorkOrderStatus` — o status é armazenado
+como string crua do provedor, sem mapeamento (ver seção "Status: string crua
+do provedor" acima). Motivo: provedores diferentes têm conjuntos de status
+distintos e sem correspondência garantida (ex.: iService tem um conjunto,
+outro provedor futuro pode ter outro parcialmente sobreposto); um enum fixo
+em código reintroduziria o problema que este redesenho pretendia evitar.
+Nenhum ADR é necessário para um enum que não existe.
 
 ### DP-017.3 — Tecnologia de persistência de `work_order` e `work_order_history`
 
 **Situação:** Não está definido se `work_order` e `work_order_history` vivem em
 MongoDB (junto com `work_order_snapshots`) ou em PostgreSQL (junto com as demais
-entidades relacionais do ATUA). O schema estruturado e relacional dessas
-entidades (FK, upsert condicional, enum) é mais natural em PostgreSQL; o dado
-bruto de `work_order_snapshots` é mais natural em MongoDB.
+entidades relacionais do ATUA). O schema estruturado dessas entidades (FK,
+upsert condicional) é mais natural em PostgreSQL; o dado bruto de
+`work_order_snapshots` é mais natural em MongoDB. Sem enum de status, o
+argumento de "schema relacional" fica mais fraco — o campo `status` agora é
+apenas uma string, como qualquer outro campo textual.
 
 **Aguarda:** decisão do `software-architect`.
 
