@@ -1,10 +1,58 @@
 # Ambiente de desenvolvimento local — apenas para uso local, NUNCA em produção.
 # As senhas padrão (atua_dev) são exclusivas de dev e não devem ser usadas em outros ambientes.
-# O MongoDB sobe por conveniência, mas ainda não é consumido pelo código da API;
-# seu uso está previsto no ADR-012 (snapshots de OS do coletor, Atlas Free Tier em prod).
+# O MongoDB é consumido pelo Worker Coletor para snapshots de OS (ADR-012/ADR-023),
+# subindo como replica set de nó único (rs0) — exigido pelo driver para usar
+# Change Streams. O keyfile de autenticação interna do replica set é gerado no
+# próprio container no startup (nunca versionado no repo).
 # O Mailpit captura e-mails enviados via SMTP local (porta 1025) e expõe uma
 # UI web (porta 8025) para inspeção, sem enviar nada de fato — substitui o
 # SesEmailConfirmationSender em dev (configure Email:Smtp apontando para ele).
+#
+# ─── COMO USAR ───────────────────────────────────────────────────────────────
+#
+# Primeira vez ou após mudança de código:
+#   docker compose up -d --build
+#
+# Demais vezes (containers já buildados):
+#   docker compose up -d
+#
+# Rebuildar apenas as aplicações .NET (ex.: após alterar código C#):
+#   docker compose up -d --build api collector
+#
+# Endereços resultantes:
+#   API REST   → http://localhost:5240   (porta interna 8080 mapeada para 5240)
+#   PostgreSQL → localhost:5432          (banco: atua / usuário: atua / senha: atua_dev)
+#   MongoDB    → localhost:27017         (usuário: atua / senha: atua_dev, replica set rs0)
+#   Mailpit UI → http://localhost:8025   (inspeção de e-mails capturados)
+#
+# Passos obrigatórios após o primeiro "up" (a API e o Collector sobem, mas
+# ficam incompletos até estes dois passos manuais — ver docs/guides/desenvolvimento-local.md):
+#   1. Aplicar as migrations do Postgres (rodar do host, com .NET SDK):
+#        cd apps/api/Atua.Api && dotnet ef database update
+#   2. Provisionar ServiceCredentials reais para o Worker Coletor — os tokens
+#      CollectorWorker__*ServiceToken abaixo são placeholders; sem eles o
+#      Coletor recebe 401 ao chamar /claim (comportamento esperado, não é bug).
+#
+# Para o time de frontend trabalhar isoladamente no front sem rodar .NET local:
+#   1. Suba tudo:  docker compose up -d --build
+#   2. Aponte o frontend para:  NEXT_PUBLIC_API_URL=http://localhost:5240  (ou equivalente)
+#   3. A API já responde normalmente (200 em /health) mesmo sem o passo 2 acima;
+#      o Worker Coletor só é necessário se o fluxo testado envolver coleta real de OS.
+#
+# Variáveis de ambiente sensíveis (dev only — nunca usar em produção):
+#   POSTGRES_PASSWORD   → senha do PostgreSQL    (padrão: atua_dev)
+#   MONGO_PASSWORD      → senha do MongoDB       (padrão: atua_dev)
+#   MONGO_KEYFILE       → keyfile do replica set  (padrão: gerado abaixo, base64)
+#   API_SIGNING_KEY     → chave JWT da API        (padrão: gerada abaixo, mín. 32 chars)
+#   API_MASTER_KEY_B64  → chave AES-256 dev local (padrão: gerada abaixo, 32 bytes base64)
+#
+# Para parar os containers (preserva dados):
+#   docker compose down
+#
+# Para parar e apagar todos os dados:
+#   docker compose down -v
+#
+# ─────────────────────────────────────────────────────────────────────────────
 
 services:
   postgres:
@@ -28,6 +76,19 @@ services:
   mongo:
     image: mongo:7
     container_name: atua_mongo
+    # replSet de nó único é exigido pelo Worker Coletor (Change Streams, ADR-023).
+    # Com --auth (implícito por MONGO_INITDB_ROOT_USERNAME) + --replSet, o Mongo
+    # exige --keyFile para autenticação interna entre membros do replica set,
+    # mesmo com um único nó. Geramos o keyfile no próprio container no startup
+    # (nunca versionado) em vez de montar um arquivo do host, evitando problemas
+    # de permissão em binds (macOS/Docker Desktop remapeiam uid/gid).
+    entrypoint: >
+      bash -c "
+      echo '${MONGO_KEYFILE:-YXR1YS1kZXYtbW9uZ28tcmVwbGljYXNldC1rZXlmaWxlLXNvbWVudGUtbG9jYWw=}' > /data/mongo-keyfile &&
+      chmod 400 /data/mongo-keyfile &&
+      chown 999:999 /data/mongo-keyfile &&
+      exec docker-entrypoint.sh mongod --replSet rs0 --bind_ip_all --keyFile /data/mongo-keyfile
+      "
     environment:
       MONGO_INITDB_ROOT_USERNAME: atua
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:-atua_dev}
@@ -37,7 +98,11 @@ services:
     volumes:
       - atua_mongo_data:/data/db
     healthcheck:
-      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      # O script tenta iniciar o replica set uma única vez; em execuções seguintes,
+      # rs.status() já retorna ok e o bloco catch nunca é atingido de novo.
+      test: >
+        mongosh --quiet -u atua -p ${MONGO_PASSWORD:-atua_dev} --authenticationDatabase admin --eval
+        "try { rs.status().ok } catch (e) { rs.initiate({_id:'rs0',members:[{_id:0,host:'mongo:27017'}]}).ok }"
       interval: 10s
       timeout: 15s
       retries: 5
@@ -50,6 +115,87 @@ services:
     ports:
       - "8025:8025" # UI web
       - "1025:1025" # SMTP
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # API — Atua.Api (ASP.NET Core)
+  # Contexto de build: raiz do repo (necessário para COPY dos arquivos do projeto)
+  # Porta: 5240 (host) → 8080 (container, padrão ASP.NET Core 8+)
+  # Migrations NÃO são aplicadas automaticamente. A imagem final (aspnet:10.0)
+  # não tem o SDK/dotnet-ef — rode do host (que tem o .NET SDK), apontando para
+  # o Postgres exposto em localhost:5432 (ver docs/guides/desenvolvimento-local.md):
+  #   cd apps/api/Atua.Api && dotnet ef database update
+  # ---------------------------------------------------------------------------
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Atua.Api/Dockerfile
+    container_name: atua_api
+    ports:
+      - "5240:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mongo:
+        condition: service_healthy
+      mailpit:
+        condition: service_started
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      # PostgreSQL — aponta para o serviço 'postgres' da rede Docker interna
+      ConnectionStrings__Atua: "Host=postgres;Port=5432;Database=atua;Username=atua;Password=${POSTGRES_PASSWORD:-atua_dev}"
+      # E-mail — aponta para o Mailpit (substitui SES em dev)
+      Email__SenderAddress: "dev@localhost"
+      Email__Smtp__Host: "mailpit"
+      Email__Smtp__Port: "1025"
+      # JWT — chave de assinatura dev local (mín. 32 chars). Não use em produção.
+      # Gere um valor próprio: openssl rand -hex 32
+      Authentication__SigningKey: "${API_SIGNING_KEY:-atua-dev-signing-key-local-apenas-nao-use-em-producao}"
+      # Cifrador de credenciais — sem KMS em dev; usa AES-GCM local (AlgorithmVersion=1).
+      # Gere um valor próprio: openssl rand -base64 32
+      Integrations__CredentialCipher__MasterKeyBase64: "${API_MASTER_KEY_B64:-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=}"
+      # KmsKeyArn intencionalmente vazio — a API detecta ausência e usa fallback local.
+      Integrations__CredentialCipher__KmsKeyArn: ""
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # Worker Coletor — Atua.Collector (.NET Worker Service)
+  # Contexto de build: raiz do repo
+  # Sem porta exposta — serviço background sem HTTP listener.
+  # O Coletor:
+  #   - captura screenshots e dados de OS via Playwright/Chromium (Headless=true)
+  #   - persiste snapshots no MongoDB (ADR-012)
+  #   - consome Change Streams do MongoDB e faz upsert em PostgreSQL (ADR-023)
+  #   - se comunica com a API via HTTP para buscar comandos
+  # ---------------------------------------------------------------------------
+  collector:
+    build:
+      context: .
+      dockerfile: apps/collector/Atua.Collector/Dockerfile
+    container_name: atua_collector
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mongo:
+        condition: service_healthy
+      api:
+        condition: service_started
+    environment:
+      DOTNET_ENVIRONMENT: Development
+      # MongoDB — aponta para o serviço 'mongo' da rede Docker interna
+      MongoDB__ConnectionString: "mongodb://atua:${MONGO_PASSWORD:-atua_dev}@mongo:27017/atua?authSource=admin&replicaSet=rs0"
+      MongoDB__DatabaseName: "atua"
+      # PostgreSQL — usado pelo consumer de Change Streams (ADR-023)
+      Postgres__ConnectionString: "Host=postgres;Port=5432;Database=atua;Username=atua;Password=${POSTGRES_PASSWORD:-atua_dev}"
+      # API — aponta para o serviço 'api' da rede Docker interna (não localhost)
+      CollectorWorker__ApiBaseUrl: "http://api:8080"
+      CollectorWorker__PollingIntervalSeconds: "60"
+      # Headless obrigatório em Docker (sem display)
+      CollectorWorker__Headless: "true"
+      # Tokens de ServiceCredential — configure após provisionar via SQL (ver desenvolvimento-local.md)
+      CollectorWorker__ClaimServiceToken: "${COLLECTOR_CLAIM_TOKEN:-REPLACE_WITH_LOCAL_CLAIM_TOKEN}"
+      CollectorWorker__CompleteServiceToken: "${COLLECTOR_COMPLETE_TOKEN:-REPLACE_WITH_LOCAL_COMPLETE_TOKEN}"
+      CollectorWorker__EligibilityServiceToken: "${COLLECTOR_ELIGIBILITY_TOKEN:-REPLACE_WITH_LOCAL_ELIGIBILITY_TOKEN}"
     restart: unless-stopped
 
 volumes:

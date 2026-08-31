@@ -2,6 +2,15 @@
 
 Guia prático para rodar a API Atua localmente.
 
+> **Alternativa mais rápida (sem .NET SDK local):** a API e o Worker Coletor
+> também rodam totalmente containerizados via `docker compose up -d --build`
+> (serviços `api` e `collector` no `docker-compose.yml` da raiz). Útil quando o
+> foco é o frontend e você só precisa de um endereço estável da API/Workers —
+> ver comentário "COMO USAR" no topo do `docker-compose.yml`. Os passos 2 e 3
+> abaixo (migrations e ServiceCredentials) continuam manuais mesmo nesse modo.
+> O restante deste guia cobre o fluxo `dotnet run` local, usado no dia a dia de
+> quem desenvolve a API/Coletor.
+
 ## Pré-requisitos
 
 - **Docker** (com Compose v2 — `docker compose`, sem hífen)
@@ -19,9 +28,9 @@ docker compose up -d
 
 Isso inicia:
 - **PostgreSQL 16** em `localhost:5432` (banco `atua`, usuário `atua`, senha `atua_dev`)
-- **MongoDB 7** em `localhost:27017` (usuário `atua`, senha `atua_dev`)
+- **MongoDB 7** em `localhost:27017` (usuário `atua`, senha `atua_dev`), como replica set de nó único (`rs0`) — exigido para Change Streams (ADR-023)
 
-> **Nota:** O MongoDB é consumido diretamente pelo **Worker Coletor** para persistir snapshots e observações de OS (ADR-012). A API REST não acessa o MongoDB — ela usa apenas o PostgreSQL.
+> **Nota:** O MongoDB é consumido diretamente pelo **Worker Coletor** para persistir snapshots e observações de OS (ADR-012), e também para os Change Streams do consumer snapshot→work_order (ADR-023). A API REST não acessa o MongoDB — ela usa apenas o PostgreSQL.
 
 Para verificar se os serviços estão saudáveis:
 
@@ -118,13 +127,25 @@ Em outros ambientes, o `SesEmailConfirmationSender` (AWS SES) é usado, e `Email
 
 ## 5. Worker Coletor
 
-O Worker Coletor (`apps/collector/Atua.Collector`) **não acessa PostgreSQL diretamente**.
+O Worker Coletor (`apps/collector/Atua.Collector`) se comunica **via HTTP com a API**
+para claim/complete de comandos e elegibilidade (ADR-021, variante D9-B) — a
+credencial do OS já chega decifrada pela API, então o Coletor **não decifra
+credenciais nem acessa a tabela de credenciais**.
 
-Por decisão arquitetural (ADR-021, variante D9-B):
-- O Coletor se comunica **exclusivamente via HTTP com a API** (`http://localhost:5240` em dev).
-- A credencial do OS já chega decifrada pela API — o Coletor não precisa de Postgres.
-- O Coletor **persiste snapshots e observações no MongoDB** (não em Postgres).
-- **Não adicione** `Npgsql` nem `DbContext` ao projeto do Coletor.
+> ⚠️ **Atualização (ADR-023):** desde a implementação do consumer de snapshots
+> (RF-016/RF-017), o Coletor **também acessa PostgreSQL diretamente via Npgsql**
+> (sem EF Core/DbContext) — `WorkOrderPgRepository` faz upsert em `work_orders`,
+> append em `work_order_histories` e persiste o resume token do Change Stream
+> em `consumer_states`. A regra "não acessa Postgres" vale apenas para
+> credenciais/KMS, não para o pipeline de snapshot→work_order. Ver ADR-023 para
+> o desenho completo.
+
+Além disso:
+- O Coletor **persiste snapshots brutos e observações no MongoDB** (ADR-012), e
+  consome os próprios snapshots via **Change Streams do MongoDB** para
+  alimentar o consumer acima — por isso o MongoDB local precisa rodar como
+  replica set (ver seção 1 e `docker-compose.yml`; `docker compose up -d` já
+  sobe o Mongo como replica set de nó único `rs0`).
 
 ### Configuração local do Coletor
 

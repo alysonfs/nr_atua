@@ -93,7 +93,10 @@ public sealed class WorkOrderPgRepository(
         await conn.OpenAsync(cancellationToken);
 
         await using var cmd = conn.CreateCommand();
-        cmd.CommandText = "SELECT resume_token FROM consumer_states WHERE consumer_id = @id";
+        // Nomes de coluna entre aspas em PascalCase: o EF Core cria as colunas dessa
+        // forma (case-sensitive) mesmo com a tabela em snake_case (ver AtuaDbContext,
+        // sem HasColumnName em nenhuma entidade — convenção do projeto inteiro).
+        cmd.CommandText = "SELECT \"ResumeToken\" FROM consumer_states WHERE \"ConsumerId\" = @id";
         cmd.Parameters.AddWithValue("@id", ConsumerId);
 
         var result = await cmd.ExecuteScalarAsync(cancellationToken);
@@ -121,7 +124,7 @@ public sealed class WorkOrderPgRepository(
         await using var selectCmd = conn.CreateCommand();
         selectCmd.Transaction = tx;
         selectCmd.CommandText =
-            "SELECT id, status FROM work_orders WHERE tenant_id = @tid AND provider_id = @pid";
+            "SELECT \"Id\", \"Status\" FROM work_orders WHERE \"TenantId\" = @tid AND \"ProviderId\" = @pid";
         selectCmd.Parameters.AddWithValue("@tid", tenantId);
         selectCmd.Parameters.AddWithValue("@pid", providerId);
 
@@ -137,7 +140,7 @@ public sealed class WorkOrderPgRepository(
             await using var updateCmd = conn.CreateCommand();
             updateCmd.Transaction = tx;
             updateCmd.CommandText =
-                "UPDATE work_orders SET status = @status, updated_at = @now WHERE id = @id";
+                "UPDATE work_orders SET \"Status\" = @status, \"UpdatedAt\" = @now WHERE \"Id\" = @id";
             updateCmd.Parameters.AddWithValue("@status", newStatus);
             updateCmd.Parameters.AddWithValue("@now", DateTimeOffset.UtcNow);
             updateCmd.Parameters.AddWithValue("@id", existingId);
@@ -156,7 +159,7 @@ public sealed class WorkOrderPgRepository(
         insertCmd.Transaction = tx;
         insertCmd.CommandText =
             """
-            INSERT INTO work_orders (id, tenant_id, provider_id, status, created_at, updated_at)
+            INSERT INTO work_orders ("Id", "TenantId", "ProviderId", "Status", "CreatedAt", "UpdatedAt")
             VALUES (@id, @tid, @pid, @status, @now, @now)
             """;
         insertCmd.Parameters.AddWithValue("@id", newId);
@@ -186,7 +189,7 @@ public sealed class WorkOrderPgRepository(
         cmd.CommandText =
             """
             INSERT INTO work_order_histories
-                (id, work_order_id, work_order_snapshot_id, tenant_id, provider_id, status, created_at, updated_at)
+                ("Id", "WorkOrderId", "WorkOrderSnapshotId", "TenantId", "ProviderId", "Status", "CreatedAt", "UpdatedAt")
             VALUES (@id, @woid, @snid, @tid, @pid, @status, @now, @now)
             """;
         cmd.Parameters.AddWithValue("@id", Guid.CreateVersion7());
@@ -209,10 +212,10 @@ public sealed class WorkOrderPgRepository(
         cmd.Transaction = tx;
         cmd.CommandText =
             """
-            INSERT INTO consumer_states (consumer_id, resume_token, updated_at)
+            INSERT INTO consumer_states ("ConsumerId", "ResumeToken", "UpdatedAt")
             VALUES (@id, @token::jsonb, @now)
-            ON CONFLICT (consumer_id) DO UPDATE
-            SET resume_token = EXCLUDED.resume_token, updated_at = EXCLUDED.updated_at
+            ON CONFLICT ("ConsumerId") DO UPDATE
+            SET "ResumeToken" = EXCLUDED."ResumeToken", "UpdatedAt" = EXCLUDED."UpdatedAt"
             """;
         cmd.Parameters.AddWithValue("@id", ConsumerId);
         cmd.Parameters.AddWithValue("@token", resumeToken);

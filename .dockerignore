@@ -1,0 +1,32 @@
+# Ignorar artefatos de build locais — nunca copiar bin/ e obj/ para o contexto Docker.
+# O build acontece dentro do container com dotnet restore/publish limpo.
+
+# Artefatos de build .NET
+**/bin/
+**/obj/
+
+# Node.js (frontend / ferramentas)
+node_modules/
+**/node_modules/
+
+# Arquivos de IDE
+.vs/
+.vscode/
+.idea/
+*.user
+
+# Infra / IaC (não necessária no build das imagens .NET)
+infra/
+
+# Assets e documentação (reduzem o contexto desnecessariamente)
+assets/
+docs/
+rag/
+
+# Dados de desenvolvimento
+.env
+.env.*
+
+# Git
+.git/
+.gitignore
