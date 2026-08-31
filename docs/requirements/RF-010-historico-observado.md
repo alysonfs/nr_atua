@@ -1,6 +1,6 @@
 # RF-010 - Histórico Observado
 
-Status: `Pendente`
+Status: `Especificado`
 
 ## Objetivo
 
@@ -167,25 +167,10 @@ limite de observações por OS na API de consulta — fica a critério do
 
 ### DP-010.2 — Comportamento de observações com `providerOrderId` ausente
 
-**Situação:** `WorkOrderRepository` já registra um `LogWarning` e descarta
-OS sem `providerOrderId` durante a persistência. Não está definido se esse
-descarte deve ser registrado como evento auditável ou se basta o log.
+**Status:** ✅ Resolvido (2026-08-31)
 
-**Impacto se não decidido:** descarte silencioso pode dificultar diagnóstico
-operacional.
-
-**Aguarda:** decisão de produto sobre necessidade de auditoria de descartes.
-
-### DP-010.2 — Comportamento de observações com `providerOrderId` ausente
-
-**Situação:** `WorkOrderRepository` já registra um `LogWarning` e descarta
-OS sem `providerOrderId` durante a persistência. Não está definido se esse
-descarte deve ser registrado como evento auditável ou se basta o log.
-
-**Impacto se não decidido:** descarte silencioso pode dificultar diagnóstico
-operacional.
-
-**Aguarda:** decisão de produto sobre necessidade de auditoria de descartes.
+**Decisão:** basta o log (`LogWarning` já emitido por `WorkOrderRepository`).
+Não é necessário registrar um evento auditável separado para o descarte.
 
 ## Fora do escopo
 
