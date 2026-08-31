@@ -57,13 +57,15 @@ estruturados, nem a atualização das entidades agnósticas de provedor
 
 ```
 work_order_snapshots {
-  id:          UUID (UUIDv7, gerado pelo Worker, chave primária interna)
-  tenant_id:   UUID
-  provider_id: string (identificador externo da OS no provedor — ex.: workOrderId do iService)
-  command_id:  UUID (identificador do comando de coleta que gerou este snapshot)
-  rawdata:     documento/objeto sem schema formalizado — payload bruto do provedor,
-               preservado exatamente como retornado
-  created_at:  timestamp UTC de inserção
+  id:            UUID (UUIDv7, gerado pelo Worker, chave primária interna)
+  tenant_id:     UUID
+  provider_id:   string (identificador externo da OS no provedor — ex.: workOrderId do iService)
+  provider_type: string (identificador do provedor de origem — ex.: "iservice"; usado pelo
+                 consumer de RF-017/ADR-023 para selecionar o adapter correto de extração)
+  command_id:    UUID (identificador do comando de coleta que gerou este snapshot)
+  rawdata:       documento/objeto sem schema formalizado — payload bruto do provedor,
+                 preservado exatamente como retornado
+  created_at:    timestamp UTC de inserção
 }
 ```
 
@@ -95,6 +97,10 @@ Cada documento deve conter:
 - `tenant_id`: identificador do tenant proprietário da OS.
 - `provider_id`: identificador externo da OS no provedor (ex.: `workOrderId`
   do iService para o MVP).
+- `provider_type`: identificador do provedor de origem do snapshot (ex.:
+  `"iservice"`). Usado pelo consumer (RF-017/ADR-023) para selecionar o
+  `SnapshotAdapter` correto de extração de status, sem depender de
+  configuração externa ao documento.
 - `command_id`: identificador do comando de coleta que gerou este snapshot,
   permitindo rastrear qual ciclo de coleta produziu cada registro.
 
@@ -134,6 +140,7 @@ Credenciais do iService e dados de sessão CAS não devem ser incluídos no
 | RN-016.4 | OS sem `provider_id` válido são descartadas com log `Warning`; não geram documento.                                               |
 | RN-016.5 | O mapeamento entre campo do provedor e `provider_id` é isolado em um único componente; nenhum outro componente o referencia.      |
 | RN-016.6 | Credenciais e dados de sessão CAS são vedados no `rawdata` persistido.                                                            |
+| RN-016.7 | Todo documento deve conter `provider_type` preenchido pelo Worker, identificando o provedor de origem do snapshot.                |
 
 ## Critérios de aceite
 
@@ -165,7 +172,12 @@ Credenciais do iService e dados de sessão CAS não devem ser incluídos no
    então `work_order_snapshots` deve conter exatamente N novos documentos,
    todos com o mesmo `command_id` da coleta.
 
-6. Dado que a mesma coleta (mesmo `command_id`) for re-executada por falha
+6. Dado que o Worker está coletando OS do iService,
+   quando qualquer documento for inserido em `work_order_snapshots`,
+   então o campo `provider_type` deve estar preenchido com o identificador do
+   provedor de origem (ex.: `"iservice"`).
+
+7. Dado que a mesma coleta (mesmo `command_id`) for re-executada por falha
    parcial do Worker,
    quando o Worker tentar inserir os snapshots novamente,
    então o comportamento esperado de idempotência de re-execução deve ser
@@ -183,16 +195,22 @@ no-op/upsert idempotente pelo Worker).
 
 ### DP-016.2 — ~~Quem dispara o processamento snapshot → work_order / work_order_history~~ ✅ Resolvido (2026-08-31)
 
-**Decisão do usuário:** opção (b) — um processo separado, via **consumer de
-fila**. O Worker apenas insere o snapshot em `work_order_snapshots` e publica
-uma mensagem (evento de novo snapshot) em uma fila; um consumer dedicado lê a
-fila e realiza o upsert em `work_order` + append em `work_order_history`
-(RF-017). Isso desacopla o Worker do conhecimento sobre o mapeamento de
-status para as entidades agnósticas — o Worker só produz dado bruto.
+**Decisão do usuário:** opção (b) — um processo separado, via **consumer
+dedicado**. O Worker apenas insere o snapshot em `work_order_snapshots`; um
+consumer dedicado detecta o novo documento e realiza o upsert em
+`work_order` + append em `work_order_history` (RF-017). Isso desacopla o
+Worker do conhecimento sobre o mapeamento de status para as entidades
+agnósticas — o Worker só produz dado bruto.
 
-**Consequência de arquitetura (a cargo do `software-architect`):** escolha da
-tecnologia de fila (ex.: SQS) e desenho do consumer (novo serviço, ou parte
-da API existente).
+**Arquitetura definida (ADR-023):** o mecanismo de entrega escolhido foi
+**MongoDB Change Streams** (sem fila externa) — o Worker não publica
+explicitamente em nenhuma fila; o Change Stream detecta o insert em
+`work_order_snapshots` e entrega o evento ao consumer automaticamente. O
+consumer roda como um segundo `IHostedService` dentro do próprio processo do
+Worker Coletor, no mesmo EC2 t3.micro já existente. Ver
+`docs/decisions/ADR-023-fila-e-consumer-snapshot-para-work-order.md` para
+detalhes de idempotência, extração de status via `SnapshotAdapter` e
+seleção do adapter via `provider_type` (RF-016.3).
 
 ### DP-016.3 — ~~Tecnologia de persistência de `work_order_snapshots`~~ ✅ Resolvido (2026-08-31)
 

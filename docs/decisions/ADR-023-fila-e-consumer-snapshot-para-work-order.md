@@ -176,9 +176,7 @@ interface ISnapshotAdapter {
 }
 
 class IServiceSnapshotAdapter : ISnapshotAdapter {
-    // Extrai o campo de status do payload do iService.
-    // O nome exato do campo de status no payload do iService
-    // é uma DECISÃO PENDENTE — ver DP-023.1 abaixo.
+    // Extrai o campo "woStatus" do payload do iService (resolvido em DP-023.1).
 }
 ```
 
@@ -186,11 +184,12 @@ O `provider_id` já vem estruturado no documento (campo de primeiro nível,
 mapeado pelo Worker conforme RF-016.6); o consumer não precisa extraí-lo do
 rawData.
 
-**Seleção do adaptador:** o consumer seleciona o adaptador correto com base
-em um identificador de provedor disponível no documento de snapshot ou no
-contexto de configuração do tenant. O mecanismo exato (campo no snapshot,
-lookup em configuração, ou inferência por tenant) é uma **DP — ver DP-023.2
-abaixo**.
+**Seleção do adaptador:** o consumer seleciona o adaptador correto com base no
+campo `provider_type`, adicionado ao documento `work_order_snapshots`
+(resolvido em DP-023.2). O Worker grava esse campo no momento da coleta
+(mesmo ponto onde já grava `provider_id`); o consumer faz um lookup direto
+(`provider_type` → `ISnapshotAdapter`) sem depender de configuração externa
+ou de estado do tenant.
 
 #### 3.3 Schema relacional: `work_order` e `work_order_history`
 
@@ -345,8 +344,9 @@ Worker Coletor (EC2 t3.micro)
 Consumer (IHostedService no mesmo processo do Worker)                    │
   |                                                                       │
   | 4. Recebe evento do Change Stream ◄──────────────────────────────────┘
-  | 5. Seleciona SnapshotAdapter pelo provedor (DP-023.2)
-  | 6. Extrai status = adapter.ExtractStatus(rawdata)
+  | 5. Seleciona SnapshotAdapter pelo campo provider_type do documento
+  |    (DP-023.2)
+  | 6. Extrai status = adapter.ExtractStatus(rawdata)  → campo "woStatus"
   |    └─ status ausente/vazio → log Warning, avança token, finaliza
   |
   | 7. Abre transação PostgreSQL:
@@ -395,30 +395,22 @@ relacional das tabelas `work_order` e `work_order_history`.
 
 ## Decisões pendentes (DPs em aberto)
 
+Nenhuma. As duas DPs identificadas nesta ADR foram resolvidas pelo usuário em
+2026-08-31 — ver seção "Decisões resolvidas" abaixo.
+
+## Decisões resolvidas
+
 ### DP-023.1 — Nome do campo de status no payload do iService
 
-**Situação:** o `IServiceSnapshotAdapter` precisa do nome exato do campo de
-status no JSON retornado pelo iService (ex.: `"status"`, `"workOrderStatus"`,
-`"statusDescription"`, etc.).
+**Situação:** o `IServiceSnapshotAdapter` precisava do nome exato do campo de
+status no JSON retornado pelo iService.
 
-**Informação ausente:** os RFs e ADRs existentes não especificam o nome do
-campo. Os snapshots reais estão em
-`rag/iservice/automated-login-ics-amer-robot/robots/ics-amer/output/*.json`
-e podem conter essa informação — análise pelo `backend-engineer` ou
-`product-analyst` antes da implementação do adapter.
-
-**Impacto:** bloqueia a implementação do `IServiceSnapshotAdapter`.
-
-**Responsável recomendado:** `backend-engineer` (análise dos JSONs reais) ou
-`product-analyst` (se envolver decisão de qual campo representa o status
-canônico quando houver mais de um candidato).
+**Decisão do usuário (2026-08-31):** o campo é `woStatus`.
 
 ### DP-023.2 — Mecanismo de seleção do SnapshotAdapter por provedor
 
 **Situação:** o consumer precisa saber qual `ISnapshotAdapter` usar para cada
-snapshot. Para o MVP, existe apenas o iService, então a seleção pode ser
-trivialmente "usar sempre IServiceSnapshotAdapter". Mas o mecanismo deve ser
-desenhado para suportar múltiplos provedores no futuro.
+snapshot.
 
 **Opções identificadas:**
 - (a) Campo `provider_type` adicionado ao documento `work_order_snapshots`
@@ -427,12 +419,10 @@ desenhado para suportar múltiplos provedores no futuro.
   (o consumer consulta qual provedor está associado ao tenant).
 - (c) Hard-coded para iService no MVP, com TODO para generalizar.
 
-**Impacto:** a opção (a) exige mudança no contrato do documento (RF-016); as
-opções (b) e (c) não exigem. A decisão deve ser tomada antes da implementação
-do consumer.
-
-**Responsável recomendado:** `software-architect` (com validação do
-`product-analyst` se envolver mudança em RF-016).
+**Decisão do usuário (2026-08-31):** opção (a) — campo `provider_type`
+adicionado ao documento `work_order_snapshots`. **Requer alteração em RF-016**
+(escopo do `product-analyst`/`orchestrator`) para incluir o campo no contrato
+do documento.
 
 ---
 
