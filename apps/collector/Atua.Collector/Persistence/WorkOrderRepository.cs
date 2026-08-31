@@ -78,10 +78,7 @@ public sealed class WorkOrderRepository(
                     continue;
                 }
 
-                // Converte o rawOrder para BsonDocument preservando todos os campos (RF-016.2)
-                var rawDoc = new BsonDocument(
-                    orderDict.Where(kv => kv.Value is not null)
-                             .Select(kv => new BsonElement(kv.Key, BsonValue.Create(kv.Value))));
+                var rawDoc = BuildRawDocument(orderDict);
 
                 documents.Add(new WorkOrderSnapshotDocument
                 {
@@ -131,5 +128,18 @@ public sealed class WorkOrderRepository(
                 "[REPO] InsertMany parcial: {Inserted} inserido(s), {DupCount} duplicata(s) ignorada(s). TenantId={TenantId} CommandId={CommandId}.",
                 inserted, ex.WriteErrors.Count, tenantId, commandId);
         }
+    }
+
+    /// <summary>
+    /// Converte o dicionário bruto do provedor em <see cref="BsonDocument"/> preservando
+    /// integralmente todos os campos — inclusive os de valor <c>null</c> (RF-016.2).
+    /// Extraído como método estático para permitir teste unitário isolado (sem Mongo real).
+    /// </summary>
+    public static BsonDocument BuildRawDocument(IDictionary<string, object?> orderDict)
+    {
+        return new BsonDocument(
+            orderDict.Select(kv => new BsonElement(
+                kv.Key,
+                kv.Value is null ? BsonNull.Value : BsonValue.Create(kv.Value))));
     }
 }
