@@ -2,6 +2,17 @@ import { render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import App from './App'
 
+// App agora usa useAuth (para o botão de logout); mocamos para evitar
+// dependência do AuthProvider nos testes de integração do dashboard.
+vi.mock('./app/auth/AuthContext', () => ({
+  useAuth: () => ({
+    isAuthenticated: true,
+    isLoading: false,
+    signIn: vi.fn(),
+    signOut: vi.fn(),
+  }),
+}))
+
 vi.mock('./app/office/hooks/useUserTrial', () => ({
   useUserTrial: () => ({
     trial: {

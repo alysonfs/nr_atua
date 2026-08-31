@@ -4,8 +4,10 @@ import { TrialBadge, TrialCard, TrialExpiryAlert } from './app/office/components
 import { CreateTenantForm, TenantSelector } from './app/office/components/Onboarding'
 import { IServiceIntegrationPanel } from './app/office/components/Integrations'
 import { useMyTenants } from './app/office/hooks/useTenants'
+import { useAuth } from './app/auth/AuthContext'
 
 function App() {
+  const { signOut } = useAuth()
   const { tenants, defaultTenantId, hasNoTenant, requiresSelection, isLoading, isError, refetch } =
     useMyTenants()
   const [selectedTenantId, setSelectedTenantId] = useState<string | null>(null)
@@ -38,6 +40,14 @@ function App() {
           <p className="text-slate-600">Visão geral da sua conta</p>
         </div>
         <TrialBadge compact />
+        <button
+          type="button"
+          onClick={() => void signOut()}
+          className="btn btn-ghost btn-sm text-slate-600"
+          aria-label="Sair da conta"
+        >
+          Sair
+        </button>
       </header>
 
       <TrialExpiryAlert showClose={false} />
