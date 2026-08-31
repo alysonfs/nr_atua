@@ -92,6 +92,13 @@ Os identificadores `workOrderNo` e `workOrderId` pertencem ao iService e devem
 ser mantidos como referencias externas. Eles nao substituem o UUIDv7 atribuido
 aos recursos internos do ATUA.
 
+**Atualização (2026-08-31):** D7 (chave de identidade da OS) foi resolvido. A
+identidade estável é `workOrderId` (chave primária do iService), validada via
+~100 capturas reais de produção (25-26/08/2026, 23 OS distintas, zero
+instabilidade observada no par `workOrderId ↔ workOrderNo`). Ver
+`docs/requirements/RF-009-coleta-inicial.md` seção D7 para detalhes técnicos,
+evidência e limitações da validação.
+
 ## Motivos
 
 - Argon2id reduz o risco de ataques offline contra senhas comprometidas.

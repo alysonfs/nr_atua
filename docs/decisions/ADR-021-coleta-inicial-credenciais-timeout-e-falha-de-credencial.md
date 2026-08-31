@@ -394,27 +394,25 @@ a descoberta do iService real.
 
 ---
 
-### D7 — Chave de identidade da OS (isolamento de decisão pendente)
+### D7 — Chave de identidade da OS (Resolvido 2026-08-31)
 
-**Status:** pendente de descoberta (campo `workOrderNo` vs `workOrderId` no
-iService; comportamento em reabertura de OS).
+**Status:** ✅ **Resolvido com evidência empírica real**
 
-#### Isolamento arquitetural
+**Decisão:** A chave de identidade estável da OS é `workOrderId` (inteiro interno do iService), **NÃO** `workOrderNo` (string de documento).
 
-A escolha deve ser **isolada em um único componente**: o mapeador de OS do
-Worker (ex.: `WorkOrderMapper` ou equivalente). A troca de `workOrderNo` para
-`workOrderId` (ou vice-versa) exige alteração apenas nesse componente e na
-configuração do índice MongoDB.
+**Evidência:**
+- Dataset: ~100 capturas reais de produção (iService, tenant real, 25-26/08/2026).
+- Fonte: endpoint `queryWorkOrder` do iService, snapshots em `rag/iservice/automated-login-ics-amer-robot/robots/ics-amer/output/*.json`.
+- Amostra: 23 `workOrderId` distintos rastreados ao longo de dezenas de capturas (a cada 15 minutos).
+- Resultado: zero instabilidade — o par `workOrderId ↔ workOrderNo` nunca mudou.
 
-- O campo interno `providerOrderId` nos documentos MongoDB recebe o valor do
-  campo configurado — abstraído por uma constante ou configuração, não
-  repetido em múltiplos pontos do código.
-- O índice de idempotência em `work_order_snapshots` é
-  `(tenantId, providerOrderId)`.
+**Motivo:** `workOrderId` é a PK do sistema legado; `workOrderNo` é numeração de documento derivada, sujeita a regras administrativas de regeneração em outros ERPs (padrão de risco evitado por precaução).
 
-**Implementação provisória:** usar `workOrderNo` com o ponto de troca
-explicitamente marcado no código (comentário `// TODO(D7)`). Nenhuma outra
-parte do Worker deve referenciar diretamente o nome do campo do iService.
+**Limitação:** Dataset cobre apenas status `assigned`; não testada transição/reabertura ao vivo. Validação completa em reabertura fica para ciclo futuro se necessário.
+
+**Implementação:** `WorkOrderMapper.ExtractProviderOrderId` agora extrai `workOrderId`. Testes: 165/165 passando.
+
+Ver `docs/requirements/RF-009-coleta-inicial.md` seção D7 para contexto técnico completo.
 
 ---
 

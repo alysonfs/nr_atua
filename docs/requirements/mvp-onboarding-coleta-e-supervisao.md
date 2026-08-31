@@ -125,11 +125,11 @@ minutos.
 
 #### RF-009 - Coleta inicial
 
-Status: `Entregue (lado API)` — Worker e D7 pendentes
+Status: `Entregue (lado API) — D7 resolvido; Worker pendente`
 
 **Data de entrega (lado API):** 2026-08-30, commit `44fdbef`. QA aprovada (148 testes passando).
 
-A primeira coleta é iniciada via `POST /api/internal/collector/commands/claim` (Master API). O Worker ainda não está implementado. A API decifra credenciais do iService via variante B (ADR-021) e as entrega em claro ao Worker via TLS. Decisões D1–D6, D8, D9 foram resolvidas; apenas D7 (identificador externo da OS) segue pendente de descoberta do iService real.
+A primeira coleta é iniciada via `POST /api/internal/collector/commands/claim` (Master API). O Worker ainda não está implementado. A API decifra credenciais do iService via variante B (ADR-021) e as entrega em claro ao Worker via TLS. Decisões D1–D9 foram resolvidas (D7 resolvido em 2026-08-31 com evidência empírica real).
 
 Ver `docs/requirements/RF-009-coleta-inicial.md` e `docs/decisions/ADR-021-coleta-inicial-credenciais-timeout-e-falha-de-credencial.md` para detalhes técnicos.
 
@@ -292,5 +292,3 @@ a conta permanecer inativa por mais de cinco anos.
 - A garantia de que a consulta do iService retorna todas as OS sem filtros ou
    limites implicitos, incluindo a paginacao por status e o comportamento acima
    de 10.000 OS por status.
-- A estabilidade do par `workOrderNo` e `workOrderId` em reaberturas,
-   reatribuicoes ou alteracoes feitas no iService.

@@ -1,6 +1,6 @@
 # RF-009 - Coleta Inicial
 
-Status: `Entregue (lado API) — Worker e D7 pendentes`
+Status: `Entregue (lado API) — D7 resolvido; Worker pendente`
 
 **Data de entrega (lado API):** 2026-08-30, commit `44fdbef`.
 
@@ -54,13 +54,12 @@ O Office reflete o estado do comando em tempo real durante todo o processo.
 
 - **Testes:** 148 testes passando, build sem avisos. QA (`qa-engineer`) aprovou.
 
-### O que NAO e RF-009 (ainda pendente — lado Worker e ambiente iService)
+### O que NAO e RF-009 (ainda pendente — lado Worker)
 
 - Implementação do loop de polling no Worker (`apps/collector`).
 - Acesso real ao iService (scraping via Playwright, autenticação CAS, consulta do iService).
 - Paginação, throttling, backoff e tratamento de erro do Worker.
 - Persistência efetiva em MongoDB (Worker invocando inserts).
-- D7 (chave de identidade da OS: `workOrderNo` vs `workOrderId`) — segue pendente de descoberta do iService real.
 
 ### O que NAO e RF-009
 
@@ -212,25 +211,36 @@ mesmo comando enquanto ele estiver nesse estado.
 
 ## Decisoes pendentes
 
-> Apenas **D7** segue pendente de descoberta. As demais decisões (D1–D6, D8, D9) foram resolvidas e implementadas conforme ADR-021 (2026-08-30).
+> Todas as decisões (D1–D9) foram resolvidas conforme ADR-021 (2026-08-30). D7 foi resolvido em 2026-08-31 com evidência empírica real.
 
 ---
 
 ### D7 - Qual identificador externo do iService e a chave de identidade da OS?
 
-**Situacao:** A documentacao menciona `workOrderNo` e `workOrderId` (ADR-004,
-mvp-onboarding pendencias) e registra incerteza sobre a estabilidade desses
-identificadores em reaberturas, reatribuicoes ou alteracoes no iService.
+**Status:** ✅ **Resolvido (2026-08-31)**
 
-**Impacto se nao decidido:** se o identificador escolhido nao for estavel, a
-coleta pode criar duplicatas ou perder o historico de uma OS reaberta.
+**Decisão:** A chave de identidade estável da OS é `workOrderId` (inteiro interno do iService, ex.: `101538111`), **NÃO** `workOrderNo` (string de documento, ex.: `"BRWO260821681"`).
 
-**Recomendacao da analista:** confirmar com o usuario qual dos dois (`workOrderNo`
-ou `workOrderId`) e a chave primaria de identidade da OS no iService para o MVP,
-e qual e o comportamento esperado em caso de reabertura. A descoberta via
-Playwright (ADR-004) deve validar isso antes da implementacao.
+**Evidência:**
+- Dataset: ~100 capturas reais de produção da POC anterior (iService, tenant real, datas 25-26/08/2026).
+- Fonte: endpoint `queryWorkOrder` do iService, snapshots armazenados em `rag/iservice/automated-login-ics-amer-robot/robots/ics-amer/output/*.json`.
+- Amostra: 23 `workOrderId` distintos rastreados ao longo de dezenas de capturas sucessivas (a cada 15 minutos).
+- Resultado: zero instabilidade observada — o par `workOrderId ↔ workOrderNo` **nunca mudou** ao longo da série temporal.
 
-**Aguarda:** decisao do usuario.
+**Motivo:**
+- `workOrderId` é a chave primária do sistema legado (iService), garantindo imutabilidade enquanto a OS existir.
+- `workOrderNo` é numeração de documento derivada, sujeita a regras administrativas de regeneração em outros ERPs — padrão de risco conhecido (não confirmado neste caso específico, mas evitado por precaução).
+
+**Limitação documentada:**
+- O dataset analisado cobre apenas o status `assigned` (não foi testada transição em vivo ou reabertura de OS durante a captura).
+- A decisão foi tomada com o nível de confiança disponível; não é 100% validada para o caso de reabertura de OS com mudança de status.
+- Validação completa em reabertura fica para ciclo futuro se necessário.
+
+**Implementação:**
+- `apps/collector/Atua.Collector/Persistence/WorkOrderMapper.cs::ExtractProviderOrderId` implementado para extrair `workOrderId`.
+- Comentários no código refletem D7 resolvido (não pendente).
+- Índice de idempotência em MongoDB: `(tenantId, providerOrderId)` onde `providerOrderId = workOrderId`.
+- Suíte de testes: 165/165 passando após implementação.
 
 ---
 
@@ -403,10 +413,6 @@ Playwright (ADR-004) deve validar isso antes da implementacao.
 - ⏳ Paginação, throttling, backoff e tratamento de erro.
 - ⏳ Persistência em MongoDB.
 
-### Dependência pendente
-
-- ⏳ D7 (identificador externo da OS: `workOrderNo` vs `workOrderId`) — descoberta do iService real.
-
 ## Fora do escopo
 
 - Coleta recorrente (RF-011).
@@ -421,5 +427,4 @@ Playwright (ADR-004) deve validar isso antes da implementacao.
 
 **Lado Worker:** bloqueado por:
 
-1. ⏳ D7 (chave de identidade da OS) — descoberta do iService real.
-2. ⏳ Implementação do loop de polling no Worker com acesso efetivo ao iService.
+1. ⏳ Implementação do loop de polling no Worker com acesso efetivo ao iService.
