@@ -49,6 +49,11 @@ API consumida por SPAs em subdominios distintos.
 
 - Credenciais iService e estado de sessao CAS serao persistidos apenas no
   PostgreSQL, cifrados antes da gravacao.
+- **Postergacao (ADR-022, 2026-08-30):** a persistencia de sessao CAS e
+  formalmente adiada. O Worker faz login CAS a cada ciclo de coleta no MVP.
+  Criterios de revisao e desenho futuro estao documentados no ADR-022. A
+  intencao de cifrar e persistir sessao CAS permanece vigente para quando o
+  volume justificar.
 - Senha do Owner nao sera usada como chave de cifra e sua troca nao recifrara
   credenciais iService. A aplicacao nao armazena senhas em claro.
 - Cada integracao tera uma chave de dados aleatoria, usada por cifra autenticada
