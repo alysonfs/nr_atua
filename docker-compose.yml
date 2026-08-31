@@ -1,0 +1,46 @@
+# Ambiente de desenvolvimento local — apenas para uso local, NUNCA em produção.
+# As senhas padrão (atua_dev) são exclusivas de dev e não devem ser usadas em outros ambientes.
+# O MongoDB sobe por conveniência, mas ainda não é consumido pelo código da API;
+# seu uso está previsto no ADR-012 (snapshots de OS do coletor, Atlas Free Tier em prod).
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: atua_postgres
+    environment:
+      POSTGRES_DB: atua
+      POSTGRES_USER: atua
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-atua_dev}
+    ports:
+      - "5432:5432"
+    volumes:
+      - atua_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U atua -d atua"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  mongo:
+    image: mongo:7
+    container_name: atua_mongo
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: atua
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:-atua_dev}
+      MONGO_INITDB_DATABASE: atua
+    ports:
+      - "27017:27017"
+    volumes:
+      - atua_mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 15s
+      retries: 5
+      start_period: 40s
+    restart: unless-stopped
+
+volumes:
+  atua_postgres_data:
+  atua_mongo_data:
