@@ -176,15 +176,52 @@ progresso de coleta, cookies de sessão) pode depender do disco local.
 
 ---
 
-## 6. Bootstrap da EC2 (mecanismo, sem conteúdo real ainda)
+## 6. Bootstrap da EC2 e deploy da API
 
-O `user-data` da instância `atua-api-master` instala o runtime .NET e
-tenta sincronizar `s3://atua-<account-id>-releases/latest/` para
-`/opt/atua-api`. Nesta entrega o bucket de releases está **vazio** —
-nenhum artefato de deploy real foi publicado. Nenhum `systemd` service é
-habilitado automaticamente (evita subir processo incompleto). A
-publicação do artefato e o unit file do `systemd` são responsabilidade
-futura do `backend-engineer` / `release-versioning`.
+O `user-data` da instância `atua-api-master` instala o runtime .NET 10,
+escreve `/etc/atua-api.env` com o ARN da CMK, instala e habilita a unit
+systemd `atua-api.service` (fonte de verdade em `infra/systemd/atua-api.service`),
+sincroniza `s3://atua-<account-id>-releases/latest/` para `/opt/atua-api`
+e **inicia o serviço somente se o artefato (`Atua.Api.dll`) estiver presente**.
+
+### Fluxo completo para ter a API rodando
+
+```bash
+# 1. Publique o artefato (compile + upload S3) — a partir da raiz do repo:
+cd infra
+AWS_PROFILE=moldato make deploy-api
+
+# 2. Suba/recrie a EC2 (o user-data sincroniza o artefato e inicia atua-api.service):
+AWS_PROFILE=moldato make up
+```
+
+Se a EC2 já estiver no ar e você quiser atualizar sem recriar a instância:
+
+```bash
+# Após make deploy-api, na EC2 via SSH:
+aws s3 sync s3://atua-<account-id>-releases/latest/ /opt/atua-api/
+sudo systemctl restart atua-api
+sudo journalctl -u atua-api -f   # acompanhar logs
+```
+
+A API escuta em `http://0.0.0.0:80` (porta 80 liberada no Security Group `sgApi`).
+
+### Arquivos relevantes
+
+- `infra/systemd/atua-api.service` — fonte de verdade do unit systemd.
+  **Não editar diretamente na instância** (ela é efêmera; as alterações
+  seriam perdidas no próximo `make up`). Edite aqui e rode `make up`.
+- `infra/lib/atua-compute-stack.ts` — user-data que instala o unit e
+  gerencia o ciclo de vida do serviço.
+
+### Pendência resolvida
+
+- ✅ Unit file `atua-api.service` criado em `infra/systemd/`.
+- ✅ `make deploy-api` disponível para publicar o artefato.
+- ✅ Runtime corrigido de `dotnet-runtime-8.0` para `dotnet-runtime-10.0`
+  (alinhado ao `TargetFramework=net10.0` do projeto).
+
+### Collector (atua-collector-base)
 
 A instância `atua-collector-base` tem um `user-data` **absolutamente
 mínimo**: apenas grava uma linha de log confirmando o boot
@@ -193,8 +230,6 @@ dependência de scraping é instalado. Sua IAM role (`atua-collector-ec2-role`)
 não tem nenhuma policy anexada — sem acesso a secrets, S3 ou RDS.
 
 ---
-
-## 7. Key Pair SSH (`atua-mvp-key`)
 
 Gerado automaticamente pelo CDK como parte de `AtuaNetworkStack`
 (recurso nativo `AWS::EC2::KeyPair`, sem `publicKeyMaterial` informado).
@@ -223,9 +258,12 @@ primeiro `make up`: isso busca o valor na SSM e salva localmente em
 4. ✅ **Budget configurado**: "Five-Spend Budget", US$ 5/mês, alerta em 80%
    do previsto. ⚠️ Ver o alerta de estouro de orçamento em §4.
 5. ✅ **Provisionamento executado** com autorização explícita do usuário.
-6. ⬜ **Pendente**: publicar o primeiro artefato de deploy em
-   `s3://atua-462991286554-releases/latest/`. Sem isso, a API sobe com
-   SO + runtime prontos, mas sem processo de aplicação rodando.
+6. ✅ **Unit file systemd**: `infra/systemd/atua-api.service` criado. O
+   user-data instala e habilita `atua-api.service` automaticamente, e
+   inicia o processo somente se o artefato estiver presente em
+   `/opt/atua-api/Atua.Api.dll`. ⬜ **Ainda pendente**: publicar o
+   primeiro artefato de deploy com `make deploy-api` e em seguida
+   `make up` para a API subir de fato.
 
 ### ⚠️ Débito técnico crítico em aberto
 
