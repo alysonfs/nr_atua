@@ -2,6 +2,9 @@
 # As senhas padrão (atua_dev) são exclusivas de dev e não devem ser usadas em outros ambientes.
 # O MongoDB sobe por conveniência, mas ainda não é consumido pelo código da API;
 # seu uso está previsto no ADR-012 (snapshots de OS do coletor, Atlas Free Tier em prod).
+# O Mailpit captura e-mails enviados via SMTP local (porta 1025) e expõe uma
+# UI web (porta 8025) para inspeção, sem enviar nada de fato — substitui o
+# SesEmailConfirmationSender em dev (configure Email:Smtp apontando para ele).
 
 services:
   postgres:
@@ -39,6 +42,14 @@ services:
       timeout: 15s
       retries: 5
       start_period: 40s
+    restart: unless-stopped
+
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: atua_mailpit
+    ports:
+      - "8025:8025" # UI web
+      - "1025:1025" # SMTP
     restart: unless-stopped
 
 volumes:

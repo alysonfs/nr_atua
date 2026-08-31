@@ -97,8 +97,17 @@ builder.Services.AddScoped<IEmailConfirmationSender>(sp =>
 {
     var senderAddress = builder.Configuration["Email:SenderAddress"]
         ?? throw new InvalidOperationException("Configuracao 'Email:SenderAddress' nao definida.");
-    var client = sp.GetRequiredService<IAmazonSimpleEmailServiceV2>();
 
+    // Se Email:Smtp:Host estiver configurado (ex.: Mailpit em dev via docker-compose.yml),
+    // usa SMTP local em vez de SES. Nunca deve apontar para um host de dev em producao.
+    var smtpHost = builder.Configuration["Email:Smtp:Host"];
+    if (!string.IsNullOrWhiteSpace(smtpHost))
+    {
+        var smtpPort = builder.Configuration.GetValue("Email:Smtp:Port", 1025);
+        return new SmtpEmailConfirmationSender(smtpHost, smtpPort, senderAddress);
+    }
+
+    var client = sp.GetRequiredService<IAmazonSimpleEmailServiceV2>();
     return new SesEmailConfirmationSender(client, senderAddress);
 });
 builder.Services.AddScoped<SignUpService>();
