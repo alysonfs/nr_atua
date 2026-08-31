@@ -2,6 +2,16 @@
 
 Status: `Pendente`
 
+> **Nota (2026-08-31):** O modelo de persistência de OS foi redesenhado (ver
+> RF-016 e RF-017). As referências abaixo a `work_order_observations`,
+> `capturedAtUtc` e ao upsert de `work_order_snapshots` refletem o modelo
+> anterior e estão desatualizadas — devem ser lidas como `work_order_history`
+> (append) e `work_order` (upsert), respectivamente. **O comportamento de
+> negócio descrito por RF-012 não muda**: ausência de OS numa coleta não deve
+> gerar mudança de estado nem novo registro de histórico. As referências de
+> implementação serão corrigidas quando o Worker for implementado sobre o
+> novo modelo.
+
 ## Objetivo
 
 Definir o comportamento do sistema quando uma OS conhecida não aparece em

@@ -1,5 +1,12 @@
 # RF-009 - Coleta Inicial
 
+> **⚠️ Atenção — atualização parcial (2026-08-31):**
+> Os subrequisitos RF-009.5, RF-009.8 e RF-009.9 e a regra RN-009.9 foram
+> substituídos pelo redesenho do modelo de dados de OS (2026-08-31).
+> O modelo de persistência do Worker passa a ser definido em **RF-016** e
+> **RF-017**. As seções afetadas deste documento foram marcadas com
+> `[SUBSTITUÍDO — ver RF-016/RF-017]`. Todo o restante permanece vigente.
+
 Status: `Entregue (lado API) — D7 resolvido; Worker pendente`
 
 **Data de entrega (lado API):** 2026-08-30, commit `44fdbef`.
@@ -8,8 +15,8 @@ Status: `Entregue (lado API) — D7 resolvido; Worker pendente`
 
 Executar a primeira coleta real de ordens de servico de um tenant no iService a
 partir do `ImmediateCollectionCommand` criado pela ativacao (RF-008), registrando
-o estado atual e exatamente uma observacao inicial de cada OS retornada, e
-iniciando o historico observado pelo ATUA (RF-010).
+o dado bruto de cada OS retornada (RF-016) e iniciando o histórico agnóstico de
+provedor (RF-017).
 
 ## Escopo
 
@@ -19,8 +26,9 @@ O fluxo abrangido e:
 
 ```
 claim -> autenticacao CAS -> consulta dos 5 status suportados ->
-enriquecimento das OS Designadas -> persistencia (estado atual +
-observacao inicial por OS) -> complete (Succeeded | Failed | Cancelled)
+enriquecimento das OS Designadas -> persistencia (snapshot bruto + registro
+em work_order / work_order_history — ver RF-016 e RF-017) ->
+complete (Succeeded | Failed | Cancelled)
 ```
 
 O Office reflete o estado do comando em tempo real durante todo o processo.
@@ -59,22 +67,15 @@ O Office reflete o estado do comando em tempo real durante todo o processo.
 - Implementação do loop de polling no Worker (`apps/collector`).
 - Acesso real ao iService (scraping via Playwright, autenticação CAS, consulta do iService).
 - Paginação, throttling, backoff e tratamento de erro do Worker.
-- Persistência efetiva em MongoDB (Worker invocando inserts).
+- Persistência efetiva em MongoDB (Worker invocando inserts — ver RF-016 e RF-017).
 
 ### O que NAO e RF-009
 
-- Coleta recorrente (RF-011).
-- Atualizacao de estado de OS ja existente (RF-011).
+- Coleta recorrente (RF futuro).
+- Atualizacao de estado de OS ja existente (RF futuro).
 - Interpretacao de ausencia de OS (RF-012).
 - Escrita no iService (RF-013).
 - Exibicao de OS na interface do Office (RF futuro).
-
-### Fronteira critica com RF-010
-
-As datas que o iService retorna sobre a OS (por exemplo, data de abertura) sao
-metadados da OS no provedor, **nao observacoes historicas do ATUA**. O historico
-registrado pelo ATUA comeca no `capturedAt` da coleta inicial. Essa distincao nao
-estava articulada na documentacao existente e esta sendo definida neste requisito.
 
 ## Requisitos funcionais
 
@@ -112,16 +113,14 @@ O Worker opera exclusivamente no modo de leitura. Nenhuma escrita, nenhuma
 atualizacao e nenhuma interacao que altere dados no iService e permitida. Esse
 bloqueio nao e configuravel.
 
-### RF-009.5 - Identidade das OS
+### RF-009.5 - Identidade das OS `[SUBSTITUÍDO — ver RF-016]`
 
-Cada OS possui:
+> Este subrequisito foi substituído pelo redesenho do modelo de dados
+> (2026-08-31). A identidade das OS agora é definida em RF-016.
 
-- `providerOrderId`: identificador externo proveniente do iService.
-- UUID interno do ATUA (UUIDv7): gerado pelo proprio sistema e mantido separado
-  do identificador externo.
-
-Os dois identificadores nao devem ser misturados nem usados como substitutos um
-do outro.
+~~Cada OS possui:~~
+~~- `providerOrderId`: identificador externo proveniente do iService.~~
+~~- UUID interno do ATUA (UUIDv7): gerado pelo proprio sistema e mantido separado do identificador externo.~~
 
 ### RF-009.6 - Protecao de credenciais
 
@@ -138,16 +137,23 @@ Credenciais do iService e dados de sessao CAS sao **proibidos** em:
 OS sao preservadas enquanto a conta do tenant estiver ativa. Apos cinco anos de
 inatividade da conta ou mediante solicitacao formal, os dados devem ser removidos.
 
-### RF-009.8 - Referencia temporal
+### RF-009.8 - Referencia temporal `[SUBSTITUÍDO — ver RF-016]`
 
-O campo `capturedAt` registra o instante exato da coleta no Worker. Esse instante
-e a referencia historica do ATUA para aquela OS. Nao e permitido retroagir datas
-nem fabricar observacoes anteriores ao `capturedAt`.
+> Este subrequisito foi substituído pelo redesenho do modelo de dados
+> (2026-08-31). A referência temporal agora é tratada via `created_at` das
+> entidades definidas em RF-016 e RF-017.
 
-### RF-009.9 - Idempotencia da persistencia
+~~O campo `capturedAt` registra o instante exato da coleta no Worker. Esse instante~~
+~~e a referencia historica do ATUA para aquela OS. Nao e permitido retroagir datas~~
+~~nem fabricar observacoes anteriores ao `capturedAt`.~~
 
-O mesmo `commandId` ou o mesmo `providerOrderId` nao devem gerar documentos
-duplicados no MongoDB. A persistencia deve ser idempotente.
+### RF-009.9 - Idempotencia da persistencia `[SUBSTITUÍDO — ver RF-016]`
+
+> Este subrequisito foi substituído pelo redesenho do modelo de dados
+> (2026-08-31). As regras de idempotência agora são definidas em RF-016.
+
+~~O mesmo `commandId` ou o mesmo `providerOrderId` nao devem gerar documentos~~
+~~duplicados no MongoDB. A persistencia deve ser idempotente.~~
 
 ### RF-009.10 - Exclusividade do claim
 
@@ -163,11 +169,11 @@ mesmo comando enquanto ele estiver nesse estado.
 | RN-009.2  | Elegibilidade verificada imediatamente antes do acesso ao iService; negativa resulta em `Cancelled` sem coleta.   |
 | RN-009.3  | Somente os 5 status suportados sao coletados; outros status do iService sao ignorados.                            |
 | RN-009.4  | Modo estritamente somente leitura; bloqueio nao e configuravel.                                                    |
-| RN-009.5  | OS possui `providerOrderId` externo e UUIDv7 interno do ATUA, mantidos separados.                                 |
+| RN-009.5  | **[SUBSTITUÍDO — ver RF-016]** ~~OS possui `providerOrderId` externo e UUIDv7 interno do ATUA, mantidos separados.~~ |
 | RN-009.6  | Credenciais e sessao CAS sao proibidas em logs, eventos, MongoDB, payloads e respostas.                           |
 | RN-009.7  | OS preservadas enquanto conta ativa; removidas apos 5 anos de inatividade ou solicitacao formal.                  |
-| RN-009.8  | `capturedAt` e o instante de referencia historica; retroatividade e fabricacao de datas sao vedadas.             |
-| RN-009.9  | Persistencia idempotente: mesmo `commandId` ou `providerOrderId` nao gera duplicatas.                             |
+| RN-009.8  | **[SUBSTITUÍDO — ver RF-016]** ~~`capturedAt` e o instante de referencia historica; retroatividade e fabricacao de datas sao vedadas.~~ |
+| RN-009.9  | **[SUBSTITUÍDO — ver RF-016]** ~~Persistencia idempotente: mesmo `commandId` ou `providerOrderId` nao gera duplicatas.~~ |
 | RN-009.10 | Comando `Claimed` pertence exclusivamente ao Worker que o reivindicou.                                            |
 
 ## Criterios de aceite
@@ -189,25 +195,23 @@ mesmo comando enquanto ele estiver nesse estado.
    `queryOneWorkOrder` antes de persistir.
 
 5. Dado que o Worker persistira uma OS, quando a persistencia for executada,
-   entao deve ser gravado exatamente um documento de estado atual e exatamente uma
-   observacao inicial com `capturedAt`, sem retroagir datas.
+   entao deve ser gerado um novo snapshot bruto em `work_order_snapshots` e
+   atualizado o registro em `work_order` e `work_order_history` conforme RF-016
+   e RF-017.
 
-6. Dado que o mesmo `providerOrderId` ja existe no MongoDB para o tenant, quando
-   o Worker tentar persistir novamente, entao nenhuma duplicata deve ser criada.
-
-7. Dado que a coleta foi concluida com sucesso, quando o Worker chamar `complete`,
+6. Dado que a coleta foi concluida com sucesso, quando o Worker chamar `complete`,
    entao o comando deve transitar para `Succeeded`.
 
-8. Dado que ocorreu falha irrecuperavel durante a coleta, quando o Worker chamar
+7. Dado que ocorreu falha irrecuperavel durante a coleta, quando o Worker chamar
    `complete`, entao o comando deve transitar para `Failed`.
 
-9. Dado qualquer etapa da coleta, quando credenciais ou dados de sessao CAS
+8. Dado qualquer etapa da coleta, quando credenciais ou dados de sessao CAS
    estiverem presentes, entao eles nao devem aparecer em logs, eventos, MongoDB,
    payloads ou respostas.
 
-10. Dado um usuario autorizado consultando o Office durante a coleta, quando o
-    estado do comando mudar, entao o Office deve refletir o estado atualizado em
-    tempo real, sem expor segredos.
+9. Dado um usuario autorizado consultando o Office durante a coleta, quando o
+   estado do comando mudar, entao o Office deve refletir o estado atualizado em
+   tempo real, sem expor segredos.
 
 ## Decisoes pendentes
 
@@ -237,146 +241,8 @@ mesmo comando enquanto ele estiver nesse estado.
 - Validação completa em reabertura fica para ciclo futuro se necessário.
 
 **Implementação:**
-- `apps/collector/Atua.Collector/Persistence/WorkOrderMapper.cs::ExtractProviderOrderId` implementado para extrair `workOrderId`.
-- Comentários no código refletem D7 resolvido (não pendente).
-- Índice de idempotência em MongoDB: `(tenantId, providerOrderId)` onde `providerOrderId = workOrderId`.
-- Suíte de testes: 165/165 passando após implementação.
-
----
-
-## Decisoes resolvidas (referência histórica)
-
-**Situacao:** A documentacao indica "estado atual de todas as OS retornadas nos
-status suportados", o que implica ausencia de filtro de data. Para um cliente com
-anos de historico no iService, isso pode retornar dezenas de milhares de OS na
-primeira coleta.
-
-**Impacto se nao decidido:** o Worker nao sabe se deve aplicar filtro de data.
-
-**Recomendacao da analista:** confirmar que a coleta inicial busca **todas as OS
-retornadas pelo iService nos 5 status, sem filtro de data**, e que a paginacao e
-tratada pelo Worker.
-
-**Aguarda:** decisao do usuario.
-
----
-
-### D2 - Timeout de re-claim: o que acontece se o Worker morrer com o comando em `Claimed`?
-
-**Situacao:** ADR-020 define a maquina de estados mas nao especifica timeout. Um
-comando `Claimed` orfao bloqueia indefinidamente a integracao, pois o indice
-parcial impede novo `Pending`.
-
-**Impacto se nao decidido:** o tenant fica travado e o Agente Coletor nunca
-conclui a coleta inicial.
-
-**Recomendacao da analista:** definir um **timeout de `Claimed`** (sugestao: 30
-minutos). Apos o timeout, a Master API ou um job de reconciliacao transita o
-comando para `Failed`, permitindo nova ativacao. A escolha entre polling e job e
-decisao de arquitetura.
-
-**Aguarda:** decisao do software-architect.
-
----
-
-### D3 - Quantas tentativas sao permitidas para o Worker (`AttemptCount`)?
-
-**Situacao:** A entidade `ImmediateCollectionCommand` ja possui `AttemptCount`
-(ADR-020/RF-008), mas o numero maximo de tentativas nao foi definido.
-
-**Impacto se nao decidido:** sem limite, o Worker pode entrar em loop; com limite
-muito baixo, uma falha transitoria cancela definitivamente a coleta inicial.
-
-**Recomendacao da analista:** **1 tentativa** para a coleta inicial (e um comando
-unico, nao recorrente). Falha resulta em `Failed`; o cliente pode desativar e
-reativar para tentar novamente. O numero exato e decisao de produto.
-
-**Aguarda:** decisao do usuario.
-
----
-
-### D4 - Ao concluir com `Failed`, a Master API deve desativar automaticamente o Agente?
-
-**Situacao:** Se a credencial foi rejeitada definitivamente pelo iService durante
-a coleta, o `ValidationStatus` deveria ser alterado para `Failed`, o que
-acionaria `ReconcileEligibility` e desativaria o Agente. Porem, `ReconcileEligibility`
-nao esta implementado (registrado como prioridade posterior em ADR-020/RF-008).
-
-**Impacto se nao decidido:** o Agente pode permanecer `Active` com coleta em
-estado `Failed`, criando inconsistencia operacional visivel no Office.
-
-**Recomendacao da analista:** uma conclusao com `Failed` por credencial rejeitada
-**deve** invalidar o `ValidationStatus` e acionar desativacao por
-`CredentialNotValidated`. Isso exige que `ReconcileEligibility` seja implementado
-como parte de RF-009, nao como prioridade posterior.
-
-**Aguarda:** decisao do software-architect.
-
----
-
-### D5 - Dados pessoais de tecnicos e clientes finais nas OS: ha LGPD aplicavel?
-
-**Situacao:** OS do iService podem conter nome do tecnico, nome do cliente final,
-endereco e telefone. O produto nao definiu se esses dados podem ser persistidos
-no MongoDB ou se devem ser omitidos ou pseudonimizados.
-
-**Impacto se nao decidido:** se persistidos sem tratamento, ha risco de
-conformidade com a LGPD. Se omitidos, o ATUA perde informacoes operacionais
-relevantes.
-
-**Recomendacao da analista:** definir explicitamente quais campos das OS **podem**
-ser persistidos no MVP. Sugestao minima: identificadores externos, status e
-`capturedAt`, sem PII de tecnico ou cliente final ate que a base legal seja
-definida.
-
-**Aguarda:** decisao do usuario.
-
----
-
-### D6 - Ha limite de OS por coleta inicial?
-
-**Situacao:** A documentacao `mvp-onboarding` registra como pendencia o
-comportamento acima de 10.000 OS por status. O produto nao definiu se existe um
-teto.
-
-**Impacto se nao decidido:** sem limite, uma coleta inicial de um cliente grande
-pode durar horas, consumir memoria excessiva e potencialmente sobrecarregar o
-iService do cliente.
-
-**Recomendacao da analista:** definir um **limite de OS por coleta no MVP**
-(sugestao: 1.000 OS por status, 5.000 no total). Se excedido, a coleta deve ser
-concluida com as OS obtidas ate o limite, registrando uma nota de truncamento, sem
-gerar erro. O limite exato e decisao de produto.
-
-**Aguarda:** decisao do usuario.
-
----
-
-### D7 - Qual identificador externo do iService e a chave de identidade da OS?
-
-**Situacao:** A documentacao menciona `workOrderNo` e `workOrderId` (ADR-004,
-mvp-onboarding pendencias) e registra incerteza sobre a estabilidade desses
-identificadores em reaberturas, reatribuicoes ou alteracoes no iService.
-
-**Impacto se nao decidido:** se o identificador escolhido nao for estavel, a
-coleta pode criar duplicatas ou perder o historico de uma OS reaberta.
-
-**Recomendacao da analista:** confirmar com o usuario qual dos dois (`workOrderNo`
-ou `workOrderId`) e a chave primaria de identidade da OS no iService para o MVP,
-e qual e o comportamento esperado em caso de reabertura. A descoberta via
-Playwright (ADR-004) deve validar isso antes da implementacao.
-
-**Aguarda:** decisao do usuario.
-
----
-
-### D8 — Mesma OS em múltiplos status
-
-**Resolvido:** desempate por prioridade de status (Designado > Em Processamento > Pendente > Concluído > Cancelado). Uma única observação inicial por OS por comando. Ver ADR-021, seção D8.
-
-### D9 — Entrega de credenciais ao Worker
-
-**Resolvido:** variante B (API decifra, entrega credenciais em claro via TLS, Worker não recebe DEK nem chave mestra, não acessa tabela `IServiceCredentials`). Ver ADR-021, seção D9.
+- O mapeamento de `workOrderId` para `provider_id` da OS é feito pelo Worker; o isolamento desse mapeamento é definido em RF-016.
+- Suíte de testes: 165/165 passando após implementação anterior (nota: código de persistência anterior — `WorkOrderMapper`, `WorkOrderSnapshotDocument`, `WorkOrderObservationDocument`, `WorkOrderRepository` — será substituído pela implementação de RF-016 e RF-017).
 
 ---
 
@@ -387,13 +253,14 @@ Playwright (ADR-004) deve validar isso antes da implementacao.
 - ADR-020: define a máquina de estados do comando; endpoints `claim` e `complete`
   implementados (commit `44fdbef`).
 - ADR-021: resolve todas as decisões arquiteturais e de segurança de RF-009
-  (D1–D6, D8, D9). Status: `Aceita` (2026-08-30). D7 pendente de descoberta.
+  (D1–D6, D8, D9). Status: `Aceita` (2026-08-30). D7 resolvido em 2026-08-31.
 - ADR-003: define Worker Service e isolamento por tenant.
 - ADR-004: define credenciais cifradas e KMS; mecanismo de entrega ao Worker
   implementado (variante B em ADR-021, commit `44fdbef`).
 - ADR-017: credencial de serviço interno; limites do contrato de elegibilidade.
-- RF-010: histórico de observações; a fronteira entre metadados do iService e
-  observações do ATUA está definida na seção de escopo deste documento.
+- **RF-016** (novo): define o modelo de persistência de snapshots brutos de OS.
+- **RF-017** (novo): define o modelo de `work_order` e `work_order_history`
+  agnóstico de provedor.
 
 ## Impactos
 
@@ -411,15 +278,19 @@ Playwright (ADR-004) deve validar isso antes da implementacao.
 - ⏳ Implementação do loop de polling no Worker (`apps/collector`).
 - ⏳ Acesso real ao iService (scraping via Playwright, autenticação CAS).
 - ⏳ Paginação, throttling, backoff e tratamento de erro.
-- ⏳ Persistência em MongoDB.
+- ⏳ Persistência em MongoDB conforme RF-016 e RF-017.
+- ⚠️ Código de persistência existente (`WorkOrderMapper`, `WorkOrderSnapshotDocument`,
+  `WorkOrderObservationDocument`, `WorkOrderRepository`) será substituído pela
+  implementação de RF-016 e RF-017.
 
 ## Fora do escopo
 
-- Coleta recorrente (RF-011).
-- Atualização de OS já existentes (RF-011).
+- Coleta recorrente (RF futuro).
+- Atualização de OS já existentes (RF futuro).
 - Interpretação de ausência de OS (RF-012).
 - Escrita no iService (RF-013).
 - Exibição de OS no Office (RF futuro).
+- Mapeamento de campos do rawData em campos estruturados (RF futuro — ver RF-016).
 
 ## Gate de implementação
 
@@ -427,4 +298,5 @@ Playwright (ADR-004) deve validar isso antes da implementacao.
 
 **Lado Worker:** bloqueado por:
 
-1. ⏳ Implementação do loop de polling no Worker com acesso efetivo ao iService.
+1. ⏳ Implementação de RF-016 e RF-017 (modelo de persistência).
+2. ⏳ Implementação do loop de polling no Worker com acesso efetivo ao iService.
