@@ -16,7 +16,7 @@ namespace Atua.Api.Infrastructure.Persistence.Migrations
             // Não há dados de produção — operação segura.
             migrationBuilder.AlterColumn<string>(
                 name: "KmsKeyId",
-                table: "IServiceCredentials",
+                table: "iservice_credentials",
                 type: "text",
                 nullable: false,
                 oldClrType: typeof(Guid),
@@ -38,7 +38,7 @@ namespace Atua.Api.Infrastructure.Persistence.Migrations
             // type uuid"). Faça um DELETE ou truncate antes de aplicar o Down().
             migrationBuilder.AlterColumn<Guid>(
                 name: "KmsKeyId",
-                table: "IServiceCredentials",
+                table: "iservice_credentials",
                 type: "uuid",
                 nullable: false,
                 oldClrType: typeof(string),
