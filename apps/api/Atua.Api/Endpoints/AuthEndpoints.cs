@@ -102,6 +102,14 @@ public static class AuthEndpoints
     private const string RefreshCookieName = "atua_refresh";
 
     private static void SetRefreshCookie(HttpResponse response, string refreshToken) =>
+        // OPÇÃO D (aprovada pelo usuário, 2026-09-01 — débito técnico documentado):
+        // O cookie usa Secure=true e SameSite=Strict, o que é correto para consumidores
+        // na mesma origem (ex.: localhost em dev). Para consumidores cross-origin sem HTTPS
+        // (ex.: Office no S3 falando com API na EC2), o browser NÃO enviará este cookie —
+        // isso é um comportamento esperado e não um bug. Nesses cenários, o cliente deve
+        // operar exclusivamente com o access token JWT em memória via Authorization: Bearer.
+        // O fluxo de refresh via cookie (/auth/refresh) permanece funcional para same-origin.
+        // Reverter para SameSite=None + Secure quando houver domínio próprio + HTTPS.
         response.Cookies.Append(RefreshCookieName, refreshToken, new CookieOptions
         {
             HttpOnly = true,

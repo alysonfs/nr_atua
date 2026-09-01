@@ -147,6 +147,28 @@ builder.Services.Configure<ImmediateCollectionOptions>(
 builder.Services.AddScoped<ImmediateCollectionCommandService>();
 builder.Services.AddHostedService<ClaimTimeoutJob>();
 
+// CORS — Opção D (aprovada pelo usuário, 2026-09-01):
+// Sem domínio próprio + sem HTTPS no S3, não é possível usar cookies cross-origin
+// com Secure/SameSite. O frontend (Office no S3) opera apenas com access token JWT
+// em memória via Authorization: Bearer. AllowCredentials() é deliberadamente omitido.
+// Débito técnico: reverter para política com AllowCredentials() e SameSite=Strict
+// quando houver domínio próprio + HTTPS. Ver ADR correspondente.
+var corsOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>()
+    ?? [];
+builder.Services.AddCors(options =>
+{
+    options.AddDefaultPolicy(policy =>
+    {
+        if (corsOrigins.Length > 0)
+            policy.WithOrigins(corsOrigins);
+        else
+            policy.AllowAnyOrigin();  // fallback apenas; produção deve sempre configurar Cors:AllowedOrigins
+
+        policy.AllowAnyHeader().AllowAnyMethod();
+        // NÃO usar AllowCredentials() — incompatível com AllowAnyOrigin() e desnecessário na Opção D.
+    });
+});
+
 var app = builder.Build();
 
 // Verificação de segurança: KmsKeyArn obrigatório em produção (Achado 1 / D9).
@@ -180,6 +202,7 @@ if (app.Environment.IsDevelopment())
 
 app.MapGet("/health", () => Results.Ok(new { status = "healthy" }));
 
+app.UseCors();
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapAuthEndpoints();

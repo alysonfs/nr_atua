@@ -9,6 +9,12 @@
  * Este módulo não inventa nenhuma lógica de autenticação nova: apenas
  * centraliza o envio do header e o parse de erro padronizado das APIs
  * (`{ error: string }`), evitando duplicação em cada hook de integração.
+ *
+ * URL base configurável:
+ * Defina VITE_API_BASE_URL no build para apontar para um servidor de API em
+ * origem diferente (ex.: deploy do Office no S3 contra API na EC2).
+ * Sem essa variável, os paths continuam relativos (comportamento padrão de dev).
+ * Ex.: VITE_API_BASE_URL=http://56.124.76.132
  */
 
 export interface ApiErrorPayload {
@@ -37,6 +43,22 @@ export function setAccessTokenProvider(provider: () => string | null): void {
   accessTokenProvider = provider
 }
 
+/**
+ * Resolve a URL final da requisição.
+ *
+ * Se VITE_API_BASE_URL estiver definida (cenário cross-origin: S3 + EC2),
+ * o path é prefixado com ela. Barras duplicadas na junção são normalizadas.
+ * Sem a variável (dev local ou build padrão), o path permanece relativo.
+ */
+function resolveUrl(path: string): string {
+  const base = import.meta.env.VITE_API_BASE_URL as string | undefined
+  if (!base) return path
+  // Normaliza: remove trailing slash da base e garante leading slash no path.
+  const normalizedBase = base.replace(/\/$/, '')
+  const normalizedPath = path.startsWith('/') ? path : `/${path}`
+  return `${normalizedBase}${normalizedPath}`
+}
+
 async function request<TResponse>(
   path: string,
   init: RequestInit = {},
@@ -48,7 +70,7 @@ async function request<TResponse>(
     headers.set('Authorization', `Bearer ${token}`)
   }
 
-  const response = await fetch(path, {
+  const response = await fetch(resolveUrl(path), {
     ...init,
     headers,
     credentials: 'include',
