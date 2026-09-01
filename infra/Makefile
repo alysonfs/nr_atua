@@ -26,7 +26,7 @@ STACK_COMPUTE=AtuaComputeStack
 
 ACCOUNT_ID := $(shell aws sts get-caller-identity --query Account --output text --region $(REGION) 2>/dev/null)
 
-.PHONY: install synth diff bootstrap-cdk up down destroy destroy-all-data status rds-bootstrap rds-up rds-down retrieve-keypair deploy-landing deploy-office deploy-manager deploy-tecnica deploy-api
+.PHONY: install synth diff bootstrap-cdk up down destroy destroy-all-data status rds-bootstrap rds-up rds-down retrieve-keypair deploy-landing deploy-office deploy-manager deploy-tecnica deploy-api deploy-collector
 
 ## Instala dependências (pnpm, alinhado ao monorepo)
 install:
@@ -203,6 +203,34 @@ deploy-api:
 	dotnet publish ../apps/api/Atua.Api/Atua.Api.csproj -c Release -o /tmp/atua-api-publish
 	@echo "Sincronizando artefato para s3://atua-$(ACCOUNT_ID)-releases/latest/ ..."
 	aws s3 sync /tmp/atua-api-publish/ s3://atua-$(ACCOUNT_ID)-releases/latest/ \
+	  --region $(REGION) --delete
+	@echo "Artefato publicado. Rode 'make up' para subir/recriar a EC2 com o novo artefato."
+	@echo "Ou, com a EC2 já no ar, sincronize e reinicie manualmente o serviço (ver comentário acima)."
+
+## Publica o artefato do Agente Coletor no bucket de releases.
+## Prefixo dedicado (collector-latest/) para não colidir com o artefato da API.
+## CRÍTICO: usa -r linux-x64 --self-contained false, NÃO só '-c Release', porque
+## sem o RID explícito o MSBuild embute o driver Node do Playwright da plataforma
+## de BUILD (ex.: darwin-x64 num Mac), inutilizável na EC2 Linux. Com -r linux-x64
+## o pacote Microsoft.Playwright embute corretamente .playwright/node/linux-x64/node
+## (ELF x86-64), permitindo instalar os browsers no boot sem depender de PowerShell.
+## Fluxo completo de deploy do Collector:
+##   1. make deploy-collector   -> compila (Release, linux-x64) e sobe para S3
+##   2. make up                 -> sobe/recria a EC2 (user-data sincroniza o artefato,
+##                                  instala o Chromium via driver Node embutido e inicia
+##                                  atua-collector.service)
+##      OU, com a EC2 já no ar: ssh na instância e rode:
+##        aws s3 sync s3://atua-<ACCOUNT_ID>-releases/collector-latest/ /opt/atua-collector/
+##        /opt/atua-collector/.playwright/node/linux-x64/node \
+##          /opt/atua-collector/.playwright/package/cli.js install chromium
+##        systemctl restart atua-collector
+deploy-collector:
+	@echo "Compilando Atua.Collector (Release, linux-x64, self-contained=false)..."
+	dotnet publish ../apps/collector/Atua.Collector/Atua.Collector.csproj \
+	  -c Release -r linux-x64 --self-contained false \
+	  -o /tmp/atua-collector-publish
+	@echo "Sincronizando artefato para s3://atua-$(ACCOUNT_ID)-releases/collector-latest/ ..."
+	aws s3 sync /tmp/atua-collector-publish/ s3://atua-$(ACCOUNT_ID)-releases/collector-latest/ \
 	  --region $(REGION) --delete
 	@echo "Artefato publicado. Rode 'make up' para subir/recriar a EC2 com o novo artefato."
 	@echo "Ou, com a EC2 já no ar, sincronize e reinicie manualmente o serviço (ver comentário acima)."

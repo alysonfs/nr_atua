@@ -73,22 +73,43 @@ export class AtuaNetworkStack extends cdk.Stack {
     // SSH administrativo restrito ao IP autorizado do operador.
     this.sgApi.addIngressRule(ec2.Peer.ipv4('186.236.211.36/32'), ec2.Port.tcp(22), 'SSH administrativo');
 
-    // --- Security Group: Collector (instância BASE, SEM logica de coleta) ---
+    // --- Security Group: Collector (Agente Coletor, RF-009/016/017/023) ---
     // A instância do Collector nasce e morre junto com a API Master no
-    // mesmo ciclo up/down (ver atua-compute-stack.ts), mas NAO roda
-    // nenhum software de scraping/Playwright/agendamento - apenas SO+rede.
-    // Egress restrito a HTTPS (443), unico protocolo que a futura
-    // integracao com o iService vai precisar.
+    // mesmo ciclo up/down (ver atua-compute-stack.ts). Roda o Worker .NET
+    // (Playwright + consumer de Change Streams) implementado a partir de
+    // 2026-09-01 (gate assistido aberto explicitamente pelo usuário).
+    // Egress restrito ao mínimo necessário: HTTPS (443) para Secrets
+    // Manager/SSM/S3 e o futuro iService; MongoDB (27017) para o Atlas
+    // (conexão direta aos shards do replica set, distinta do DNS SRV lookup);
+    // HTTP (80) apenas para a API Master (mesma VPC, sem domínio/HTTPS
+    // ainda); Postgres (5432) apenas para o RDS (consumer do ADR-023).
     this.sgCollector = new ec2.SecurityGroup(this, 'SgCollector', {
       securityGroupName: 'atua-mvp-sg-collector',
       vpc: this.vpc,
+      // NOTA: GroupDescription do AWS::EC2::SecurityGroup é imutável — mudar
+      // este texto força replacement, e como o nome é explícito
+      // (securityGroupName), o CloudFormation falha com "already exists"
+      // (precisa deletar antes de criar, sem downtime-safe create-before-delete
+      // possível com nome fixo). Por isso o texto abaixo é mantido IDÊNTICO ao
+      // já deployado (legado, refere-se ao design antigo "instância base sem
+      // lógica") mesmo após a implementação real do Worker — ver o comentário
+      // acima para a descrição real e atualizada do propósito deste SG.
       description:
-        'Collector (instancia BASE, sem logica). Egress restrito a HTTPS (443). ' +
-        'Sem ingress - nenhum acesso de entrada previsto ate a implementacao futura.',
+        'Collector (instancia BASE, sem logica). Egress restrito a HTTPS (443). Sem ingress - nenhum acesso de entrada previsto ate a implementacao futura.',
       allowAllOutbound: false,
     });
-    this.sgCollector.addEgressRule(ec2.Peer.anyIpv4(), ec2.Port.tcp(443), 'Egress HTTPS apenas (futuro iService)');
-    // Sem regras de ingress: nenhum acesso de entrada previsto para o Collector.
+    this.sgCollector.addEgressRule(ec2.Peer.anyIpv4(), ec2.Port.tcp(443), 'Egress HTTPS (AWS APIs, iService)');
+    // MongoDB Atlas usa a porta 27017 para as conexões diretas aos shards do
+    // replica set, mesmo com o esquema mongodb+srv:// (o SRV/TXT lookup via
+    // DNS usa 53/443, mas a conexão de dados em si é sempre 27017). BUG
+    // CORRIGIDO: a regra original só liberava 443, bloqueando toda conexão
+    // real com o Atlas (confirmado via teste de TCP direto na instância).
+    this.sgCollector.addEgressRule(ec2.Peer.anyIpv4(), ec2.Port.tcp(27017), 'Egress MongoDB Atlas (conexao direta aos shards do replica set)');
+    this.sgCollector.addEgressRule(this.sgApi, ec2.Port.tcp(80), 'Egress HTTP para API Master (claim/complete/eligibility)');
+    // SSH administrativo restrito ao IP autorizado do operador (mesmo padrão da API,
+    // usado apenas para diagnóstico manual — não faz parte do fluxo normal).
+    this.sgCollector.addIngressRule(ec2.Peer.ipv4('186.236.211.36/32'), ec2.Port.tcp(22), 'SSH administrativo');
+    // Sem outras regras de ingress: nenhum outro acesso de entrada previsto.
 
     // --- Security Group: RDS PostgreSQL (subnet privada isolada) ---
     this.sgRds = new ec2.SecurityGroup(this, 'SgRds', {
@@ -99,6 +120,8 @@ export class AtuaNetworkStack extends cdk.Stack {
     });
     this.sgRds.addIngressRule(this.sgApi, ec2.Port.tcp(5432), 'Postgres a partir da API Master');
     this.sgRds.addIngressRule(this.sgCollector, ec2.Port.tcp(5432), 'Postgres a partir do Collector (quando ativado)');
+    this.sgCollector.addEgressRule(this.sgRds, ec2.Port.tcp(5432), 'Egress Postgres para o RDS (consumer ADR-023)');
+
 
     // --- Key Pair dedicado do projeto ---
     // Gerado automaticamente pelo CDK (sem publicKeyMaterial => a AWS
