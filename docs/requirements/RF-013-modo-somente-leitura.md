@@ -67,14 +67,38 @@ não relacionados a escrita de dados de OS. O bloqueio quebrou o login do
 Coletor (`PlaywrightException: Cannot read properties of null (reading
 'innerText')`, comando concluído com `outcome=Failed`).
 
-**Correção:** o escopo do default-deny foi restrito a `/web/iservice-wom/`
+**Correção 1:** o escopo do default-deny foi restrito a `/web/iservice-wom/`
 (o módulo de negócio de OS, onde reside o risco real descrito em
 DP-013.1). Fora desse prefixo, o comportamento permanece "não bloqueado"
 (igual à versão original). Os três endpoints reais descobertos no
 incidente foram adicionados como casos de teste de regressão em
-`IServiceCollectorServiceReadOnlyGuardTests.cs`. Redeploy + novo ciclo de
-teste confirmaram login e coleta funcionando normalmente com o guard
-corrigido (ver seção "Implementação e validação").
+`IServiceCollectorServiceReadOnlyGuardTests.cs`.
+
+Ao revalidar ao vivo essa primeira correção, um **segundo incidente**
+apareceu: dentro do próprio `/web/iservice-wom/`, a SPA do iService chama
+via `POST` os contadores do painel da home (`desktop/indicator/assigned`,
+`desktop/indicator/processing`, etc.) e a lista de feriados
+(`holiday/list`) ao renderizar a "Visão por Status" — antes de qualquer
+consulta real de OS. Nenhum desses nomes de endpoint começa com
+`query`/`get`/`select`, então caíram no default-deny. O bloqueio levou a
+SPA a um estado de erro que destruiu o contexto de execução do Playwright
+(`PlaywrightException: Execution context was destroyed, most likely
+because of a navigation`), impedindo toda a coleta (`outcome=Failed`
+novamente). Este é exatamente o risco residual já previsto em DP-013.1
+(falso positivo em endpoint de leitura legítimo fora do padrão nomeado).
+
+**Correção 2:** adicionado reconhecimento explícito desses dois padrões
+(`/desktop/indicator/` em qualquer ponto do caminho, ou terminando em
+`/holiday/list`) como leitura, e o prefixo `list` foi incluído no conjunto
+de nomes de endpoint tratados como consulta. Treze novos testes de
+regressão cobrem os endpoints reais do segundo incidente.
+
+**Validação final:** após as duas correções, novo redeploy +
+`collector-trigger-cycle` confirmaram o ciclo completo com
+`outcome=Succeeded`: login CAS bem-sucedido, nenhum endpoint bloqueado
+indevidamente, 195 snapshots persistidos no MongoDB. 48/48 testes do
+Collector passando (7 pré-existentes + 26 do primeiro incidente + 13 do
+segundo + 2 casos de leitura conhecida ajustados).
 
 **Interface `IIServiceCollector`:** expõe apenas `CollectAsync` — nenhum
 método de escrita está presente na interface nem na implementação.
@@ -82,9 +106,10 @@ método de escrita está presente na interface nem na implementação.
 **Conclusão da leitura do código:** o guard está ativo, cobre todo o
 prefixo `/web/iservice-wom/` (não apenas `/workOrder/`) e bloqueia
 incondicionalmente métodos de escrita HTTP dentro desse prefixo, sem
-afetar endpoints de infraestrutura do portal fora dele. RF-013 é
-considerado **implementado e testado** — ver seção "Implementação e
-validação" abaixo.
+afetar endpoints de infraestrutura do portal fora dele nem os
+contadores/listas de leitura conhecidos dentro dele. RF-013 é considerado
+**implementado, testado e validado ao vivo em produção** — ver seção
+"Implementação e validação" abaixo.
 
 ### O que é RF-013
 
@@ -188,31 +213,36 @@ escrita não coberto) é mitigado pela postura default-deny.
 **Testes automatizados** (resolve DP-013.2):
 `tests/Atua.Collector.Tests/IServiceCollectorServiceReadOnlyGuardTests.cs`
 cobre `IsWriteRequestOnIService` (tornado `public static` para teste
-isolado, sem depender de navegador real) com 26 casos: métodos seguros
-(`GET`/`HEAD`/`OPTIONS`) nunca bloqueados; `POST` para os dois endpoints
-de consulta reais usados pelo Coletor (`queryWorkOrder`,
-`queryOneWorkOrder`) e variações de nome (`getStatusCount`,
-`selectAssignedTechnicians`) não bloqueado; `POST` de escrita conhecida
+isolado, sem depender de navegador real) com 41 casos: métodos seguros
+(`GET`/`HEAD`/`OPTIONS`) nunca bloqueados; `POST` para os endpoints de
+consulta reais usados pelo Coletor (`queryWorkOrder`, `queryOneWorkOrder`)
+e variações de nome (`getStatusCount`, `selectAssignedTechnicians`,
+`listWorkOrder`) não bloqueado; `POST` de escrita conhecida
 (`acceptWorkOrder`, `reassignTechnician`, `updateStatus`) bloqueado;
 `POST` para outros submódulos de negócio dentro de `/web/iservice-wom/`
 (peças, agendamento, comunicação com cliente) também bloqueado — prova
 automatizada da mitigação de DP-013.1; `POST` para os três endpoints de
-infraestrutura descobertos no incidente em produção
+infraestrutura descobertos no primeiro incidente em produção
 (`/web/auth-server/login/option`, `/web/auth-server/user/getSetProfile`,
-`/web/iservice-admin/htmlAppErrorLog/insertLog`) **não** bloqueado —
-teste de regressão que trava a correção do incidente; `PUT`/`PATCH`/
-`DELETE` dentro de `/web/iservice-wom/` sempre bloqueados, mesmo em
-caminhos com nome de "query"; requisições fora do host do iService (CAS,
-CDN) nunca bloqueadas; URL inválida/vazia não bloqueada (mesma tolerância
-defensiva de antes). 33/33 testes do Collector passando (7 pré-existentes
-+ 26 novos).
+`/web/iservice-admin/htmlAppErrorLog/insertLog`) **não** bloqueado; `POST`
+para os treze contadores/lista descobertos no segundo incidente
+(`/web/iservice-wom/desktop/indicator/*`, `/web/iservice-wom/holiday/list`)
+**não** bloqueado — testes de regressão que travam as duas correções;
+`PUT`/`PATCH`/`DELETE` dentro de `/web/iservice-wom/` sempre bloqueados,
+mesmo em caminhos com nome de "query"; requisições fora do host do
+iService (CAS, CDN) nunca bloqueadas; URL inválida/vazia não bloqueada
+(mesma tolerância defensiva de antes). 48/48 testes do Collector passando
+(7 pré-existentes + 41 novos).
 
 **Validação ao vivo em produção**: `make redeploy-collector` +
-`make collector-trigger-cycle` (duas rodadas — uma com a versão que
-causou o incidente, outra após a correção). Na segunda rodada, os logs
-confirmaram `[READONLY] Modo somente leitura ativo`, nenhum bloqueio
-inesperado, login CAS bem-sucedido e coleta concluída normalmente,
-confirmando que o guard corrigido não introduz regressão no fluxo real.
+`make collector-trigger-cycle` (três rodadas — a versão com o bug
+original, a primeira correção com o bug residual dos indicadores do
+painel, e a segunda correção). Na terceira rodada, os logs confirmaram
+`[READONLY] Modo somente leitura ativo`, nenhum bloqueio inesperado,
+login CAS bem-sucedido (`[LOGIN] Autenticado com sucesso`), e o comando
+concluído com `outcome=Succeeded` — 195 snapshots de OS persistidos no
+MongoDB nesse ciclo, confirmando que o guard corrigido não introduz
+regressão no fluxo real de coleta.
 
 **Mitigação de DP-013.1**: em vez de aguardar o mapeamento completo dos
 endpoints do iService (tarefa de descoberta ainda não realizada), o guard
