@@ -184,17 +184,29 @@ a ausência de observações — o que é possível, mas menos eficiente.
 
 **Aguarda:** decisão de produto sobre necessidade de diagnóstico de ausência.
 
-### DP-012.2 — Critério de conclusão por evidência positiva vs. ausência prolongada
+### DP-012.2 — ~~Critério de conclusão por evidência positiva vs. ausência prolongada~~ ✅ Resolvido (2026-09-02)
 
-**Situação:** RF-012 define que ausência não implica conclusão. Não está
-definido se, após N coletas consecutivas sem aparição, o sistema pode assumir
-que a OS foi concluída ou cancelada fora dos status suportados.
+**Situação:** RF-012 define que ausência não implica conclusão. Não estava
+definido se, após N coletas consecutivas sem aparição, o sistema poderia
+assumir que a OS foi concluída ou cancelada fora dos status suportados.
 
-**Impacto se não decidido:** OS históricas podem acumular indefinidamente
-com status desatualizado se nunca mais aparecerem com status Concluído ou
-Cancelado.
+**Decisão do usuário:** nunca inferir conclusão/cancelamento por ausência
+prolongada, independentemente de N. `work_order.status` só muda mediante
+**evidência positiva** — a OS reaparecer numa coleta com um status
+diferente (RN-012.4 permanece válida sem exceção por tempo). Não há
+"timeout" que force uma OS ausente há muitas coletas a ser marcada como
+Concluída/Cancelada automaticamente.
 
-**Aguarda:** decisão de produto sobre política de envelhecimento de OS.
+**Consequência:** OS que nunca mais aparecerem (ex.: excluídas no
+iService, ou fora da janela de coleta) permanecem indefinidamente em
+`work_order` com o último status observado. Isso é aceito como
+comportamento correto — qualquer alerta de "OS cronicamente ausente" (RF
+futuro, fora de escopo) deve ser tratado como diagnóstico/alerta, nunca
+como mudança automática de estado.
+
+**Nenhuma mudança de código foi necessária** — o comportamento atual
+(RF-012 implementado por design) já satisfaz esta decisão sem alteração,
+pois nunca existiu lógica de inferência por ausência a remover.
 
 ## Fora do escopo
 
