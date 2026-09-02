@@ -2,6 +2,8 @@ import { useState, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { ApiError } from '../../../shared/lib/apiClient'
 import { useAuth } from '../AuthContext'
+import logoBgLight from '../../../../../../assets/logo_bg_light.svg'
+import logoBgDark from '../../../../../../assets/logo_bg_dark.svg'
 
 export function SignInPage() {
   const { signIn } = useAuth()
@@ -36,18 +38,60 @@ export function SignInPage() {
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-slate-50 p-4">
-      <div className="w-full max-w-md">
-        <div className="mb-8 text-center">
-          <h1 className="text-3xl font-bold text-slate-900">ATUA Office</h1>
-          <p className="mt-2 text-slate-600">Entre na sua conta</p>
+    <main className="flex min-h-screen w-full bg-[#f8fafc]">
+      {/* Coluna institucional (oculta em telas pequenas) */}
+      <div className="hidden flex-1 flex-col justify-between bg-[#0f172a] p-20 lg:flex">
+        <img src={logoBgDark} alt="ATUA" className="h-[70px] w-[240px]" />
+
+        <div className="flex flex-col gap-6">
+          <p className="text-4xl leading-tight font-bold text-white">
+            Conecte sua operação em um único lugar
+          </p>
+          <p className="text-[15px] leading-relaxed text-[#64748b]">
+            Organize dados, acompanhe sua operação e prepare sua empresa para
+            conectar vários provedores em uma única plataforma.
+          </p>
         </div>
 
-        <div className="rounded-2xl bg-white p-8 shadow-sm ring-1 ring-slate-200">
+        <div className="flex items-center gap-3">
+          <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-white/10">
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2}
+              className="size-5 text-white"
+              aria-hidden="true"
+            >
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z" />
+            </svg>
+          </div>
+          <div>
+            <p className="text-sm font-semibold text-white">Ambiente 100% seguro</p>
+            <p className="text-xs text-[#64748b]">
+              Criptografia de ponta a ponta na sua infraestrutura técnica.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Coluna do formulário */}
+      <div className="flex flex-1 items-center justify-center p-6 lg:p-10">
+        <div className="w-full max-w-[480px] rounded-2xl bg-white p-8 shadow-[0px_8px_12px_rgba(0,0,0,0.05)] sm:p-12">
+          {/* Logo visível apenas no mobile, quando a coluna institucional some */}
+          <img src={logoBgLight} alt="ATUA" className="mb-8 h-10 w-auto lg:hidden" />
+
+          <div className="mb-8">
+            <h1 className="text-[32px] leading-tight font-bold text-[#0e1a30]">
+              Entrar na sua conta
+            </h1>
+            <p className="mt-2 text-base text-[#64748b]">Acesse sua operação no ATUA.</p>
+          </div>
+
           <form onSubmit={(e) => void handleSubmit(e)} noValidate>
             <fieldset disabled={isSubmitting} className="space-y-5">
               <div>
-                <label htmlFor="email" className="mb-1.5 block text-sm font-medium text-slate-700">
+                <label htmlFor="email" className="mb-2 block text-sm font-semibold text-[#0e1a30]">
                   E-mail
                 </label>
                 <input
@@ -57,13 +101,13 @@ export function SignInPage() {
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="input input-bordered w-full"
-                  placeholder="seu@email.com"
+                  className="input input-bordered w-full border-[#e2e8f0] bg-white text-[#0e1a30] focus:border-[#3b82f6]"
+                  placeholder="seuemail@empresa.com"
                 />
               </div>
 
               <div>
-                <label htmlFor="password" className="mb-1.5 block text-sm font-medium text-slate-700">
+                <label htmlFor="password" className="mb-2 block text-sm font-semibold text-[#0e1a30]">
                   Senha
                 </label>
                 <input
@@ -73,7 +117,7 @@ export function SignInPage() {
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="input input-bordered w-full"
+                  className="input input-bordered w-full border-[#e2e8f0] bg-white text-[#0e1a30] focus:border-[#3b82f6]"
                   placeholder="••••••••"
                 />
               </div>
@@ -86,7 +130,7 @@ export function SignInPage() {
 
               <button
                 type="submit"
-                className="btn btn-primary w-full"
+                className="btn w-full border-none bg-gradient-to-r from-[#3b82f6] to-[#2563eb] text-white hover:brightness-110"
                 aria-busy={isSubmitting}
               >
                 {isSubmitting ? (
@@ -98,17 +142,23 @@ export function SignInPage() {
             </fieldset>
           </form>
 
-          <p className="mt-6 text-center text-sm text-slate-600">
-            Não tem conta?{' '}
-            <Link to="/cadastro" className="font-medium text-primary hover:underline">
-              Crie sua conta
+          <p className="mt-6 text-center text-sm text-[#64748b]">
+            Ainda não tem conta?{' '}
+            <Link to="/cadastro" className="font-semibold text-[#3b82f6] hover:underline">
+              Criar conta
             </Link>
           </p>
-          <p className="mt-2 text-center text-sm text-slate-600">
+          <p className="mt-2 text-center text-sm text-[#64748b]">
             Recebeu o código de confirmação?{' '}
-            <Link to="/confirmar-email" className="font-medium text-primary hover:underline">
+            <Link to="/confirmar-email" className="font-semibold text-[#3b82f6] hover:underline">
               Confirmar e-mail
             </Link>
+          </p>
+
+          <hr className="my-8 border-[#e2e8f0]" />
+
+          <p className="text-center text-xs text-[#64748b]">
+            ATUA — Plataforma operacional para empresas de serviços técnicos.
           </p>
         </div>
       </div>
