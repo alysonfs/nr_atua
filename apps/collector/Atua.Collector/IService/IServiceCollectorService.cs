@@ -13,9 +13,12 @@ namespace Atua.Collector.IService;
 /// Simplificações desta etapa (TODO para próximas iterações):
 /// <list type="bullet">
 ///   <item>Sessão não é persistida — login é realizado a cada execução.</item>
-///   <item>OS coletadas são retornadas como <c>object</c> (JsonElement) e não persistidas —
-///         a persistência está pendente de decisão arquitetural (RF futuro).</item>
 /// </list>
+///
+/// OS coletadas são convertidas de <see cref="JsonElement"/> para um grafo de objetos
+/// nativo (<see cref="Dictionary{TKey,TValue}"/>/<see cref="List{T}"/>/primitivos) via
+/// <see cref="ConvertJsonElement"/> antes de retornar em <see cref="CollectionResult"/>,
+/// para que <c>Persistence.WorkOrderRepository</c> consiga reconhecê-las como dicionário.
 /// </summary>
 public sealed class IServiceCollectorService(
     IOptions<CollectorWorkerOptions> options,
@@ -40,6 +43,12 @@ public sealed class IServiceCollectorService(
 
     private readonly CollectorWorkerOptions _options = options.Value;
 
+    // Timeouts escalam a partir de PageTimeoutMs (ver CollectorWorkerOptions):
+    // o servidor Midea real observado é significativamente mais lento do que
+    // os valores fixos originais (15-30s) previam.
+    private int PageTimeout => _options.PageTimeoutMs;
+    private int HalfPageTimeout => _options.PageTimeoutMs / 2;
+
     /// <inheritdoc/>
     public async Task<CollectionResult> CollectAsync(
         string username,
@@ -58,7 +67,20 @@ public sealed class IServiceCollectorService(
             Args = ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"],
         });
 
-        var page = await browser.NewPageAsync();
+        var page = await browser.NewPageAsync(new BrowserNewPageOptions
+        {
+            // O portal iService detecta idioma via Accept-Language/navigator.language
+            // e mostra o formulário de login em inglês por padrão em ambientes sem
+            // locale explícito (confirmado via captura de tela em produção: o
+            // seletor original da POC, baseado em placeholder="Conta"/"Senha", só
+            // funciona com a página em Português). Forçamos pt-BR para casar com o
+            // comportamento observado na POC original.
+            Locale = "pt-BR",
+            ExtraHTTPHeaders = new Dictionary<string, string>
+            {
+                ["Accept-Language"] = "pt-BR,pt;q=0.9",
+            },
+        });
 
         // Guard somente-leitura: bloqueia POSTs de escrita no iService
         await SetupReadOnlyGuardAsync(page);
@@ -69,7 +91,7 @@ public sealed class IServiceCollectorService(
 
             logger.LogInformation("[COLETOR] Abrindo visão por status de OS...");
             await page.GotoAsync($"https://{IServiceHost}/",
-                new PageGotoOptions { WaitUntil = WaitUntilState.DOMContentLoaded, Timeout = 30_000 });
+                new PageGotoOptions { WaitUntil = WaitUntilState.DOMContentLoaded, Timeout = PageTimeout });
 
             cancellationToken.ThrowIfCancellationRequested();
 
@@ -162,11 +184,12 @@ public sealed class IServiceCollectorService(
             await page.GotoAsync(LoginUrl, new PageGotoOptions
             {
                 WaitUntil = WaitUntilState.NetworkIdle,
-                Timeout = 30_000,
+                Timeout = PageTimeout,
             });
         }
         catch (TimeoutException ex)
         {
+            await CaptureDebugArtifactsAsync(page, "login-goto-timeout");
             throw new IServiceUnavailableEx("Timeout ao carregar página de login CAS.", ex);
         }
 
@@ -177,10 +200,11 @@ public sealed class IServiceCollectorService(
 
         try
         {
-            await page.WaitForSelectorAsync(usernameSelector, new PageWaitForSelectorOptions { Timeout = 15_000 });
+            await page.WaitForSelectorAsync(usernameSelector, new PageWaitForSelectorOptions { Timeout = PageTimeout });
         }
         catch (TimeoutException ex)
         {
+            await CaptureDebugArtifactsAsync(page, "login-username-timeout");
             throw new IServiceUnavailableEx("Timeout aguardando campo de usuário na página de login CAS.", ex);
         }
 
@@ -201,7 +225,7 @@ public sealed class IServiceCollectorService(
             await page.WaitForFunctionAsync(
                 $"() => window.location.hostname === '{IServiceHost}'",
                 null,
-                new PageWaitForFunctionOptions { Timeout = 30_000 });
+                new PageWaitForFunctionOptions { Timeout = PageTimeout });
         }
         catch (TimeoutException)
         {
@@ -219,6 +243,30 @@ public sealed class IServiceCollectorService(
         logger.LogInformation("[LOGIN] Autenticado com sucesso no iService. URL={Url}", page.Url);
     }
 
+    /// <summary>
+    /// Captura screenshot + HTML da página em <c>/tmp</c> para diagnóstico manual
+    /// quando um timeout inesperado ocorre. Débito técnico temporário — não deve
+    /// permanecer em produção além da fase de estabilização do login real.
+    /// </summary>
+    private async Task CaptureDebugArtifactsAsync(IPage page, string tag)
+    {
+        try
+        {
+            var stamp = DateTimeOffset.UtcNow.ToString("yyyyMMddHHmmss");
+            var basePath = Path.Combine(Path.GetTempPath(), $"iservice-debug-{tag}-{stamp}");
+            await page.ScreenshotAsync(new PageScreenshotOptions { Path = $"{basePath}.png", FullPage = true });
+            var html = await page.ContentAsync();
+            await File.WriteAllTextAsync($"{basePath}.html", html);
+            logger.LogWarning(
+                "[DEBUG] Artefatos de diagnóstico salvos em {BasePath}.png/.html. URL={Url}",
+                basePath, page.Url);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "[DEBUG] Falha ao capturar artefatos de diagnóstico.");
+        }
+    }
+
     // -------------------------------------------------------------------------
     // Navegação e captura do template
     // -------------------------------------------------------------------------
@@ -231,7 +279,7 @@ public sealed class IServiceCollectorService(
             await page.WaitForFunctionAsync(
                 "() => document.body.innerText.includes('Links Rápidos') && document.body.innerText.includes('Ordem de Serviço')",
                 null,
-                new PageWaitForFunctionOptions { Timeout = 20_000 });
+                new PageWaitForFunctionOptions { Timeout = HalfPageTimeout });
         }
         catch (TimeoutException ex)
         {
@@ -242,7 +290,7 @@ public sealed class IServiceCollectorService(
 
         // Prepara captura do primeiro request queryWorkOrder (sem CountStatus)
         var templateTcs = new TaskCompletionSource<RequestTemplate>(TaskCreationOptions.RunContinuationsAsynchronously);
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(HalfPageTimeout));
         cts.Token.Register(() => templateTcs.TrySetException(
             new IServiceUnavailableEx("Timeout capturando template da API queryWorkOrder.")));
 
@@ -286,12 +334,12 @@ public sealed class IServiceCollectorService(
             await page.WaitForFunctionAsync(
                 "() => window.location.hash.includes('/wom/views/serviceExecution/workOrderExecution/index')",
                 null,
-                new PageWaitForFunctionOptions { Timeout = 20_000 });
+                new PageWaitForFunctionOptions { Timeout = HalfPageTimeout });
 
             await page.WaitForFunctionAsync(
                 "() => document.body.innerText.includes('Designado') && document.body.innerText.includes('Em Processamento')",
                 null,
-                new PageWaitForFunctionOptions { Timeout = 20_000 });
+                new PageWaitForFunctionOptions { Timeout = HalfPageTimeout });
         }
         catch (TimeoutException ex)
         {
@@ -369,11 +417,35 @@ public sealed class IServiceCollectorService(
 
         if (result.ValueKind == JsonValueKind.Array)
         {
-            return result.EnumerateArray().Cast<object>().ToList();
+            return result.EnumerateArray()
+                .Select(item => (object)ConvertJsonElement(item)!)
+                .ToList();
         }
 
         return [];
     }
+
+    /// <summary>
+    /// Converte um <see cref="JsonElement"/> em um grafo de objetos .NET nativo
+    /// (<see cref="Dictionary{TKey,TValue}"/> para objetos, <see cref="List{T}"/> para
+    /// arrays, primitivos para os demais casos). Necessário porque
+    /// <c>Persistence.WorkOrderRepository</c> exige <c>IDictionary&lt;string, object?&gt;</c>
+    /// para reconhecer e persistir a OS — <see cref="JsonElement"/> nunca satisfaz esse
+    /// contrato, o que fazia todas as OS coletadas serem descartadas silenciosamente.
+    /// </summary>
+    private static object? ConvertJsonElement(JsonElement element) => element.ValueKind switch
+    {
+        JsonValueKind.Object => element.EnumerateObject()
+            .ToDictionary(p => p.Name, p => ConvertJsonElement(p.Value)),
+        JsonValueKind.Array => element.EnumerateArray()
+            .Select(ConvertJsonElement)
+            .ToList(),
+        JsonValueKind.String => element.GetString(),
+        JsonValueKind.Number => element.TryGetInt64(out var l) ? l : element.GetDouble(),
+        JsonValueKind.True => true,
+        JsonValueKind.False => false,
+        _ => null,
+    };
 
     // -------------------------------------------------------------------------
     // Enriquecimento de OS "assigned" com detalhe
@@ -420,7 +492,7 @@ public sealed class IServiceCollectorService(
                     }",
                     new { headersJson, orderJson, detailUrl = WoDetailUrl });
 
-                enriched.Add(result);
+                enriched.Add(ConvertJsonElement(result)!);
             }
             catch (Exception ex)
             {

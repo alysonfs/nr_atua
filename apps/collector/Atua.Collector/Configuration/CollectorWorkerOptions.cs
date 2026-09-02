@@ -30,4 +30,14 @@ public sealed class CollectorWorkerOptions
 
     /// <summary>Executar o browser Playwright em modo headless.</summary>
     public bool Headless { get; set; } = true;
+
+    /// <summary>
+    /// Timeout base (ms) para operações de navegação/espera de seletor do
+    /// Playwright contra o iService real. Descoberto empiricamente que o
+    /// servidor Midea pode levar mais de 15s para responder a um simples GET
+    /// a partir da região sa-east-1 (latência real do provedor, não é bug
+    /// nem bloqueio de rede — confirmado via TLS handshake completo). Demais
+    /// timeouts do fluxo de login/navegação escalam a partir deste valor.
+    /// </summary>
+    public int PageTimeoutMs { get; set; } = 60_000;
 }

@@ -26,7 +26,7 @@ STACK_COMPUTE=AtuaComputeStack
 
 ACCOUNT_ID := $(shell aws sts get-caller-identity --query Account --output text --region $(REGION) 2>/dev/null)
 
-.PHONY: install synth diff bootstrap-cdk up down destroy destroy-all-data status rds-bootstrap rds-up rds-down retrieve-keypair deploy-landing deploy-office deploy-manager deploy-tecnica deploy-api deploy-collector
+.PHONY: install synth diff bootstrap-cdk up down destroy destroy-all-data status rds-bootstrap rds-up rds-down retrieve-keypair deploy-landing deploy-office deploy-manager deploy-tecnica deploy-api deploy-collector redeploy-api redeploy-collector collector-trigger-cycle logs-api logs-collector logs-api-follow logs-collector-follow mongo-peek mongo-peek-all
 
 ## Instala dependências (pnpm, alinhado ao monorepo)
 install:
@@ -235,7 +235,57 @@ deploy-collector:
 	@echo "Artefato publicado. Rode 'make up' para subir/recriar a EC2 com o novo artefato."
 	@echo "Ou, com a EC2 já no ar, sincronize e reinicie manualmente o serviço (ver comentário acima)."
 
-## Mostra o estado atual (para saber se algo está sendo cobrado)
+# Scripts de deploy/logs vivem na skill Batuta `atua-deploy` (não em
+# infra/scripts/), para serem reutilizáveis e documentados junto ao
+# framework multi-agente. Ver .github/skills/atua-deploy/SKILL.md.
+DEPLOY_SKILL_SCRIPTS := ../.github/skills/atua-deploy/scripts
+
+## Redeploy "a quente" da API já rodando (sem recriar a EC2): compila,
+## publica no S3, sincroniza via SSH, reinicia o systemd e verifica por MD5
+## que o binário remoto realmente mudou. Automatiza o ciclo que antes era
+## feito manualmente comando a comando (ver skill atua-deploy).
+redeploy-api:
+	bash $(DEPLOY_SKILL_SCRIPTS)/redeploy-live.sh api
+
+## Idem para o Collector (usa RID linux-x64 --self-contained false, igual ao deploy-collector).
+redeploy-collector:
+	bash $(DEPLOY_SKILL_SCRIPTS)/redeploy-live.sh collector
+
+## Dispara um novo ciclo de teste do Collector: renova o JWT do usuário de
+## teste e desativa/reativa o collector-activation, gerando um novo
+## ImmediateCollectionCommand 'Pending' para o Worker reivindicar.
+## Sobrescreva ATUA_TEST_EMAIL/ATUA_TEST_PASSWORD/ATUA_TENANT_ID/ATUA_INTEGRATION_ID
+## se o tenant de teste mudar.
+collector-trigger-cycle:
+	bash $(DEPLOY_SKILL_SCRIPTS)/collector-trigger-cycle.sh
+
+## Mostra as últimas 200 linhas de log do serviço (resolve o IP via CloudFormation).
+logs-api:
+	bash $(DEPLOY_SKILL_SCRIPTS)/tail-logs.sh api
+
+logs-collector:
+	bash $(DEPLOY_SKILL_SCRIPTS)/tail-logs.sh collector
+
+## Acompanha os logs em tempo real (Ctrl+C para sair).
+logs-api-follow:
+	bash $(DEPLOY_SKILL_SCRIPTS)/tail-logs.sh api --follow
+
+logs-collector-follow:
+	bash $(DEPLOY_SKILL_SCRIPTS)/tail-logs.sh collector --follow
+
+## Consultas somente leitura ao MongoDB Atlas (skill atua-mongo-inspect):
+## últimos N documentos de uma coleção, ou de todas as coleções conhecidas.
+## Uso: make mongo-peek COLLECTION=work_order_snapshots [LIMIT=10]
+MONGO_SKILL_SCRIPTS := ../.github/skills/atua-mongo-inspect/scripts
+LIMIT ?= 10
+
+mongo-peek:
+	bash $(MONGO_SKILL_SCRIPTS)/mongo-peek.sh $(COLLECTION) $(LIMIT)
+
+mongo-peek-all:
+	bash $(MONGO_SKILL_SCRIPTS)/mongo-peek-all.sh $(LIMIT)
+
+
 status:
 	@echo "--- Compute stack ---"
 	@aws cloudformation describe-stacks --stack-name $(STACK_COMPUTE) --region $(REGION) \
