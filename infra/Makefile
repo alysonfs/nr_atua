@@ -26,7 +26,7 @@ STACK_COMPUTE=AtuaComputeStack
 
 ACCOUNT_ID := $(shell aws sts get-caller-identity --query Account --output text --region $(REGION) 2>/dev/null)
 
-.PHONY: install synth diff bootstrap-cdk up down destroy destroy-all-data status rds-bootstrap rds-up rds-down retrieve-keypair deploy-landing deploy-office deploy-manager deploy-tecnica deploy-api deploy-collector redeploy-api redeploy-collector collector-trigger-cycle logs-api logs-collector logs-api-follow logs-collector-follow mongo-peek mongo-peek-all
+.PHONY: install synth diff bootstrap-cdk up down destroy destroy-all-data status rds-bootstrap rds-up rds-down retrieve-keypair deploy-landing deploy-office deploy-manager deploy-tecnica deploy-api deploy-collector redeploy-api redeploy-collector collector-trigger-cycle logs-api logs-collector logs-api-follow logs-collector-follow mongo-peek mongo-peek-all pg-peek pg-peek-all
 
 ## Instala dependências (pnpm, alinhado ao monorepo)
 install:
@@ -284,6 +284,17 @@ mongo-peek:
 
 mongo-peek-all:
 	bash $(MONGO_SKILL_SCRIPTS)/mongo-peek-all.sh $(LIMIT)
+
+## Consultas somente leitura ao RDS PostgreSQL (skill atua-pg-inspect, via
+## túnel SSH — o RDS é privado): últimos N registros de uma tabela, ou de
+## todas as tabelas do schema public. Uso: make pg-peek TABLE=work_orders [LIMIT=10]
+PG_SKILL_SCRIPTS := ../.github/skills/atua-pg-inspect/scripts
+
+pg-peek:
+	bash $(PG_SKILL_SCRIPTS)/pg-peek.sh $(TABLE) $(LIMIT)
+
+pg-peek-all:
+	bash $(PG_SKILL_SCRIPTS)/pg-peek-all.sh $(LIMIT)
 
 
 status:

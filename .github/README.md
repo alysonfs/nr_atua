@@ -47,6 +47,11 @@ verificação:
   MongoDB Atlas (`make mongo-peek COLLECTION=<nome>`,
   `make mongo-peek-all`) para validar se os dados coletados chegaram e com
   a qualidade esperada.
+- `.github/skills/atua-pg-inspect/` — consulta somente leitura ao RDS
+  PostgreSQL via túnel SSH (o RDS é privado, `make pg-peek
+  TABLE=<nome>`, `make pg-peek-all`) para validar se os dados relacionais
+  (ex.: `work_orders`, `work_order_histories` do RF-017/ADR-023) chegaram
+  e com a qualidade esperada.
 - `.github/skills/aws-cost-monitoring/` — consulta de gastos AWS via Cost
   Explorer/Budgets, somente leitura.
 
