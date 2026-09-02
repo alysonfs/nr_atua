@@ -1,21 +1,24 @@
 # RF-018 - Conteúdo da Landing Page
 
-Status: `Especificado — conteúdo e todas as pendências de negócio resolvidas (exceto P7); implementação frontend pendente`
+Status: `Implementado e publicado — falta apenas P7 (Política de Privacidade/Termos de Uso)`
 
-> **Atualização (2026-09-02):** o bloqueador B1 abaixo está **resolvido** —
-> RF-005 (Acesso ao Office) foi implementado em `apps/office` (commit
+> **Atualização (2026-09-02):** RF-018 está **implementado e publicado em
+> produção** (`apps/landing`, commit `874b808`; deploy via `make
+> deploy-landing` em
+> http://atua-462991286554-frontends.s3-website-sa-east-1.amazonaws.com/landing/).
+> O bloqueador B1 (telas de login/cadastro inexistentes) foi resolvido pela
+> implementação de RF-005 (Acesso ao Office, `apps/office`, commit
 > `4a12ee3`, 2026-08-31): existem rotas reais `/login` e `/cadastro`
 > (react-router-dom), consumindo os endpoints `/auth/signin`/`/auth/signup`
-> já existentes na API. P4 e P5 (destinos dos CTAs) portanto já têm resposta
-> técnica — ver seção atualizada abaixo. As pendências P1/P2/P3/P6 (rodapé)
+> já existentes na API. P4 e P5 (destinos dos CTAs) foram resolvidas com
+> `/office/cadastro` e `/office/login`. As pendências P1/P2/P3/P6 (rodapé)
 > também foram resolvidas com o usuário, com validação do brand-guardian
-> (Gabi) sobre consistência de voz — ver seção RODAPÉ atualizada. **Porém a
-> landing em si (`apps/landing`) ainda não foi implementada**: o
-> código-fonte permanece o scaffold padrão do Vite (sem nenhuma das seções
-> de conteúdo aprovadas abaixo, sem CTAs reais). A implementação frontend é
-> trabalho pendente, fora do escopo deste documento (que é somente o
-> conteúdo/copy), e depende apenas de P7 (Política de Privacidade/Termos de
-> Uso) antes de poder ser considerada completa para publicação.
+> (Gabi) sobre consistência de voz — ver seção RODAPÉ atualizada. Todas as
+> seções de conteúdo (Hero, seções 1-5, rodapé) foram transcritas fielmente
+> e cobertas por 7 testes automatizados (Vitest + Testing Library), build
+> limpo, sem avisos de ESLint. **Falta apenas P7** (Política de
+> Privacidade/Termos de Uso) antes que o cadastro de usuários possa coletar
+> e-mails em conformidade — não bloqueia o funcionamento atual da landing.
 
 ## Objetivo
 
