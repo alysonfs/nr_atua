@@ -1,15 +1,18 @@
 # RF-018 - Conteúdo da Landing Page
 
-Status: `Pendente`
+Status: `Especificado` (conteúdo aprovado; implementação frontend pendente)
 
-> **⚠️ BLOQUEADOR CRÍTICO:** O app `apps/office` não possui telas de login
-> nem de cadastro. Não há react-router, não há rota `/login` ou `/signup` —
-> é uma SPA de dashboard pós-autenticação com componentes de Onboarding
-> (CreateTenantForm), Integrations, Settings e Trial. As únicas ocorrências
-> de "cadastro" no código referem-se a credenciais do iService, não a
-> usuários. Os CTAs da landing (P4 e P5) não têm destino existente. A API
-> possui os endpoints (`/auth/signup`, `/auth/signin`), mas não há UI.
-> Este RF está bloqueado pelo RF-005 (Acesso ao Office), que está pendente.
+> **Atualização (2026-09-02):** o bloqueador B1 abaixo está **resolvido** —
+> RF-005 (Acesso ao Office) foi implementado em `apps/office` (commit
+> `4a12ee3`, 2026-08-31): existem rotas reais `/login` e `/cadastro`
+> (react-router-dom), consumindo os endpoints `/auth/signin`/`/auth/signup`
+> já existentes na API. P4 e P5 (destinos dos CTAs) portanto já têm resposta
+> técnica — ver seção atualizada abaixo. **Porém a landing em si
+> (`apps/landing`) ainda não foi implementada**: o código-fonte permanece o
+> scaffold padrão do Vite (sem nenhuma das seções de conteúdo aprovadas
+> abaixo, sem CTAs reais). A implementação frontend é trabalho pendente,
+> fora do escopo deste documento (que é somente o conteúdo/copy), mas
+> depende das pendências P1/P2/P3/P6/P7 abaixo antes de poder ser concluída.
 
 ## Objetivo
 
@@ -47,8 +50,8 @@ diferenciais e os próximos passos para o visitante.
 > tempo real."
 
 **CTAs:**
-- `[Começar grátis]` → cadastro / Trial no Office (RF-001) — **destino: P4 — PENDENTE**
-- `[Entrar]` → login no Office (RF-005) — **destino: P5 — PENDENTE**
+- `[Começar grátis]` → cadastro / Trial no Office (RF-001) — **destino: `/office/cadastro`** (P4 resolvida)
+- `[Entrar]` → login no Office (RF-005) — **destino: `/office/login`** (P5 resolvida)
 
 > ⚠️ Itens aspiracionais: "dados organizados, histórico observado e supervisão
 > em tempo real" referem-se a RF-010/011 e RF-015, que estão pendentes. O
@@ -116,8 +119,8 @@ diferenciais e os próximos passos para o visitante.
 > avaliação. Sem compromisso."
 
 **CTAs:**
-- `[Criar conta grátis]` — **destino: P4 — PENDENTE**
-- `[Já tenho conta — Entrar]` — **destino: P5 — PENDENTE**
+- `[Criar conta grátis]` — **destino: `/office/cadastro`** (P4 resolvida)
+- `[Já tenho conta — Entrar]` — **destino: `/office/login`** (P5 resolvida)
 
 ---
 
@@ -162,8 +165,8 @@ da landing ou acompanhados de aviso adequado ao visitante.
 | P1 | E-mail de suporte a ser exibido no rodapé |
 | P2 | Razão social do titular do copyright |
 | P3 | Ano do copyright (pode ser dinâmico) |
-| P4 | URL da rota de cadastro no Office (tela não existe — bloqueador) |
-| P5 | URL da rota de login no Office (tela não existe — bloqueador) |
+| P4 | ~~URL da rota de cadastro no Office~~ ✅ Resolvida: `/office/cadastro` (implementado em `apps/office`, commit `4a12ee3`) |
+| P5 | ~~URL da rota de login no Office~~ ✅ Resolvida: `/office/login` (implementado em `apps/office`, commit `4a12ee3`) |
 | P6 | Aprovação do aviso de MVP no rodapé |
 | P7 | Política de Privacidade e Termos de Uso (obrigatório para coleta de e-mail no cadastro) |
 
@@ -171,28 +174,27 @@ da landing ou acompanhados de aviso adequado ao visitante.
 
 ## Bloqueadores
 
-### B1 — Telas de login e cadastro inexistentes no Office (crítico)
+### B1 — ~~Telas de login e cadastro inexistentes no Office~~ ✅ Resolvida (2026-09-02)
 
-O app `apps/office` não possui telas de login nem de cadastro. Verificado
-no código-fonte: não há react-router, não há rota `/login` ou `/signup`.
-O app é uma SPA de dashboard pós-autenticação com os componentes:
+**Situação original:** O app `apps/office` não possuía telas de login nem de
+cadastro. Não havia react-router, nem rota `/login` ou `/signup`. O app era
+uma SPA de dashboard pós-autenticação com os componentes:
 
 - `CreateTenantForm` (Onboarding)
 - Integrations
 - Settings
 - Trial
 
-As ocorrências de "cadastro" no código referem-se a credenciais do iService
+As ocorrências de "cadastro" no código referiam-se a credenciais do iService
 (RF-006), não ao cadastro de usuários da plataforma.
 
-A API possui os endpoints `/auth/signup` e `/auth/signin` implementados, mas
-não existe UI correspondente.
-
-**Consequência:** os CTAs `[Começar grátis]` (P4) e `[Entrar]` (P5) não têm
-destino existente. A landing não pode ser publicada como funcional sem que
-RF-005 (Acesso ao Office) seja implementado.
-
-**Dependência:** RF-005 (Acesso ao Office) — pendente.
+**Status: resolvido (2026-09-02).** RF-005 foi implementado — os CTAs
+`[Começar grátis]` (P4) e `[Entrar]` (P5) já têm destino real:
+`/office/cadastro` e `/office/login`, respectivamente (ambos publicados sob
+o mesmo bucket S3, prefixos `/office/` e `/landing/` — ver
+`apps/office/vite.config.ts`/`apps/landing/vite.config.ts`). A landing
+ainda precisa ser implementada com o conteúdo aprovado neste documento e
+com esses CTAs apontando para as rotas reais.
 
 ---
 

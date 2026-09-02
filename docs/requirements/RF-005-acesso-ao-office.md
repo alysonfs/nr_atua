@@ -1,6 +1,6 @@
 # RF-005 - Acesso ao Office
 
-Status: `Pendente`
+Status: `Implementado`
 
 ## Objetivo
 
@@ -138,3 +138,48 @@ outros requisitos (RF-007/RF-008).
   mestre).
 - Login federado.
 - Bloqueio de conta por força bruta (avaliar separadamente se necessário).
+
+## Implementação e validação (2026-09-02)
+
+Implementado em `apps/office` (commit `4a12ee3`, 2026-08-31):
+
+- **`AuthContext`** (`src/app/auth/AuthContext.tsx`): access token JWT mantido
+  somente em memória (`useState`/`useRef`, nunca `localStorage`/
+  `sessionStorage`, conforme ADR-004/ADR-017). Tenta `POST /auth/refresh`
+  silenciosamente ao montar, restaurando sessão via cookie `HttpOnly` quando
+  possível.
+- **`AppRouter`** (`src/AppRouter.tsx`, react-router-dom 7): rotas públicas
+  `/login`, `/cadastro`, `/confirmar-email`; rota protegida `/` (dashboard
+  existente) via `ProtectedRoute`, que redireciona usuários não autenticados
+  para `/login`.
+- **`SignInPage`/`SignUpPage`/`ConfirmEmailPage`**: consomem os endpoints já
+  existentes da API (`/auth/signin`, `/auth/signup`, `/auth/confirm-email`),
+  sem novo mecanismo de sessão.
+- Botão de logout (`signOut`) no dashboard, revogando a sessão via
+  `/auth/signout`.
+- 18 novos testes de auth (95 no total no app Office, todos passando).
+
+**Limitações conhecidas (débito técnico registrado no commit):**
+
+- **RN-005.3 parcialmente coberta**: o backend atual retorna 401 genérico
+  tanto para credenciais inválidas quanto para e-mail não confirmado, então o
+  frontend não consegue diferenciar as mensagens como o RF-005 pede
+  (critério de aceite 3). Optado por manter mensagem genérica em vez de
+  inventar comportamento não suportado pelo contrato atual da API — a
+  distinção exigiria uma mudança na API (novo código/campo de erro) fora do
+  escopo desta implementação de UI.
+- **Renovação automática de sessão (refresh) não funcional no ambiente atual
+  de deploy**: com Office publicado em S3 (sem domínio/HTTPS próprio) e API
+  em EC2 sem domínio, o cookie `HttpOnly` de refresh não é enviado
+  cross-origin pelo browser (política `SameSite`/ausência de `Secure`). Na
+  prática, a tentativa silenciosa de restaurar sessão sempre falha nesse
+  ambiente, e o usuário precisa logar manualmente a cada expiração do access
+  token (~15 min). Resolve-se apenas quando houver domínio + HTTPS
+  configurados (mesma origem ou CORS com credenciais) — pendência de
+  infraestrutura, não de código.
+- **RF-005.2 (seleção de tenant) implementada de forma simplificada**: não há
+  tela dedicada de seleção/troca de tenant no MVP — conforme já registrado
+  em "Decisões mínimas assumidas para o MVP" acima, a prática assume um
+  único tenant por usuário (Owner). Se o backend precisar resolver múltiplos
+  memberships no futuro, a UI de seleção explícita ainda precisa ser
+  construída.
