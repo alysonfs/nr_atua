@@ -1,8 +1,9 @@
 # RF-017 - Modelo Agnóstico de OS: work_order e work_order_history
 
-Status: `Especificado`
+Status: `Implementado`
 
-**Data:** 2026-08-31
+**Data:** 2026-08-31 (especificado) · **2026-09-02** (confirmado implementado e
+validado em produção)
 
 ## Contexto e motivação
 
@@ -218,6 +219,49 @@ Dois tenants distintos podem ter OSs com o mesmo `provider_id` sem conflito.
    quando ambas forem persistidas,
    então `work_order` deve conter dois registros distintos — um para (T1, P)
    e outro para (T2, P) — sem conflito.
+
+## Implementação e validação (2026-09-02)
+
+RF-017 foi implementado em `apps/collector/Atua.Collector` no commit `7d9ee28`
+(a documentação ficou "Especificado" por engano até esta atualização —
+o código já estava rodando em produção):
+
+- `Consumer/SnapshotConsumerWorker.cs` — `IHostedService` que abre um
+  **MongoDB Change Stream** sobre `work_order_snapshots`, com resume token
+  persistido em `consumer_states` (Postgres) para retomar após reinícios.
+- `Consumer/WorkOrderPgRepository.cs` — `ProcessSnapshotAsync`: para cada
+  snapshot, extrai o status via `ISnapshotAdapter` (selecionado por
+  `provider_type`); se ausente, descarta com log `Warning` e avança o
+  token (RF-017.5); se presente, faz upsert em `work_orders` + append
+  condicional em `work_order_histories` (só se o status mudou, DP-017.1) +
+  persiste o resume token — tudo em uma única transação Postgres.
+- Migration `AddWorkOrdersAndConsumerState` — cria as tabelas
+  `work_orders`, `work_order_histories` e `consumer_states` (nomes de
+  tabela em `snake_case`, colunas em `PascalCase` — convenção do EF Core
+  usada no projeto inteiro).
+- Registrado no DI em `Program.cs`.
+
+**Validado ao vivo em produção** (via skill `atua-pg-inspect`,
+`make pg-peek TABLE=work_orders` / `TABLE=work_order_histories`):
+
+- `work_orders`: 196 registros reais (dado agnóstico de provedor,
+  `status` como string crua do iService — ex.: `closed`, `assigned`).
+- `work_order_histories`: 207 registros — mais que `work_orders` porque
+  entradas se acumulam a cada mudança de status observada (RF-017.2), sem
+  sobrescrever histórico anterior.
+- `consumer_states` com `ResumeToken` não nulo, confirmando que o
+  `SnapshotConsumerWorker` está avançando no Change Stream sem reprocessar
+  do zero a cada restart.
+- Logs (`[CONSUMER] SnapshotConsumerWorker iniciado`, `Abrindo Change
+  Stream. ResumeToken=sim`) confirmam a consulta ao Change Stream ativa.
+
+Os critérios de aceite 1-3 e 5-6 (upsert, append condicional,
+rastreabilidade via `work_order_snapshot_id`, isolamento por tenant) foram
+observados no comportamento real dos dados acima. O critério 4 (descarte
+silencioso de OS sem status extraível) está implementado no código
+(`ProcessSnapshotAsync`), mas não foi isolado em um cenário de teste
+dedicado nesta validação — não há evidência de ocorrência real até o
+momento (todas as OS coletadas do iService têm status).
 
 ## Decisões pendentes
 

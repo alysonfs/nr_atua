@@ -1,8 +1,9 @@
 # RF-016 - Persistência de Snapshots Brutos de OS
 
-Status: `Especificado`
+Status: `Implementado`
 
-**Data:** 2026-08-31
+**Data:** 2026-08-31 (especificado) · **2026-09-02** (confirmado implementado e
+validado em produção)
 
 ## Contexto e motivação
 
@@ -182,6 +183,38 @@ Credenciais do iService e dados de sessão CAS não devem ser incluídos no
    quando o Worker tentar inserir os snapshots novamente,
    então o comportamento esperado de idempotência de re-execução deve ser
    definido — ver **DP-016.1** abaixo.
+
+## Implementação e validação (2026-09-02)
+
+RF-016 está implementado em `apps/collector/Atua.Collector`
+(`Persistence/WorkOrderRepository.cs`, persistência em `work_order_snapshots`
+no MongoDB Atlas) e rodando em produção.
+
+**Bug crítico encontrado e corrigido nesta validação (2026-09-02, commit
+`d5e44f1`):** `WorkOrderRepository` exige `IDictionary<string, object?>` para
+reconhecer e persistir um payload como OS válida, mas
+`IServiceCollectorService` retornava `JsonElement` (de
+`Page.EvaluateAsync<JsonElement>` do Playwright), que nunca satisfaz esse
+contrato — **100% das OS coletadas eram descartadas silenciosamente**, com
+apenas um log `Warning` por item, sem afetar o `outcome=Succeeded` do
+comando. Corrigido adicionando `ConvertJsonElement` (JsonElement →
+Dictionary/List/primitivos) nos dois pontos de retorno de dados coletados.
+Um segundo bug relacionado — `ArgumentException` em `ConvertJsonElement`
+quando o payload de detalhe tem chaves duplicadas (`$id` 2x) — foi corrigido
+em seguida (commit `fcafab2`).
+
+**Validado ao vivo em produção** (via skill `atua-mongo-inspect`,
+`make mongo-peek COLLECTION=work_order_snapshots` /
+`make mongo-peek-all`): `work_order_snapshots` passou de 194 para 387+
+documentos reais após ciclos de coleta com o fix aplicado, com `rawdata`
+completo (incluindo `orderDetail` das OS "assigned", antes descartado pelo
+segundo bug), `command_id`, `provider_type="iservice"` e `created_at`
+preenchidos corretamente — cobrindo os critérios de aceite 1, 2, 3, 5 e 6.
+
+O critério 4 (descarte de OS sem `provider_id`) está implementado no
+código, mas não há evidência de ocorrência real até o momento (todas as OS
+do iService têm `workOrderId`). O critério 7 (idempotência de
+re-execução) permanece como decisão pendente — ver DP-016.1 abaixo.
 
 ## Decisões pendentes
 
