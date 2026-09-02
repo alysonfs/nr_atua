@@ -7,32 +7,32 @@ const STEPS = [
   },
   {
     number: 2,
-    title: 'Conecte ao iService',
+    title: 'Conecte suas fontes',
     description:
-      'No Office, informe suas credenciais do iService. O ATUA valida a conexão antes de prosseguir.',
+      'Na área da sua conta, configure o conector inicial disponível para sua operação.',
   },
   {
     number: 3,
     title: 'Ative o Agente Coletor',
     description:
-      'Com a conexão validada, ative o agente. Ele inicia a coleta imediatamente e passa a monitorar suas ordens de serviço em intervalos regulares.',
+      'Com a configuração pronta, ative o agente para solicitar a primeira coleta operacional.',
   },
 ] as const
 
 export function StepsSection() {
   return (
-    <section aria-labelledby="steps-heading" className="bg-base-200">
-      <div className="mx-auto max-w-5xl px-4 py-16">
-        <h2 id="steps-heading" className="text-center text-2xl font-bold text-slate-900 sm:text-3xl">
+    <section id="como-funciona" aria-labelledby="steps-heading" className="bg-slate-100">
+      <div className="mx-auto max-w-6xl px-6 py-20 lg:px-10">
+        <h2 id="steps-heading" className="text-center text-3xl font-bold tracking-[-0.02em] text-slate-950 sm:text-4xl">
           Comece em três passos
         </h2>
         <ol className="mt-10 grid gap-8 sm:grid-cols-3">
           {STEPS.map((step) => (
-            <li key={step.number} className="flex flex-col items-center text-center">
-              <span className="flex h-12 w-12 items-center justify-center rounded-full bg-primary text-xl font-bold text-primary-content">
+            <li key={step.number} className="flex flex-col items-center rounded-2xl border border-slate-200 bg-white p-6 text-center shadow-[0_4px_20px_rgba(15,23,42,0.05)]">
+              <span className="flex h-12 w-12 items-center justify-center rounded-full bg-slate-950 text-xl font-bold text-white">
                 {step.number}
               </span>
-              <h3 className="mt-4 text-lg font-semibold text-slate-900">{step.title}</h3>
+              <h3 className="mt-4 text-lg font-semibold text-slate-950">{step.title}</h3>
               <p className="mt-2 text-slate-600">{step.description}</p>
             </li>
           ))}

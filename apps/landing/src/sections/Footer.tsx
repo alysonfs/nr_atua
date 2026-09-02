@@ -1,23 +1,25 @@
 import { OFFICE_SIGNIN_URL, OFFICE_SIGNUP_URL, SUPPORT_EMAIL } from '../constants'
+import logoBgLight from '../../../../assets/logo_bg_light.svg'
 
 export function Footer() {
   const year = new Date().getFullYear()
 
   return (
-    <footer className="border-t border-base-300 bg-base-100">
-      <div className="mx-auto max-w-5xl px-4 py-10 text-center text-sm text-slate-600">
-        <p className="font-medium text-slate-700">
+    <footer className="bg-slate-950">
+      <div className="mx-auto max-w-6xl px-6 py-10 text-center text-sm text-slate-400 lg:px-10">
+        <img src={logoBgLight} alt="ATUA" className="mx-auto h-auto w-32" />
+        <p className="mt-5 font-medium text-slate-200">
           ATUA — Plataforma operacional para empresas de serviços técnicos.
         </p>
 
         <nav aria-label="Links do rodapé" className="mt-4 flex flex-wrap justify-center gap-x-6 gap-y-2">
-          <a href={OFFICE_SIGNIN_URL} className="link link-hover">
+          <a href={OFFICE_SIGNIN_URL} className="link-hover">
             Entrar
           </a>
-          <a href={OFFICE_SIGNUP_URL} className="link link-hover">
+          <a href={OFFICE_SIGNUP_URL} className="link-hover">
             Criar conta
           </a>
-          <a href={`mailto:${SUPPORT_EMAIL}`} className="link link-hover">
+          <a href={`mailto:${SUPPORT_EMAIL}`} className="link-hover">
             {SUPPORT_EMAIL}
           </a>
         </nav>
