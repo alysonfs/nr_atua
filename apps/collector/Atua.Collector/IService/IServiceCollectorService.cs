@@ -433,19 +433,42 @@ public sealed class IServiceCollectorService(
     /// para reconhecer e persistir a OS — <see cref="JsonElement"/> nunca satisfaz esse
     /// contrato, o que fazia todas as OS coletadas serem descartadas silenciosamente.
     /// </summary>
-    private static object? ConvertJsonElement(JsonElement element) => element.ValueKind switch
+    /// <remarks>
+    /// Objetos são montados com um laço manual (sobrescrevendo em vez de usar
+    /// <c>.ToDictionary()</c>) porque o payload de detalhe do iService pode conter
+    /// chaves duplicadas (ex.: <c>$id</c> aparece 2x) — <c>.ToDictionary()</c> lança
+    /// <see cref="ArgumentException"/> nesse caso, descartando o detalhe inteiro da OS.
+    /// Ao sobrescrever, mantemos o último valor da chave repetida e preservamos o
+    /// restante do objeto.
+    /// </remarks>
+    private static object? ConvertJsonElement(JsonElement element)
     {
-        JsonValueKind.Object => element.EnumerateObject()
-            .ToDictionary(p => p.Name, p => ConvertJsonElement(p.Value)),
-        JsonValueKind.Array => element.EnumerateArray()
-            .Select(ConvertJsonElement)
-            .ToList(),
-        JsonValueKind.String => element.GetString(),
-        JsonValueKind.Number => element.TryGetInt64(out var l) ? l : element.GetDouble(),
-        JsonValueKind.True => true,
-        JsonValueKind.False => false,
-        _ => null,
-    };
+        switch (element.ValueKind)
+        {
+            case JsonValueKind.Object:
+                var dict = new Dictionary<string, object?>();
+                foreach (var property in element.EnumerateObject())
+                {
+                    dict[property.Name] = ConvertJsonElement(property.Value);
+                }
+
+                return dict;
+            case JsonValueKind.Array:
+                return element.EnumerateArray()
+                    .Select(ConvertJsonElement)
+                    .ToList();
+            case JsonValueKind.String:
+                return element.GetString();
+            case JsonValueKind.Number:
+                return element.TryGetInt64(out var l) ? l : element.GetDouble();
+            case JsonValueKind.True:
+                return true;
+            case JsonValueKind.False:
+                return false;
+            default:
+                return null;
+        }
+    }
 
     // -------------------------------------------------------------------------
     // Enriquecimento de OS "assigned" com detalhe
