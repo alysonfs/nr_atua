@@ -1,18 +1,21 @@
 # RF-018 - Conteúdo da Landing Page
 
-Status: `Especificado` (conteúdo aprovado; implementação frontend pendente)
+Status: `Especificado — conteúdo e todas as pendências de negócio resolvidas (exceto P7); implementação frontend pendente`
 
 > **Atualização (2026-09-02):** o bloqueador B1 abaixo está **resolvido** —
 > RF-005 (Acesso ao Office) foi implementado em `apps/office` (commit
 > `4a12ee3`, 2026-08-31): existem rotas reais `/login` e `/cadastro`
 > (react-router-dom), consumindo os endpoints `/auth/signin`/`/auth/signup`
 > já existentes na API. P4 e P5 (destinos dos CTAs) portanto já têm resposta
-> técnica — ver seção atualizada abaixo. **Porém a landing em si
-> (`apps/landing`) ainda não foi implementada**: o código-fonte permanece o
-> scaffold padrão do Vite (sem nenhuma das seções de conteúdo aprovadas
-> abaixo, sem CTAs reais). A implementação frontend é trabalho pendente,
-> fora do escopo deste documento (que é somente o conteúdo/copy), mas
-> depende das pendências P1/P2/P3/P6/P7 abaixo antes de poder ser concluída.
+> técnica — ver seção atualizada abaixo. As pendências P1/P2/P3/P6 (rodapé)
+> também foram resolvidas com o usuário, com validação do brand-guardian
+> (Gabi) sobre consistência de voz — ver seção RODAPÉ atualizada. **Porém a
+> landing em si (`apps/landing`) ainda não foi implementada**: o
+> código-fonte permanece o scaffold padrão do Vite (sem nenhuma das seções
+> de conteúdo aprovadas abaixo, sem CTAs reais). A implementação frontend é
+> trabalho pendente, fora do escopo deste documento (que é somente o
+> conteúdo/copy), e depende apenas de P7 (Política de Privacidade/Termos de
+> Uso) antes de poder ser considerada completa para publicação.
 
 ## Objetivo
 
@@ -131,16 +134,25 @@ diferenciais e os próximos passos para o visitante.
 **Links:**
 - Entrar
 - Criar conta
-- E-mail de suporte — **PENDENTE (P1)**
+- E-mail de suporte: `suporte@atua.com.br`
 
 **Copyright:**
-> "© [ANO] [RAZÃO SOCIAL DO TITULAR — PENDENTE]. Todos os direitos reservados."
+> "© [ANO] Assistência Técnica Unificada Ltda. Todos os direitos reservados."
 
-> Nota: o ano pode ser dinâmico (gerado em build ou em runtime). Ver P3.
+> Nota: o ano é dinâmico (gerado em build ou em runtime — decisão técnica do
+> `frontend-engineer`). Sem CNPJ na linha de copyright — ver observação de
+> marca abaixo.
 
-**Aviso MVP** (sujeito a aprovação do usuário — P6):
-> "O ATUA está em fase de avaliação. Algumas funcionalidades podem estar em
+**Aviso MVP** (aprovado pelo usuário em 2026-09-02, com ajuste do
+brand-guardian):
+> "O ATUA está em fase inicial. Algumas funcionalidades podem estar em
 > desenvolvimento ou sujeitas a alteração."
+
+> Nota: o texto original aprovado pela marca dizia "fase de avaliação", mas
+> esse termo colide com "período de avaliação" (trial do usuário), usado nas
+> Seções 4 e 5. O brand-guardian (Gabi) recomendou "fase inicial" para evitar
+> essa ambiguidade, sem alterar o sentido ou a honestidade da mensagem; o
+> usuário aprovou a variante.
 
 ---
 
@@ -162,13 +174,13 @@ da landing ou acompanhados de aviso adequado ao visitante.
 
 | # | Pendência |
 |---|-----------|
-| P1 | E-mail de suporte a ser exibido no rodapé |
-| P2 | Razão social do titular do copyright |
-| P3 | Ano do copyright (pode ser dinâmico) |
+| P1 | ~~E-mail de suporte a ser exibido no rodapé~~ ✅ Resolvida: `suporte@atua.com.br` |
+| P2 | ~~Razão social do titular do copyright~~ ✅ Resolvida: "Assistência Técnica Unificada Ltda." — validado pelo brand-guardian; CNPJ ainda não definido, será incluído na Política de Privacidade/Termos de Uso (P7) quando disponível, **não** publicado como placeholder mascarado na landing |
+| P3 | ~~Ano do copyright~~ ✅ Resolvida: dinâmico (implementação técnica cabe ao `frontend-engineer`) |
 | P4 | ~~URL da rota de cadastro no Office~~ ✅ Resolvida: `/office/cadastro` (implementado em `apps/office`, commit `4a12ee3`) |
 | P5 | ~~URL da rota de login no Office~~ ✅ Resolvida: `/office/login` (implementado em `apps/office`, commit `4a12ee3`) |
-| P6 | Aprovação do aviso de MVP no rodapé |
-| P7 | Política de Privacidade e Termos de Uso (obrigatório para coleta de e-mail no cadastro) |
+| P6 | ~~Aprovação do aviso de MVP no rodapé~~ ✅ Resolvida: texto ajustado para "fase inicial" (ver nota no RODAPÉ acima) e aprovado pelo usuário |
+| P7 | Política de Privacidade e Termos de Uso (obrigatório para coleta de e-mail no cadastro) — **inclui o CNPJ do titular quando definido** |
 
 ---
 
