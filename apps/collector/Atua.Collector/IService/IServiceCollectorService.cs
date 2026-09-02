@@ -157,18 +157,50 @@ public sealed class IServiceCollectorService(
         logger.LogInformation("[READONLY] Modo somente leitura ativo para iService.");
     }
 
-    private static bool IsWriteRequestOnIService(string method, string url)
+    /// <summary>
+    /// Classifica se uma requisição é de escrita no iService (RF-013). Extraído como
+    /// método <c>public static</c> — sem dependência de Playwright — para permitir teste
+    /// unitário isolado (DP-013.2), seguindo o mesmo padrão de
+    /// <see cref="Atua.Collector.Persistence.WorkOrderRepository.BuildRawDocument"/>.
+    /// </summary>
+    public static bool IsWriteRequestOnIService(string method, string url)
     {
-        if (!method.Equals("POST", StringComparison.OrdinalIgnoreCase)) return false;
         if (!Uri.TryCreate(url, UriKind.Absolute, out var uri)) return false;
-        if (uri.Host != IServiceHost) return false;
-        if (!uri.AbsolutePath.StartsWith("/web/iservice-wom/workOrder/", StringComparison.OrdinalIgnoreCase)) return false;
+        if (!string.Equals(uri.Host, IServiceHost, StringComparison.OrdinalIgnoreCase)) return false;
+
+        // Fora de /web/iservice-wom/, o host não expõe endpoints conhecidos usados
+        // pelo Coletor. Qualquer método diferente de GET/HEAD/OPTIONS é bloqueado por
+        // padrão (default-deny) — nunca existe motivo legítimo para o Coletor enviar
+        // PUT/PATCH/DELETE ao iService, e POST fora do escopo mapeado abaixo também é
+        // tratado como escrita, mesmo sem heurística de nome de endpoint (DP-013.1:
+        // amplia a cobertura para além de `/workOrder/`, mitigando o gap de módulos
+        // ainda não mapeados — peças, agendamento, comunicação com cliente etc.).
+        if (IsSafeReadMethod(method)) return false;
+
+        const string IServiceWomPrefix = "/web/iservice-wom/";
+        if (!uri.AbsolutePath.StartsWith(IServiceWomPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            // POST/PUT/PATCH/DELETE fora de /web/iservice-wom/ neste host: sem
+            // endpoint de leitura conhecido para justificar exceção — bloqueia.
+            return true;
+        }
+
+        if (!method.Equals("POST", StringComparison.OrdinalIgnoreCase))
+        {
+            // PUT/PATCH/DELETE dentro de /web/iservice-wom/: sempre escrita.
+            return true;
+        }
 
         var endpoint = uri.AbsolutePath.Split('/').LastOrDefault() ?? string.Empty;
         return !endpoint.StartsWith("query", StringComparison.OrdinalIgnoreCase)
             && !endpoint.StartsWith("get", StringComparison.OrdinalIgnoreCase)
             && !endpoint.StartsWith("select", StringComparison.OrdinalIgnoreCase);
     }
+
+    private static bool IsSafeReadMethod(string method) =>
+        method.Equals("GET", StringComparison.OrdinalIgnoreCase)
+        || method.Equals("HEAD", StringComparison.OrdinalIgnoreCase)
+        || method.Equals("OPTIONS", StringComparison.OrdinalIgnoreCase);
 
     // -------------------------------------------------------------------------
     // Login CAS
