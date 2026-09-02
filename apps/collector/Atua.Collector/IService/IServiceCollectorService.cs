@@ -168,22 +168,24 @@ public sealed class IServiceCollectorService(
         if (!Uri.TryCreate(url, UriKind.Absolute, out var uri)) return false;
         if (!string.Equals(uri.Host, IServiceHost, StringComparison.OrdinalIgnoreCase)) return false;
 
-        // Fora de /web/iservice-wom/, o host não expõe endpoints conhecidos usados
-        // pelo Coletor. Qualquer método diferente de GET/HEAD/OPTIONS é bloqueado por
-        // padrão (default-deny) — nunca existe motivo legítimo para o Coletor enviar
-        // PUT/PATCH/DELETE ao iService, e POST fora do escopo mapeado abaixo também é
-        // tratado como escrita, mesmo sem heurística de nome de endpoint (DP-013.1:
-        // amplia a cobertura para além de `/workOrder/`, mitigando o gap de módulos
-        // ainda não mapeados — peças, agendamento, comunicação com cliente etc.).
-        if (IsSafeReadMethod(method)) return false;
-
         const string IServiceWomPrefix = "/web/iservice-wom/";
         if (!uri.AbsolutePath.StartsWith(IServiceWomPrefix, StringComparison.OrdinalIgnoreCase))
         {
-            // POST/PUT/PATCH/DELETE fora de /web/iservice-wom/ neste host: sem
-            // endpoint de leitura conhecido para justificar exceção — bloqueia.
-            return true;
+            // Fora de /web/iservice-wom/ (módulo de negócio de OS): o mesmo host serve
+            // infraestrutura do portal alheia a dados de OS/cliente — sessão CAS
+            // (/web/auth-server/...) e telemetria de erro do cliente
+            // (/web/iservice-admin/htmlAppErrorLog/insertLog), confirmados em produção
+            // (2026-09-02) como necessários ao login/navegação normais. Bloquear por
+            // padrão aqui quebra o Coletor sem ganho real de proteção — não são ações
+            // de escrita sobre dados de OS. Não bloqueado.
+            return false;
         }
+
+        // Dentro de /web/iservice-wom/ (todos os submódulos de negócio de OS — não
+        // apenas /workOrder/): postura default-deny (DP-013.1). GET/HEAD/OPTIONS
+        // nunca são bloqueados; PUT/PATCH/DELETE são sempre escrita; POST só passa
+        // se o endpoint indicar consulta.
+        if (IsSafeReadMethod(method)) return false;
 
         if (!method.Equals("POST", StringComparison.OrdinalIgnoreCase))
         {

@@ -19,43 +19,70 @@ O mecanismo técnico (guard de rede via Playwright) já está implementado em
 o contrato de negócio e os critérios verificáveis que o guard precisa
 satisfazer.
 
-### Estado atual da implementação (revisado em 2026-09-02)
+### Estado atual da implementação (revisado em 2026-09-02, corrigido após
+regressão em produção — ver "Incidente" abaixo)
 
 O método `SetupReadOnlyGuardAsync` em `IServiceCollectorService` instala um
 interceptador de rotas via `page.RouteAsync("**/*", ...)` que avalia cada
 requisição antes de enviá-la. A lógica de bloqueio
 (`IsWriteRequestOnIService`, agora `public static` para permitir teste
-unitário isolado — DP-013.2) segue uma postura **default-deny** restrita ao
-host `ics-amer.midea.com`:
+unitário isolado — DP-013.2) segue uma postura **default-deny escopada ao
+módulo de negócio de OS** (`/web/iservice-wom/`) no host
+`ics-amer.midea.com`:
 
-1. Métodos seguros por natureza (`GET`, `HEAD`, `OPTIONS`) nunca são
-   bloqueados, em qualquer caminho.
-2. Qualquer outro método (`POST`, `PUT`, `PATCH`, `DELETE`, etc.) fora do
-   prefixo `/web/iservice-wom/` é bloqueado — não há endpoint de leitura
-   conhecido fora desse prefixo que justifique exceção.
-3. Dentro de `/web/iservice-wom/`, `PUT`/`PATCH`/`DELETE` são sempre
-   bloqueados (nunca há motivo legítimo para o Coletor usá-los).
-4. Dentro de `/web/iservice-wom/`, `POST` só passa se o último segmento do
-   caminho começar com `query`, `get` ou `select` (heurística original,
-   agora aplicada a todo o prefixo, não apenas a `/workOrder/`).
+1. Fora de `/web/iservice-wom/` (ex.: `/web/auth-server/...` — sessão CAS;
+   `/web/iservice-admin/...` — telemetria de erro do cliente): **nunca
+   bloqueado**. São endpoints de infraestrutura do portal, não de escrita
+   de dados de OS/cliente.
+2. Dentro de `/web/iservice-wom/`: métodos seguros (`GET`/`HEAD`/`OPTIONS`)
+   nunca são bloqueados; `PUT`/`PATCH`/`DELETE` são sempre bloqueados
+   (nunca há motivo legítimo para o Coletor usá-los); `POST` só passa se o
+   último segmento do caminho começar com `query`, `get` ou `select`
+   (heurística original, agora aplicada a todo o prefixo, não apenas a
+   `/workOrder/`).
 
 Requisições bloqueadas recebem `blockedbyclient` e são logadas como
 `[READONLY]`.
 
 **Mudança em relação à versão original (2026-08-31):** a heurística
 cobria apenas `/web/iservice-wom/workOrder/`; qualquer `POST` de escrita em
-outro módulo do mesmo host (peças, agendamento, comunicação com cliente
-etc.) não seria bloqueado. A versão atual amplia o prefixo protegido para
-todo `/web/iservice-wom/` e passa a bloquear incondicionalmente
-`PUT`/`PATCH`/`DELETE`, mitigando a maior parte do risco descrito em
-DP-013.1 sem depender de mapeamento completo dos endpoints do iService.
+outro submódulo de negócio do mesmo host (peças, agendamento, comunicação
+com cliente etc.) não seria bloqueado. A versão atual amplia o prefixo
+protegido para todo `/web/iservice-wom/` e passa a bloquear
+incondicionalmente `PUT`/`PATCH`/`DELETE` **dentro desse prefixo**,
+mitigando o risco descrito em DP-013.1 sem depender de mapeamento completo
+dos endpoints do iService.
+
+### Incidente em produção (2026-09-02) e correção
+
+Uma primeira versão desta mudança aplicou o default-deny ao **host inteiro**
+(não apenas a `/web/iservice-wom/`), incluindo `PUT`/`PATCH`/`DELETE` de
+qualquer caminho e `POST` fora do prefixo de negócio. Ao ser deployada e
+validada ao vivo (`make redeploy-collector` + `make collector-trigger-cycle`),
+o guard bloqueou `POST /web/auth-server/login/option`,
+`POST /web/auth-server/user/getSetProfile` e
+`POST /web/iservice-admin/htmlAppErrorLog/insertLog` — endpoints de sessão
+CAS e telemetria de erro do cliente, necessários ao fluxo normal de login,
+não relacionados a escrita de dados de OS. O bloqueio quebrou o login do
+Coletor (`PlaywrightException: Cannot read properties of null (reading
+'innerText')`, comando concluído com `outcome=Failed`).
+
+**Correção:** o escopo do default-deny foi restrito a `/web/iservice-wom/`
+(o módulo de negócio de OS, onde reside o risco real descrito em
+DP-013.1). Fora desse prefixo, o comportamento permanece "não bloqueado"
+(igual à versão original). Os três endpoints reais descobertos no
+incidente foram adicionados como casos de teste de regressão em
+`IServiceCollectorServiceReadOnlyGuardTests.cs`. Redeploy + novo ciclo de
+teste confirmaram login e coleta funcionando normalmente com o guard
+corrigido (ver seção "Implementação e validação").
 
 **Interface `IIServiceCollector`:** expõe apenas `CollectAsync` — nenhum
 método de escrita está presente na interface nem na implementação.
 
 **Conclusão da leitura do código:** o guard está ativo, cobre todo o
 prefixo `/web/iservice-wom/` (não apenas `/workOrder/`) e bloqueia
-incondicionalmente métodos de escrita HTTP no host do iService. RF-013 é
+incondicionalmente métodos de escrita HTTP dentro desse prefixo, sem
+afetar endpoints de infraestrutura do portal fora dele. RF-013 é
 considerado **implementado e testado** — ver seção "Implementação e
 validação" abaixo.
 
@@ -161,32 +188,47 @@ escrita não coberto) é mitigado pela postura default-deny.
 **Testes automatizados** (resolve DP-013.2):
 `tests/Atua.Collector.Tests/IServiceCollectorServiceReadOnlyGuardTests.cs`
 cobre `IsWriteRequestOnIService` (tornado `public static` para teste
-isolado, sem depender de navegador real) com 24 casos: métodos seguros
+isolado, sem depender de navegador real) com 26 casos: métodos seguros
 (`GET`/`HEAD`/`OPTIONS`) nunca bloqueados; `POST` para os dois endpoints
 de consulta reais usados pelo Coletor (`queryWorkOrder`,
 `queryOneWorkOrder`) e variações de nome (`getStatusCount`,
 `selectAssignedTechnicians`) não bloqueado; `POST` de escrita conhecida
 (`acceptWorkOrder`, `reassignTechnician`, `updateStatus`) bloqueado;
-`POST` para módulos fora de `/workOrder/` (peças, agendamento,
-comunicação com cliente, ou qualquer outro caminho) também bloqueado —
-prova automatizada do fechamento de DP-013.1; `PUT`/`PATCH`/`DELETE` no
-host do iService sempre bloqueados, mesmo em caminhos com nome de
-"query"; requisições fora do host do iService (CAS, CDN) nunca
-bloqueadas; URL inválida/vazia não bloqueada (mesma tolerância defensiva
-de antes). 31/31 testes do Collector passando (7 pré-existentes + 24
-novos).
+`POST` para outros submódulos de negócio dentro de `/web/iservice-wom/`
+(peças, agendamento, comunicação com cliente) também bloqueado — prova
+automatizada da mitigação de DP-013.1; `POST` para os três endpoints de
+infraestrutura descobertos no incidente em produção
+(`/web/auth-server/login/option`, `/web/auth-server/user/getSetProfile`,
+`/web/iservice-admin/htmlAppErrorLog/insertLog`) **não** bloqueado —
+teste de regressão que trava a correção do incidente; `PUT`/`PATCH`/
+`DELETE` dentro de `/web/iservice-wom/` sempre bloqueados, mesmo em
+caminhos com nome de "query"; requisições fora do host do iService (CAS,
+CDN) nunca bloqueadas; URL inválida/vazia não bloqueada (mesma tolerância
+defensiva de antes). 33/33 testes do Collector passando (7 pré-existentes
++ 26 novos).
+
+**Validação ao vivo em produção**: `make redeploy-collector` +
+`make collector-trigger-cycle` (duas rodadas — uma com a versão que
+causou o incidente, outra após a correção). Na segunda rodada, os logs
+confirmaram `[READONLY] Modo somente leitura ativo`, nenhum bloqueio
+inesperado, login CAS bem-sucedido e coleta concluída normalmente,
+confirmando que o guard corrigido não introduz regressão no fluxo real.
 
 **Mitigação de DP-013.1**: em vez de aguardar o mapeamento completo dos
 endpoints do iService (tarefa de descoberta ainda não realizada), o guard
-foi redesenhado para **default-deny**: bloqueia por padrão qualquer
-método de escrita (`POST`/`PUT`/`PATCH`/`DELETE`) fora do conjunto restrito
-de padrões de leitura conhecidos, em vez de bloquear apenas uma lista
-específica de padrões de escrita conhecidos dentro de `/workOrder/`. Isso
-fecha a maior parte do risco descrito em DP-013.1 sem exigir o
-mapeamento completo — mas o mapeamento continua sendo valioso para
-reduzir o risco de falso positivo (um endpoint de leitura legítimo em
-outro módulo, ainda não descoberto, ser bloqueado incorretamente e gerar
-`IServiceUnavailableEx`).
+foi redesenhado para **default-deny escopado a `/web/iservice-wom/`**:
+bloqueia por padrão qualquer método de escrita (`POST`/`PUT`/`PATCH`/
+`DELETE`) fora do conjunto restrito de padrões de leitura conhecidos,
+dentro do módulo de negócio de OS — em vez de bloquear apenas uma lista
+específica de padrões de escrita conhecidos dentro de `/workOrder/`.
+Fecha o risco descrito em DP-013.1 para todo o módulo de negócio, sem
+exigir mapeamento completo dos seus submódulos — mas, como o incidente em
+produção mostrou, **não pode ser aplicado ao host inteiro** sem quebrar
+endpoints de infraestrutura do portal (sessão CAS, telemetria). O
+mapeamento completo de endpoints continua sendo valioso para reduzir o
+risco de falso positivo dentro do próprio módulo de negócio (um endpoint
+de leitura legítimo em um submódulo ainda não descoberto, ser bloqueado
+incorretamente e gerar `IServiceUnavailableEx`).
 
 ## Decisões pendentes
 

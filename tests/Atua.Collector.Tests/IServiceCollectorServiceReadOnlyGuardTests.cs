@@ -45,14 +45,28 @@ public class IServiceCollectorServiceReadOnlyGuardTests
     [InlineData("/web/iservice-wom/parts/updateParts")]
     [InlineData("/web/iservice-wom/schedule/reschedule")]
     [InlineData("/web/iservice-wom/customer/sendMessage")]
-    [InlineData("/some/other/module/doSomething")]
-    public void PostForaDoModuloWorkOrderTambemEBloqueado_DP013_1(string path)
+    public void PostForaDoModuloWorkOrderMasDentroDeIserviceWomTambemEBloqueado_DP013_1(string path)
     {
         // DP-013.1: a cobertura do guard não se limita a /workOrder/ — qualquer POST
-        // no host do iService fora do escopo conhecido de leitura é bloqueado por
-        // padrão (default-deny), mesmo sem heurística de nome de endpoint específica
-        // para o módulo. Mitiga o gap de endpoints ainda não mapeados.
+        // em outro submódulo de negócio de OS dentro de /web/iservice-wom/ (peças,
+        // agendamento, comunicação com cliente) também é bloqueado por padrão
+        // (default-deny), mesmo sem heurística de nome de endpoint específica para
+        // o submódulo.
         Assert.True(IServiceCollectorService.IsWriteRequestOnIService("POST", IServiceHost + path));
+    }
+
+    [Theory]
+    [InlineData("POST", "/web/auth-server/login/option")]
+    [InlineData("POST", "/web/auth-server/user/getSetProfile")]
+    [InlineData("POST", "/web/iservice-admin/htmlAppErrorLog/insertLog")]
+    public void PostEmModuloDeInfraestruturaForaDeIserviceWomNaoEBloqueado(string method, string path)
+    {
+        // Regressão real observada em produção (2026-09-02): um guard default-deny
+        // aplicado a TODO o host (não só /web/iservice-wom/) bloqueou endpoints de
+        // sessão CAS e telemetria de erro do cliente, quebrando o login do Coletor
+        // (outcome=Failed). Esses endpoints não escrevem dados de OS/cliente — o
+        // guard deve permanecer escopado a /web/iservice-wom/, não ao host inteiro.
+        Assert.False(IServiceCollectorService.IsWriteRequestOnIService(method, IServiceHost + path));
     }
 
     [Theory]
@@ -60,10 +74,11 @@ public class IServiceCollectorServiceReadOnlyGuardTests
     [InlineData("PATCH", "/web/iservice-wom/workOrder/queryWorkOrder")]
     [InlineData("DELETE", "/web/iservice-wom/workOrder/queryWorkOrder")]
     [InlineData("PUT", "/web/iservice-wom/parts/anything")]
-    public void MetodosDeEscritaNaoSeguraSaoSempreBloqueadosNoHostDoIService(string method, string path)
+    public void MetodosDeEscritaNaoSeguraSaoSempreBloqueadosDentroDeIserviceWom(string method, string path)
     {
-        // Nunca há motivo legítimo para o Coletor enviar PUT/PATCH/DELETE ao iService —
-        // bloqueado incondicionalmente, mesmo em caminhos com nome de "query"/"get".
+        // Nunca há motivo legítimo para o Coletor enviar PUT/PATCH/DELETE ao módulo de
+        // negócio de OS — bloqueado incondicionalmente, mesmo em caminhos com nome de
+        // "query"/"get".
         Assert.True(IServiceCollectorService.IsWriteRequestOnIService(method, IServiceHost + path));
     }
 
