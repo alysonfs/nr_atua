@@ -1,16 +1,20 @@
 # RF-012 - Ausência de OS
 
-Status: `Pendente`
+Status: `Implementado (por design)`
 
-> **Nota (2026-08-31):** O modelo de persistência de OS foi redesenhado (ver
-> RF-016 e RF-017). As referências abaixo a `work_order_observations`,
-> `capturedAtUtc` e ao upsert de `work_order_snapshots` refletem o modelo
-> anterior e estão desatualizadas — devem ser lidas como `work_order_history`
-> (append) e `work_order` (upsert), respectivamente. **O comportamento de
-> negócio descrito por RF-012 não muda**: ausência de OS numa coleta não deve
-> gerar mudança de estado nem novo registro de histórico. As referências de
-> implementação serão corrigidas quando o Worker for implementado sobre o
-> novo modelo.
+**Data:** 2026-08-31 (especificado) · **2026-09-02** (confirmado implementado
+por design — sem código dedicado necessário — e revisado sobre o modelo
+final de persistência)
+
+> **Nota (2026-09-02):** Este documento foi corrigido para refletir o modelo
+> final de persistência (RF-016/RF-017): `work_order_observations` foi
+> substituído por `work_order_histories` (Postgres, append condicional à
+> mudança de status) e `capturedAtUtc` por `work_order_histories.CreatedAt`.
+> O "snapshot atual" da OS é o registro em `work_order` (Postgres, upsert),
+> não mais um documento upsertado em `work_order_snapshots` — essa coleção
+> (MongoDB) é append-only por design (RF-016) e nunca é lida para decidir
+> ausência. O comportamento de negócio não mudou em relação à especificação
+> original.
 
 ## Objetivo
 
@@ -52,17 +56,18 @@ Quando uma OS previamente observada não aparece em uma coleta, o sistema não
 deve alterar o estado atual dessa OS nem registrar qualquer transição de
 status.
 
-### RF-012.2 - Preservação do snapshot existente
+### RF-012.2 - Preservação do estado atual em `work_order`
 
-O documento de snapshot de uma OS ausente em uma coleta deve permanecer
-inalterado: o estado atual, `capturedAtUtc` e `commandId` devem continuar
-refletindo a última coleta em que a OS foi observada.
+O registro de estado atual (`work_order`) de uma OS ausente em uma coleta
+deve permanecer inalterado: `status` e `updated_at` devem continuar
+refletindo a última coleta em que a OS foi observada (isto é, o último
+snapshot bruto que gerou um evento processado pelo Consumer).
 
-### RF-012.3 - Ausência não gera observação de estado
+### RF-012.3 - Ausência não gera entrada de histórico
 
-A ausência de uma OS em uma coleta não deve gerar uma nova observação na
-coleção `work_order_observations`. Observações registram aparições reais da
-OS, não ausências.
+A ausência de uma OS em uma coleta não deve gerar uma nova entrada na
+tabela `work_order_histories`. Entradas de histórico registram aparições
+reais da OS (mudanças de status observadas), não ausências.
 
 ### RF-012.4 - Razões conhecidas de ausência
 
@@ -75,48 +80,94 @@ coberta. Nenhuma dessas razões justifica inferir mudança de estado.
 
 | Número   | Regra                                                                                                                     |
 |----------|---------------------------------------------------------------------------------------------------------------------------|
-| RN-012.1 | Ausência de OS em uma coleta não altera o estado atual nem o histórico dessa OS.                                          |
-| RN-012.2 | O snapshot de uma OS ausente permanece com os valores da última coleta em que ela foi observada.                          |
-| RN-012.3 | Ausência não gera observação — observações registram apenas aparições reais da OS.                                        |
+| RN-012.1 | Ausência de OS em uma coleta não altera o estado atual (`work_order`) nem gera entrada em `work_order_histories`.         |
+| RN-012.2 | O registro em `work_order` de uma OS ausente permanece com os valores da última coleta em que ela foi observada.          |
+| RN-012.3 | Ausência não gera entrada de histórico — `work_order_histories` registra apenas mudanças de status realmente observadas. |
 | RN-012.4 | Apenas evidência positiva (OS aparecendo com status Concluído ou Cancelado) pode registrar esses estados no ATUA.         |
 
 ## Critérios de aceite
 
 1. Dado que a OS 123 foi observada na coleta C1 com status Designado,
    quando a coleta C2 não retornar a OS 123 (ausência),
-   então o snapshot da OS 123 deve permanecer com status Designado e
-   `commandId` de C1,
-   e nenhuma nova observação deve ser inserida em `work_order_observations`
-   para a OS 123 com `commandId` de C2.
+   então o registro da OS 123 em `work_order` deve permanecer com
+   `status = "Designado"` e `updated_at` da última vez em que ela foi
+   processada (coleta C1),
+   e nenhuma nova entrada deve ser inserida em `work_order_histories`
+   para a OS 123 a partir da coleta C2.
 
 2. Dado que a OS 123 esteve ausente nas coletas C2, C3 e C4,
    quando a coleta C5 retornar a OS 123 com status Em Processamento,
-   então o snapshot da OS 123 deve ser atualizado para Em Processamento com
-   `commandId` de C5,
-   e uma nova observação com `capturedAtUtc` de C5 deve ser inserida,
-   e as coletas C2, C3 e C4 não devem gerar observações para a OS 123.
+   então o registro da OS 123 em `work_order` deve ser atualizado para
+   `status = "Em Processamento"` com `updated_at` da coleta C5,
+   e uma nova entrada em `work_order_histories` deve ser inserida
+   referenciando o snapshot de C5,
+   e as coletas C2, C3 e C4 não devem gerar entradas de histórico para a
+   OS 123.
 
 3. Dado que a OS 123 esteve ausente em todas as coletas após C1,
-   quando o histórico da OS 123 for consultado,
-   então deve conter apenas a observação de C1,
+   quando o histórico da OS 123 (`work_order_histories`) for consultado,
+   então deve conter apenas a entrada referente a C1,
    sem qualquer registro de "ausência" ou mudança de estado inferida.
+
+## Implementação e validação (2026-09-02)
+
+RF-012 **não exigiu código dedicado** — é satisfeito por design pela
+arquitetura já implementada para RF-016/RF-017 (ADR-023), confirmada por
+leitura de código:
+
+- `SnapshotConsumerWorker.RunChangeStreamAsync` (Change Stream sobre
+  `work_order_snapshots`) processa exclusivamente eventos de
+  `OperationType == Insert`. Não existe nenhuma rotina de varredura
+  periódica que compare o conjunto de OS de uma coleta com o estado
+  atual em `work_order` para detectar/marcar ausências — o Consumer só
+  reage a inserções reais, uma por vez.
+- `WorkOrderRepository.InsertSnapshotsAsync` (RF-016) é estritamente
+  append-only: insere um documento por OS presente no `CollectionResult`
+  da coleta atual. OS ausentes na coleta simplesmente não geram nenhum
+  documento — não há operação de "limpeza" ou remoção de snapshots
+  anteriores de OS não vistas na coleta corrente.
+- `WorkOrderPgRepository.UpsertWorkOrderAsync`/`ProcessSnapshotAsync` só
+  são invocados a partir de um evento de Change Stream — ou seja, apenas
+  para (tenant, provider_id) que **de fato apareceram** em algum snapshot.
+  Não existe consulta que itere sobre todos os `work_order` existentes
+  para comparar com a coleta atual e marcar os ausentes.
+
+Como consequência arquitetural direta (sem necessidade de regra explícita
+de "ignorar ausência"): RN-012.1, RN-012.2 e RN-012.3 são satisfeitas
+porque **não existe nenhum caminho de código que leia "ausência"** — o
+sistema é inteiramente orientado a eventos de aparição real. RN-012.4
+também é satisfeita, pois o único jeito de `work_order.status` chegar a
+`Concluído`/`Cancelado` é um snapshot real com esse status (evidência
+positiva).
+
+**Não validado com dados reais de produção** (diferente de RF-016/RF-017):
+não há, até o momento, uma OS que tenha reaparecido após ausência
+observada, então os critérios de aceite 1-3 acima foram confirmados por
+leitura de código, não por observação de um caso real na base do RDS.
+Se quiser uma validação empírica, seria necessário aguardar uma OS sumir
+de uma coleta e reaparecer (ou simular removendo temporariamente uma OS
+do escopo de coleta).
 
 ## Dependências
 
 - RF-009 (coleta inicial): estabelece o conjunto inicial de OS conhecidas.
-- RF-010 (histórico observado): reforça que observações são append-only e
-  originadas apenas de aparições reais.
+- RF-016 (persistência de snapshots brutos): `work_order_snapshots` é
+  append-only; a ausência de uma OS em uma coleta simplesmente não gera
+  documento algum, não havendo "remoção" a se preocupar.
+- RF-017 (modelo agnóstico work_order/work_order_history): o Consumer
+  (`SnapshotConsumerWorker`/`WorkOrderPgRepository`) só atualiza
+  `work_order` e insere em `work_order_histories` a partir de eventos de
+  inserção reais em `work_order_snapshots` — RF-012 é o complemento
+  para quando a OS não aparece.
 - RF-011 (atualização de estado): define o que acontece quando a OS aparece
   — RF-012 é o complemento para quando ela não aparece.
-- `WorkOrderRepository.UpsertSnapshotsAsync`: o upsert opera apenas sobre OS
-  presentes no `CollectionResult`; OS ausentes simplesmente não são
-  processadas, o que satisfaz RF-012.1 e RF-012.2 por design.
 
 ## Impactos
 
 - RF futuro de alerta por OS cronicamente ausente dependerá da contagem de
   coletas sem aparição, que este requisito preserva implicitamente (ausência
-  não apaga o snapshot, que permanece com o `commandId` da última aparição).
+  não apaga o registro em `work_order`, que permanece com o `updated_at` da
+  última aparição real).
 
 ## Decisões pendentes
 
