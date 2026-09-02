@@ -1,33 +1,34 @@
-import { useState, type FormEvent } from 'react'
+import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { ApiError } from '../../../shared/lib/apiClient'
-import { apiClient } from '../../../shared/lib/apiClient'
+import { useForm } from 'react-hook-form'
+import { zodResolver } from '@hookform/resolvers/zod'
+import { toast } from 'react-toastify'
+import { ApiError, apiClient } from '../../../shared/lib/apiClient'
+import { signUpSchema, type SignUpFormValues } from '../schemas'
+import logoBgLight from '../../../../../../assets/logo_bg_light.svg'
+import logoBgDark from '../../../../../../assets/logo_bg_dark.svg'
 
 export function SignUpPage() {
   const navigate = useNavigate()
-
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [passwordConfirmation, setPasswordConfirmation] = useState('')
   const [error, setError] = useState<string | null>(null)
-  const [isSubmitting, setIsSubmitting] = useState(false)
 
-  async function handleSubmit(e: FormEvent) {
-    e.preventDefault()
+  const {
+    register,
+    handleSubmit,
+    formState: { errors, isSubmitting },
+  } = useForm<SignUpFormValues>({
+    resolver: zodResolver(signUpSchema),
+  })
+
+  async function onSubmit(values: SignUpFormValues) {
     setError(null)
 
-    if (password !== passwordConfirmation) {
-      setError('As senhas não coincidem.')
-      return
-    }
-
-    setIsSubmitting(true)
-
     try {
-      await apiClient.post('/auth/signup', { email, password, passwordConfirmation })
+      await apiClient.post('/auth/signup', values)
       // 202 Accepted: redireciona para confirmação de e-mail com state de sucesso
+      toast.success('Conta criada! Verifique seu e-mail para confirmar o cadastro.')
       void navigate('/confirmar-email', {
-        state: { email, fromSignUp: true },
+        state: { email: values.email, fromSignUp: true },
       })
     } catch (err) {
       if (err instanceof ApiError) {
@@ -41,62 +42,104 @@ export function SignUpPage() {
           )
         } else {
           setError('Não foi possível criar a conta. Tente novamente mais tarde.')
+          toast.error('Não foi possível criar a conta. Tente novamente mais tarde.')
         }
       } else {
         setError('Não foi possível criar a conta. Tente novamente mais tarde.')
+        toast.error('Não foi possível criar a conta. Tente novamente mais tarde.')
       }
-    } finally {
-      setIsSubmitting(false)
     }
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-slate-50 p-4">
-      <div className="w-full max-w-md">
-        <div className="mb-8 text-center">
-          <h1 className="text-3xl font-bold text-slate-900">ATUA Office</h1>
-          <p className="mt-2 text-slate-600">Crie sua conta</p>
+    <main className="flex min-h-screen w-full bg-[#f8fafc]">
+      {/* Coluna institucional (oculta em telas pequenas) */}
+      <div className="hidden flex-1 flex-col justify-between bg-[#0f172a] p-20 lg:flex">
+        <img src={logoBgDark} alt="ATUA" className="h-[70px] w-[240px]" />
+
+        <div className="flex flex-col gap-6">
+          <p className="text-4xl leading-tight font-bold text-white">
+            Sua operação, organizada em um só lugar
+          </p>
+          <p className="text-[15px] leading-relaxed text-[#64748b]">
+            Crie sua conta e comece a conectar seus provedores de serviço à
+            plataforma ATUA.
+          </p>
         </div>
 
-        <div className="rounded-2xl bg-white p-8 shadow-sm ring-1 ring-slate-200">
-          <form onSubmit={(e) => void handleSubmit(e)} noValidate>
+        <div className="flex items-center gap-3">
+          <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-white/10">
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2}
+              className="size-5 text-white"
+              aria-hidden="true"
+            >
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z" />
+            </svg>
+          </div>
+          <div>
+            <p className="text-sm font-semibold text-white">Ambiente 100% seguro</p>
+            <p className="text-xs text-[#64748b]">
+              Criptografia de ponta a ponta na sua infraestrutura técnica.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Coluna do formulário */}
+      <div className="flex flex-1 items-center justify-center p-6 lg:p-10">
+        <div className="w-full max-w-[480px] rounded-2xl bg-white p-8 shadow-[0px_8px_12px_rgba(0,0,0,0.05)] sm:p-12">
+          {/* Logo visível apenas no mobile, quando a coluna institucional some */}
+          <img src={logoBgLight} alt="ATUA" className="mb-8 h-10 w-auto lg:hidden" />
+
+          <div className="mb-8">
+            <h1 className="text-[32px] leading-tight font-bold text-[#0e1a30]">Criar conta</h1>
+            <p className="mt-2 text-base text-[#64748b]">Comece a usar o ATUA agora mesmo.</p>
+          </div>
+
+          <form onSubmit={(e) => void handleSubmit(onSubmit)(e)} noValidate>
             <fieldset disabled={isSubmitting} className="space-y-5">
               <div>
-                <label htmlFor="email" className="mb-1.5 block text-sm font-medium text-slate-700">
+                <label htmlFor="email" className="mb-2 block text-sm font-semibold text-[#0e1a30]">
                   E-mail
                 </label>
                 <input
                   id="email"
                   type="email"
                   autoComplete="email"
-                  required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="input input-bordered w-full"
-                  placeholder="seu@email.com"
+                  {...register('email')}
+                  className="input input-bordered w-full border-[#e2e8f0] bg-white text-[#0e1a30] focus:border-[#3b82f6]"
+                  placeholder="seuemail@empresa.com"
                 />
+                {errors.email && (
+                  <p className="mt-1.5 text-sm text-red-700">{errors.email.message}</p>
+                )}
               </div>
 
               <div>
-                <label htmlFor="password" className="mb-1.5 block text-sm font-medium text-slate-700">
+                <label htmlFor="password" className="mb-2 block text-sm font-semibold text-[#0e1a30]">
                   Senha
                 </label>
                 <input
                   id="password"
                   type="password"
                   autoComplete="new-password"
-                  required
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="input input-bordered w-full"
+                  {...register('password')}
+                  className="input input-bordered w-full border-[#e2e8f0] bg-white text-[#0e1a30] focus:border-[#3b82f6]"
                   placeholder="••••••••"
                 />
+                {errors.password && (
+                  <p className="mt-1.5 text-sm text-red-700">{errors.password.message}</p>
+                )}
               </div>
 
               <div>
                 <label
                   htmlFor="passwordConfirmation"
-                  className="mb-1.5 block text-sm font-medium text-slate-700"
+                  className="mb-2 block text-sm font-semibold text-[#0e1a30]"
                 >
                   Confirmar senha
                 </label>
@@ -104,12 +147,15 @@ export function SignUpPage() {
                   id="passwordConfirmation"
                   type="password"
                   autoComplete="new-password"
-                  required
-                  value={passwordConfirmation}
-                  onChange={(e) => setPasswordConfirmation(e.target.value)}
-                  className="input input-bordered w-full"
+                  {...register('passwordConfirmation')}
+                  className="input input-bordered w-full border-[#e2e8f0] bg-white text-[#0e1a30] focus:border-[#3b82f6]"
                   placeholder="••••••••"
                 />
+                {errors.passwordConfirmation && (
+                  <p className="mt-1.5 text-sm text-red-700">
+                    {errors.passwordConfirmation.message}
+                  </p>
+                )}
               </div>
 
               {error && (
@@ -120,7 +166,7 @@ export function SignUpPage() {
 
               <button
                 type="submit"
-                className="btn btn-primary w-full"
+                className="btn w-full border-none bg-gradient-to-r from-[#3b82f6] to-[#2563eb] text-white hover:brightness-110"
                 aria-busy={isSubmitting}
               >
                 {isSubmitting ? (
@@ -132,11 +178,17 @@ export function SignUpPage() {
             </fieldset>
           </form>
 
-          <p className="mt-6 text-center text-sm text-slate-600">
+          <p className="mt-6 text-center text-sm text-[#64748b]">
             Já tem conta?{' '}
-            <Link to="/login" className="font-medium text-primary hover:underline">
+            <Link to="/login" className="font-semibold text-[#3b82f6] hover:underline">
               Entre aqui
             </Link>
+          </p>
+
+          <hr className="my-8 border-[#e2e8f0]" />
+
+          <p className="text-center text-xs text-[#64748b]">
+            ATUA — Plataforma operacional para empresas de serviços técnicos.
           </p>
         </div>
       </div>

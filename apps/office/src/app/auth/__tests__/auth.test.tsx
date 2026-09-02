@@ -141,7 +141,7 @@ function renderConfirmEmail(initialEntries = ['/confirmar-email']) {
 
 describe('SignInPage', () => {
   beforeEach(() => {
-    vi.clearAllMocks()
+    vi.resetAllMocks()
   })
 
   it('renderiza o formulário de login', () => {
@@ -201,7 +201,7 @@ describe('SignInPage', () => {
 
 describe('SignUpPage', () => {
   beforeEach(() => {
-    vi.clearAllMocks()
+    vi.resetAllMocks()
   })
 
   it('renderiza o formulário de cadastro', () => {
@@ -243,8 +243,7 @@ describe('SignUpPage', () => {
     })
   })
 
-  it('erro 400 invalid_password: exibe mensagem de senha inválida', async () => {
-    mockPostFn.mockRejectedValueOnce(new ApiError(400, 'invalid_password', 'invalid_password'))
+  it('senha muito curta: exibe erro no campo sem chamar a API', async () => {
     renderSignUp()
 
     await userEvent.type(screen.getByLabelText(/^e-mail/i), 'maria@example.com')
@@ -253,11 +252,26 @@ describe('SignUpPage', () => {
     await userEvent.click(screen.getByRole('button', { name: /criar conta/i }))
 
     await waitFor(() => {
+      expect(screen.getByText(/mínimo 8 caracteres/i)).toBeInTheDocument()
+    })
+    expect(mockPostFn).not.toHaveBeenCalled()
+  })
+
+  it('erro 400 invalid_password: exibe mensagem de senha inválida', async () => {
+    mockPostFn.mockRejectedValueOnce(new ApiError(400, 'invalid_password', 'invalid_password'))
+    renderSignUp()
+
+    await userEvent.type(screen.getByLabelText(/^e-mail/i), 'maria@example.com')
+    await userEvent.type(screen.getByLabelText(/^senha$/i), 'senhasenha')
+    await userEvent.type(screen.getByLabelText(/confirmar senha/i), 'senhasenha')
+    await userEvent.click(screen.getByRole('button', { name: /criar conta/i }))
+
+    await waitFor(() => {
       expect(screen.getByRole('alert')).toHaveTextContent(/senha inválida/i)
     })
   })
 
-  it('senhas não coincidem: exibe erro sem chamar a API', async () => {
+  it('senhas não coincidem: exibe erro no campo sem chamar a API', async () => {
     renderSignUp()
 
     await userEvent.type(screen.getByLabelText(/^e-mail/i), 'maria@example.com')
@@ -265,7 +279,9 @@ describe('SignUpPage', () => {
     await userEvent.type(screen.getByLabelText(/confirmar senha/i), 'DiferenteSenha!')
     await userEvent.click(screen.getByRole('button', { name: /criar conta/i }))
 
-    expect(screen.getByRole('alert')).toHaveTextContent(/não coincidem/i)
+    await waitFor(() => {
+      expect(screen.getByText(/não coincidem/i)).toBeInTheDocument()
+    })
     expect(mockPostFn).not.toHaveBeenCalled()
   })
 })
@@ -276,7 +292,7 @@ describe('SignUpPage', () => {
 
 describe('ConfirmEmailPage', () => {
   beforeEach(() => {
-    vi.clearAllMocks()
+    vi.resetAllMocks()
   })
 
   it('renderiza o formulário de confirmação', () => {
@@ -347,7 +363,7 @@ describe('ConfirmEmailPage', () => {
 
 describe('ProtectedRoute', () => {
   beforeEach(() => {
-    vi.clearAllMocks()
+    vi.resetAllMocks()
   })
 
   it('redireciona para /login quando não autenticado e não está carregando', () => {
@@ -415,7 +431,7 @@ describe('ProtectedRoute', () => {
 
 describe('Logout (botão Sair no dashboard)', () => {
   beforeEach(() => {
-    vi.clearAllMocks()
+    vi.resetAllMocks()
     mockAuthState.isAuthenticated = true
     mockAuthState.isLoading = false
   })

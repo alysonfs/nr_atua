@@ -1,4 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { ToastContainer } from 'react-toastify'
+import 'react-toastify/dist/ReactToastify.css'
 import { AuthProvider } from './app/auth/AuthContext'
 import { ProtectedRoute } from './app/auth/ProtectedRoute'
 import { SignInPage } from './app/auth/pages/SignInPage'
@@ -10,6 +12,7 @@ export function AppRouter() {
   return (
     <BrowserRouter>
       <AuthProvider>
+        <ToastContainer position="top-right" autoClose={5000} newestOnTop />
         <Routes>
           {/* Rotas públicas */}
           <Route path="/login" element={<SignInPage />} />

@@ -1,26 +1,32 @@
-import { useState, type FormEvent } from 'react'
+import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import { useForm } from 'react-hook-form'
+import { zodResolver } from '@hookform/resolvers/zod'
+import { toast } from 'react-toastify'
 import { ApiError } from '../../../shared/lib/apiClient'
 import { useAuth } from '../AuthContext'
+import { signInSchema, type SignInFormValues } from '../schemas'
 import logoBgLight from '../../../../../../assets/logo_bg_light.svg'
 import logoBgDark from '../../../../../../assets/logo_bg_dark.svg'
 
 export function SignInPage() {
   const { signIn } = useAuth()
   const navigate = useNavigate()
-
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
-  const [isSubmitting, setIsSubmitting] = useState(false)
 
-  async function handleSubmit(e: FormEvent) {
-    e.preventDefault()
+  const {
+    register,
+    handleSubmit,
+    formState: { errors, isSubmitting },
+  } = useForm<SignInFormValues>({
+    resolver: zodResolver(signInSchema),
+  })
+
+  async function onSubmit(values: SignInFormValues) {
     setError(null)
-    setIsSubmitting(true)
 
     try {
-      await signIn(email, password)
+      await signIn(values.email, values.password)
       void navigate('/', { replace: true })
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
@@ -31,9 +37,8 @@ export function SignInPage() {
         setError('E-mail ou senha inválidos. Verifique suas credenciais e tente novamente.')
       } else {
         setError('Não foi possível entrar. Tente novamente mais tarde.')
+        toast.error('Não foi possível entrar. Tente novamente mais tarde.')
       }
-    } finally {
-      setIsSubmitting(false)
     }
   }
 
@@ -88,7 +93,7 @@ export function SignInPage() {
             <p className="mt-2 text-base text-[#64748b]">Acesse sua operação no ATUA.</p>
           </div>
 
-          <form onSubmit={(e) => void handleSubmit(e)} noValidate>
+          <form onSubmit={(e) => void handleSubmit(onSubmit)(e)} noValidate>
             <fieldset disabled={isSubmitting} className="space-y-5">
               <div>
                 <label htmlFor="email" className="mb-2 block text-sm font-semibold text-[#0e1a30]">
@@ -98,12 +103,13 @@ export function SignInPage() {
                   id="email"
                   type="email"
                   autoComplete="email"
-                  required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  {...register('email')}
                   className="input input-bordered w-full border-[#e2e8f0] bg-white text-[#0e1a30] focus:border-[#3b82f6]"
                   placeholder="seuemail@empresa.com"
                 />
+                {errors.email && (
+                  <p className="mt-1.5 text-sm text-red-700">{errors.email.message}</p>
+                )}
               </div>
 
               <div>
@@ -114,12 +120,13 @@ export function SignInPage() {
                   id="password"
                   type="password"
                   autoComplete="current-password"
-                  required
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
+                  {...register('password')}
                   className="input input-bordered w-full border-[#e2e8f0] bg-white text-[#0e1a30] focus:border-[#3b82f6]"
                   placeholder="••••••••"
                 />
+                {errors.password && (
+                  <p className="mt-1.5 text-sm text-red-700">{errors.password.message}</p>
+                )}
               </div>
 
               {error && (
