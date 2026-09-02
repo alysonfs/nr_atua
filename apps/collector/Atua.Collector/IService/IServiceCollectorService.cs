@@ -193,11 +193,34 @@ public sealed class IServiceCollectorService(
             return true;
         }
 
+        if (IsKnownReadOnlyDashboardEndpoint(uri.AbsolutePath))
+        {
+            // Contadores/indicadores da home do iService (ex.: desktop/indicator/assigned,
+            // holiday/list), descobertos ao vivo em produção (2026-09-02): são chamados
+            // via POST pela SPA ao renderizar a "Visão por Status", mas são consultas
+            // agregadas somente leitura, sem efeito sobre dados de OS. Bloqueá-los quebra
+            // a navegação do Coletor (a SPA entra em estado de erro e destrói o contexto
+            // de execução) sem qualquer ganho de proteção real. Não bloqueado.
+            return false;
+        }
+
         var endpoint = uri.AbsolutePath.Split('/').LastOrDefault() ?? string.Empty;
         return !endpoint.StartsWith("query", StringComparison.OrdinalIgnoreCase)
             && !endpoint.StartsWith("get", StringComparison.OrdinalIgnoreCase)
-            && !endpoint.StartsWith("select", StringComparison.OrdinalIgnoreCase);
+            && !endpoint.StartsWith("select", StringComparison.OrdinalIgnoreCase)
+            && !endpoint.StartsWith("list", StringComparison.OrdinalIgnoreCase);
     }
+
+    /// <summary>
+    /// Endpoints de contadores/indicadores do painel da home do iService (submódulo
+    /// <c>desktop/indicator/</c>) e a lista de feriados (<c>holiday/list</c>) usada para
+    /// cálculo de datas úteis. Confirmados como somente leitura ao vivo em produção
+    /// (2026-09-02): a SPA os chama ao abrir a "Visão por Status", antes de qualquer
+    /// consulta real de OS.
+    /// </summary>
+    private static bool IsKnownReadOnlyDashboardEndpoint(string absolutePath) =>
+        absolutePath.Contains("/desktop/indicator/", StringComparison.OrdinalIgnoreCase)
+        || absolutePath.EndsWith("/holiday/list", StringComparison.OrdinalIgnoreCase);
 
     private static bool IsSafeReadMethod(string method) =>
         method.Equals("GET", StringComparison.OrdinalIgnoreCase)

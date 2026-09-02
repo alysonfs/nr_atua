@@ -27,8 +27,37 @@ public class IServiceCollectorServiceReadOnlyGuardTests
     [InlineData("/web/iservice-wom/workOrder/queryOneWorkOrder")]
     [InlineData("/web/iservice-wom/workOrder/getStatusCount")]
     [InlineData("/web/iservice-wom/workOrder/selectAssignedTechnicians")]
+    [InlineData("/web/iservice-wom/workOrder/listWorkOrder")]
     public void PostDeConsultaConhecidaNaoEBloqueado(string path)
     {
+        Assert.False(IServiceCollectorService.IsWriteRequestOnIService("POST", IServiceHost + path));
+    }
+
+    [Theory]
+    [InlineData("/web/iservice-wom/desktop/indicator/unassignedWO")]
+    [InlineData("/web/iservice-wom/desktop/indicator/assigned")]
+    [InlineData("/web/iservice-wom/desktop/indicator/misaProcessing")]
+    [InlineData("/web/iservice-wom/desktop/indicator/processing")]
+    [InlineData("/web/iservice-wom/desktop/indicator/specialApproval")]
+    [InlineData("/web/iservice-wom/desktop/indicator/waitingAuditTotal")]
+    [InlineData("/web/iservice-wom/desktop/indicator/requestCancel")]
+    [InlineData("/web/iservice-wom/desktop/indicator/defectOrderCount")]
+    [InlineData("/web/iservice-wom/desktop/indicator/replacementRefund")]
+    [InlineData("/web/iservice-wom/desktop/indicator/waitingClosed")]
+    [InlineData("/web/iservice-wom/desktop/indicator/requestCancelAsp")]
+    [InlineData("/web/iservice-wom/desktop/indicator/revised")]
+    [InlineData("/web/iservice-wom/desktop/indicator/defectProductCount")]
+    [InlineData("/web/iservice-wom/holiday/list")]
+    public void PostDeIndicadorDoPainelNaoEBloqueado_Incidente20260902(string path)
+    {
+        // Regressão real observada em produção (2026-09-02): a SPA do iService chama
+        // esses endpoints via POST ao renderizar a "Visão por Status" (contadores do
+        // dashboard e lista de feriados), antes de qualquer consulta real de OS. Nenhum
+        // deles segue o padrão de nome query/get/select/list, então o default-deny os
+        // bloqueou incorretamente — a SPA entrou em estado de erro e destruiu o
+        // contexto de execução do Playwright (PlaywrightException), impedindo qualquer
+        // coleta. São contadores agregados somente leitura, sem efeito sobre dados de
+        // OS: não devem ser bloqueados.
         Assert.False(IServiceCollectorService.IsWriteRequestOnIService("POST", IServiceHost + path));
     }
 
