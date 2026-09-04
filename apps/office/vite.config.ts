@@ -8,4 +8,7 @@ export default defineConfig(({ command }) => ({
   // Em build (`vite build`) usa '/office/' para que os assets gerados
   // referenciem '/office/assets/...' — caminho real no bucket S3.
   base: command === 'serve' ? '/' : '/office/',
+  // Porta fixa por app para evitar que o Vite auto-incremente e confunda
+  // configuração de CORS/API entre os frontends do monorepo.
+  server: { port: 5175, strictPort: true },
 }))
