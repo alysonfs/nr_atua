@@ -3,6 +3,7 @@ import { TimezonePreference } from './app/office/components/Settings'
 import { TrialBadge, TrialCard, TrialExpiryAlert } from './app/office/components/Trial'
 import { CreateTenantForm, TenantSelector } from './app/office/components/Onboarding'
 import { IServiceIntegrationPanel } from './app/office/components/Integrations'
+import { DashboardHeader } from './app/office/components/Layout'
 import { useMyTenants } from './app/office/hooks/useTenants'
 import { useAuth } from './app/auth/AuthContext'
 
@@ -33,78 +34,139 @@ function App() {
   }
 
   return (
-    <main className="mx-auto min-h-screen max-w-5xl space-y-8 p-4 sm:p-8">
-      <header className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900">ATUA Office</h1>
-          <p className="text-slate-600">Visão geral da sua conta</p>
-        </div>
-        <TrialBadge compact />
-        <button
-          type="button"
-          onClick={() => void signOut()}
-          className="btn btn-ghost btn-sm text-slate-600"
-          aria-label="Sair da conta"
-        >
-          Sair
-        </button>
-      </header>
+    <div className="min-h-screen bg-slate-50 text-slate-950">
+      <DashboardHeader
+        actions={(
+          <>
+            <TrialBadge compact />
+            <button
+              type="button"
+              onClick={() => void signOut()}
+              className="rounded-md border border-white/10 bg-white/8 px-3 py-2 text-sm font-semibold text-slate-100 transition hover:bg-white/14 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-400"
+              aria-label="Sair da conta"
+            >
+              Sair
+            </button>
+          </>
+        )}
+      />
 
-      <TrialExpiryAlert showClose={false} />
+      <div className="mx-auto grid w-full max-w-7xl gap-6 px-4 py-6 sm:px-6 lg:grid-cols-[240px_minmax(0,1fr)] lg:px-8">
+        <aside className="hidden lg:block">
+          <nav aria-label="Navegação principal" className="sticky top-[5.5rem] space-y-1">
+            {['Visão geral', 'Integrações', 'Coletor', 'Preferências'].map((item, index) => (
+              <a
+                key={item}
+                href={index === 0 ? '#trial-heading' : index === 1 ? '#integration-heading' : index === 2 ? '#integration-heading' : '#preferences-heading'}
+                className={`block rounded-md px-3 py-2 text-sm font-medium transition ${
+                  index === 0
+                    ? 'bg-slate-900 text-white shadow-sm'
+                    : 'text-slate-600 hover:bg-white hover:text-slate-950'
+                }`}
+              >
+                {item}
+              </a>
+            ))}
+          </nav>
+        </aside>
 
-      <section aria-labelledby="trial-heading">
-        <h2 id="trial-heading" className="mb-4 text-xl font-semibold text-slate-900">
-          Seu Trial
-        </h2>
-        <TrialCard />
-      </section>
-
-      <section aria-labelledby="integration-heading">
-        <h2 id="integration-heading" className="mb-4 text-xl font-semibold text-slate-900">
-          Integração com o iService
-        </h2>
-
-        {isLoading && <p className="text-sm text-slate-500">Carregando suas empresas...</p>}
-
-        {!isLoading && isError && (
-          <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-6 shadow-sm">
-            <p className="text-sm text-red-800">
-              Não foi possível carregar suas empresas. Tente novamente mais tarde.
-            </p>
+        <main className="min-w-0 space-y-5">
+          <div className="flex flex-wrap items-end justify-between gap-4 border-b border-slate-200 pb-5">
+            <div>
+              <p className="text-xs font-semibold uppercase text-sky-700">Backoffice</p>
+              <h1 className="mt-1 text-2xl font-semibold text-slate-950 sm:text-3xl">Painel operacional</h1>
+              <p className="mt-1 max-w-2xl text-sm text-slate-600">
+                Controle de trial, integração iService e preferências da conta.
+              </p>
+            </div>
           </div>
-        )}
 
-        {!isLoading && !isError && hasNoTenant && (
-          <CreateTenantForm onCreated={handleTenantCreated} />
-        )}
+          <TrialExpiryAlert showClose={false} />
 
-        {!isLoading && !isError && !hasNoTenant && requiresSelection && !selectedTenantId && (
-          <TenantSelector tenants={tenants} onSelect={setSelectedTenantId} />
-        )}
+          <div className="grid gap-4 sm:grid-cols-3">
+            <div className="rounded-md border border-slate-200 bg-white p-4 shadow-sm">
+              <p className="text-xs font-semibold uppercase text-slate-500">Conta</p>
+              <p className="mt-2 text-lg font-semibold text-slate-950">Trial ativo</p>
+              <p className="text-sm text-slate-600">Janela de teste em andamento</p>
+            </div>
+            <div className="rounded-md border border-slate-200 bg-white p-4 shadow-sm">
+              <p className="text-xs font-semibold uppercase text-slate-500">Integração</p>
+              <p className="mt-2 text-lg font-semibold text-slate-950">iService</p>
+              <p className="text-sm text-slate-600">Credenciais e validação</p>
+            </div>
+            <div className="rounded-md border border-slate-200 bg-white p-4 shadow-sm">
+              <p className="text-xs font-semibold uppercase text-slate-500">Coletor</p>
+              <p className="mt-2 text-lg font-semibold text-slate-950">Preparado</p>
+              <p className="text-sm text-slate-600">Aguardando comandos da API</p>
+            </div>
+          </div>
 
-        {!isLoading && !isError && !hasNoTenant && activeTenantId && integrationId && (
-          <IServiceIntegrationPanel tenantId={activeTenantId} integrationId={integrationId} />
-        )}
+          <section aria-labelledby="trial-heading" className="space-y-3">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h2 id="trial-heading" className="text-sm font-semibold uppercase text-slate-500">
+                  Seu Trial
+                </h2>
+                <p className="text-sm text-slate-700">Janela de uso e vencimento da conta.</p>
+              </div>
+            </div>
+            <TrialCard />
+          </section>
 
-        {!isLoading &&
-          !isError &&
-          !hasNoTenant &&
-          activeTenantId &&
-          !integrationId &&
-          !requiresSelection && (
-            <p className="text-sm text-slate-500">
-              Preparando a configuração da integração...
-            </p>
-          )}
-      </section>
+          <section aria-labelledby="integration-heading" className="space-y-3">
+            <div>
+              <h2 id="integration-heading" className="text-sm font-semibold uppercase text-slate-500">
+                Integração com o iService
+              </h2>
+              <p className="text-sm text-slate-700">Credenciais, validação e preparo do ciclo do coletor.</p>
+            </div>
 
-      <section aria-labelledby="preferences-heading">
-        <h2 id="preferences-heading" className="mb-4 text-xl font-semibold text-slate-900">
-          Preferências
-        </h2>
-        <TimezonePreference />
-      </section>
-    </main>
+            {isLoading && <p className="rounded-md border border-slate-200 bg-white px-4 py-3 text-sm text-slate-500">Carregando suas empresas...</p>}
+
+            {!isLoading && isError && (
+              <div role="alert" className="rounded-md border-l-4 border-red-500 bg-white p-4 shadow-sm">
+                <p className="text-sm text-red-800">
+                  Não foi possível carregar suas empresas. Tente novamente mais tarde.
+                </p>
+              </div>
+            )}
+
+            {!isLoading && !isError && hasNoTenant && (
+              <CreateTenantForm onCreated={handleTenantCreated} />
+            )}
+
+            {!isLoading && !isError && !hasNoTenant && requiresSelection && !selectedTenantId && (
+              <TenantSelector tenants={tenants} onSelect={setSelectedTenantId} />
+            )}
+
+            {!isLoading && !isError && !hasNoTenant && activeTenantId && integrationId && (
+              <IServiceIntegrationPanel tenantId={activeTenantId} integrationId={integrationId} />
+            )}
+
+            {!isLoading &&
+              !isError &&
+              !hasNoTenant &&
+              activeTenantId &&
+              !integrationId &&
+              !requiresSelection && (
+                <p className="rounded-md border border-slate-200 bg-white px-4 py-3 text-sm text-slate-500">
+                  Preparando a configuração da integração...
+                </p>
+              )}
+          </section>
+
+          <section aria-labelledby="preferences-heading" className="space-y-3">
+            <div>
+              <h2 id="preferences-heading" className="text-sm font-semibold uppercase text-slate-500">
+                Preferências
+              </h2>
+              <p className="text-sm text-slate-700">Configurações que afetam a leitura operacional.</p>
+            </div>
+            <TimezonePreference />
+          </section>
+        </main>
+      </div>
+    </div>
   )
 }
 

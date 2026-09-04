@@ -56,7 +56,7 @@ export function TrialBadge({ compact = false, className = '' }: TrialBadgeProps)
   const displayText = summary.isExpired
     ? 'Trial expirou'
     : summary.daysRemaining === 0
-      ? `Trial expires today (${summary.hoursRemaining}h)`
+      ? `Trial expira hoje (${summary.hoursRemaining}h)`
       : summary.daysRemaining === 1
         ? 'Trial até amanhã (1 dia)'
         : `Trial até ${expirationDate} (${summary.daysRemaining} dias)`

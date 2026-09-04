@@ -81,15 +81,17 @@ export function IServiceCredentialsForm({
   }
 
   return (
-    <div className={`rounded-lg border border-slate-200 bg-white p-6 shadow-sm ${className}`}>
-      <h2 className="mb-1 text-lg font-semibold text-slate-900">Credenciais do iService</h2>
-      <p className="mb-4 text-sm text-slate-600">
-        Informe as credenciais de acesso ao iService. Elas são armazenadas de forma cifrada e
-        nunca são exibidas novamente após o cadastro.
-      </p>
+    <div className={`rounded-md border border-slate-200 bg-white shadow-sm ${className}`}>
+      <div className="border-b border-slate-200 px-5 py-4">
+        <h2 className="text-base font-semibold text-slate-950">Credenciais do iService</h2>
+        <p className="mt-1 max-w-3xl text-sm text-slate-600">
+          Acesso cifrado para o ciclo do coletor. As credenciais não são exibidas após o cadastro.
+        </p>
+      </div>
 
-      <form onSubmit={handleSubmit} noValidate>
-        <div className="mb-4">
+      <form onSubmit={handleSubmit} noValidate className="space-y-4 px-5 py-4">
+        <div className="grid gap-4 md:grid-cols-2">
+        <div>
           <label
             htmlFor="iservice-username"
             className="mb-1 block text-sm font-medium text-slate-700"
@@ -114,7 +116,7 @@ export function IServiceCredentialsForm({
           )}
         </div>
 
-        <div className="mb-4">
+        <div>
           <label
             htmlFor="iservice-password"
             className="mb-1 block text-sm font-medium text-slate-700"
@@ -138,8 +140,9 @@ export function IServiceCredentialsForm({
             </p>
           )}
         </div>
+        </div>
 
-        <div className="mb-4">
+        <div>
           <label
             htmlFor="iservice-base-url"
             className="mb-1 block text-sm font-medium text-slate-700"
@@ -158,18 +161,20 @@ export function IServiceCredentialsForm({
         </div>
 
         {submitError && (
-          <div role="alert" className="mb-4 rounded-lg border-l-4 border-red-500 bg-red-50 p-3">
+          <div role="alert" className="rounded-md border-l-4 border-red-500 bg-red-50 p-3">
             <p className="text-sm text-red-800">{submitError}</p>
           </div>
         )}
 
-        <button
-          type="submit"
-          disabled={isSubmitting}
-          className="w-full rounded-lg bg-blue-600 px-4 py-2 font-semibold text-white transition-colors hover:bg-blue-700 active:bg-blue-800 disabled:cursor-not-allowed disabled:bg-slate-300"
-        >
-          {isSubmitting ? 'Salvando...' : 'Salvar credenciais'}
-        </button>
+        <div className="flex justify-end border-t border-slate-100 pt-4">
+          <button
+            type="submit"
+            disabled={isSubmitting}
+            className="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-700 active:bg-blue-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+          >
+            {isSubmitting ? 'Salvando...' : 'Salvar credenciais'}
+          </button>
+        </div>
       </form>
     </div>
   )

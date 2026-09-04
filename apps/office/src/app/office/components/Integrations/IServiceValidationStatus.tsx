@@ -50,7 +50,7 @@ export function IServiceValidationStatus({
 
   if (isLoading) {
     return (
-      <div className={`rounded-lg border border-slate-200 bg-white p-6 shadow-sm ${className}`}>
+      <div className={`rounded-md border border-slate-200 bg-white p-5 shadow-sm ${className}`}>
         <p className="text-sm text-slate-500">Carregando status da integração...</p>
       </div>
     )
@@ -59,7 +59,7 @@ export function IServiceValidationStatus({
   if (isError) {
     return (
       <div
-        className={`rounded-lg border border-red-200 bg-red-50 p-6 shadow-sm ${className}`}
+        className={`rounded-md border-l-4 border-red-500 bg-white p-5 shadow-sm ${className}`}
         role="alert"
       >
         <p className="text-sm text-red-800">
@@ -71,7 +71,7 @@ export function IServiceValidationStatus({
 
   if (!status || !status.hasCredentials) {
     return (
-      <div className={`rounded-lg border border-slate-200 bg-white p-6 shadow-sm ${className}`}>
+      <div className={`rounded-md border border-slate-200 bg-white p-5 shadow-sm ${className}`}>
         <p className="text-sm text-slate-600">
           Nenhuma credencial configurada ainda. Cadastre as credenciais do iService para
           habilitar a validação.
@@ -93,13 +93,15 @@ export function IServiceValidationStatus({
   }
 
   return (
-    <div className={`rounded-lg border border-slate-200 bg-white p-6 shadow-sm ${className}`}>
-      <div className="mb-4 flex items-center justify-between">
-        <h2 className="text-lg font-semibold text-slate-900">Validação da integração</h2>
+    <div className={`rounded-md border border-slate-200 bg-white shadow-sm ${className}`}>
+      <div className="flex items-center justify-between gap-4 border-b border-slate-200 px-5 py-4">
+        <h2 className="text-base font-semibold text-slate-950">Validação da integração</h2>
         <span className={`rounded-full px-3 py-1 text-xs font-semibold ${badgeClass}`}>
           {statusLabel}
         </span>
       </div>
+
+      <div className="px-5 py-4">
 
       {status.lastValidatedAtUtc && (
         <p className="mb-4 text-sm text-slate-600">
@@ -115,7 +117,7 @@ export function IServiceValidationStatus({
       )}
 
       {lastResult === 'Failed' && (
-        <div role="alert" className="mb-4 rounded-lg border-l-4 border-red-500 bg-red-50 p-3">
+        <div role="alert" className="mb-4 rounded-md border-l-4 border-red-500 bg-red-50 p-3">
           <p className="text-sm text-red-800">
             A validação falhou. Verifique as credenciais cadastradas e tente novamente.
           </p>
@@ -123,25 +125,28 @@ export function IServiceValidationStatus({
       )}
 
       {lastResult === 'Succeeded' && (
-        <div className="mb-4 rounded-lg border-l-4 border-emerald-500 bg-emerald-50 p-3">
+        <div className="mb-4 rounded-md border-l-4 border-emerald-500 bg-emerald-50 p-3">
           <p className="text-sm text-emerald-800">Credenciais validadas com sucesso.</p>
         </div>
       )}
 
       {validateError && (
-        <div role="alert" className="mb-4 rounded-lg border-l-4 border-red-500 bg-red-50 p-3">
+        <div role="alert" className="mb-4 rounded-md border-l-4 border-red-500 bg-red-50 p-3">
           <p className="text-sm text-red-800">{validateError}</p>
         </div>
       )}
 
-      <button
-        type="button"
-        onClick={handleValidate}
-        disabled={isValidating}
-        className="w-full rounded-lg bg-blue-600 px-4 py-2 font-semibold text-white transition-colors hover:bg-blue-700 active:bg-blue-800 disabled:cursor-not-allowed disabled:bg-slate-300"
-      >
-        {isValidating ? 'Testando validação...' : 'Testar validação'}
-      </button>
+        <div className="flex justify-end border-t border-slate-100 pt-4">
+          <button
+            type="button"
+            onClick={handleValidate}
+            disabled={isValidating}
+            className="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-700 active:bg-blue-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+          >
+            {isValidating ? 'Testando validação...' : 'Testar validação'}
+          </button>
+        </div>
+      </div>
     </div>
   )
 }
