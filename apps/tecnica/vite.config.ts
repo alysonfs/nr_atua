@@ -8,4 +8,7 @@ export default defineConfig(({ command }) => ({
   // Em build (`vite build`) usa '/tecnica/' para que os assets gerados
   // referenciem '/tecnica/assets/...' — caminho real no bucket S3.
   base: command === 'serve' ? '/' : '/tecnica/',
+  // Porta fixa por app para evitar que o Vite auto-incremente e confunda
+  // configuração de CORS/API entre os frontends do monorepo.
+  server: { port: 5177, strictPort: true },
 }))
