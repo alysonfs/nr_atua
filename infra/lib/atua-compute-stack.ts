@@ -234,6 +234,8 @@ export class AtuaComputeStack extends cdk.Stack {
       'ASPNETCORE_ENVIRONMENT=Production',
       'Integrations__CredentialCipher__KmsKeyArn=${ATUA_KMS_KEY_ARN}',
       'ATUA_KMS_KEY_ARN=${ATUA_KMS_KEY_ARN}',
+      '# Padrão do projeto (igual ao Collector); ConnectionStrings__Atua é o alias legado.',
+      'Postgres__ConnectionString=Host=${ATUA_DB_HOST};Port=${ATUA_DB_PORT};Database=${ATUA_DB_NAME};Username=${ATUA_DB_USER};Password=${ATUA_DB_PASS}',
       'ConnectionStrings__Atua=Host=${ATUA_DB_HOST};Port=${ATUA_DB_PORT};Database=${ATUA_DB_NAME};Username=${ATUA_DB_USER};Password=${ATUA_DB_PASS}',
       'Authentication__SigningKey=${ATUA_JWT_SIGNING_KEY}',
       'Cors__AllowedOrigins__0=http://atua-462991286554-frontends.s3-website-sa-east-1.amazonaws.com',

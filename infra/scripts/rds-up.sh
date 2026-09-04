@@ -34,7 +34,7 @@ aws rds restore-db-instance-from-db-snapshot \
   --db-subnet-group-name "$SUBNET_GROUP_NAME" \
   --vpc-security-group-ids "$SG_ID" \
   --no-multi-az \
-  --no-publicly-accessible \
+  --publicly-accessible \
   --region "$REGION" \
   --tags Key=Project,Value=atua Key=Environment,Value=dev-mvp Key=Component,Value=database
 

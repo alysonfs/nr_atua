@@ -61,7 +61,7 @@ aws rds create-db-instance \
   --vpc-security-group-ids "$SG_ID" \
   --backup-retention-period 1 \
   --no-multi-az \
-  --no-publicly-accessible \
+  --publicly-accessible \
   --storage-encrypted \
   --region "$REGION" \
   --tags Key=Project,Value=atua Key=Environment,Value=dev-mvp Key=Component,Value=database

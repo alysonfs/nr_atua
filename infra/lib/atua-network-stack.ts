@@ -121,6 +121,21 @@ export class AtuaNetworkStack extends cdk.Stack {
     this.sgRds.addIngressRule(this.sgApi, ec2.Port.tcp(5432), 'Postgres a partir da API Master');
     this.sgRds.addIngressRule(this.sgCollector, ec2.Port.tcp(5432), 'Postgres a partir do Collector (quando ativado)');
     this.sgCollector.addEgressRule(this.sgRds, ec2.Port.tcp(5432), 'Egress Postgres para o RDS (consumer ADR-023)');
+    // Acesso local do operador (desenvolvimento, RDS com PubliclyAccessible=true).
+    // IP dinâmico do provedor — atualizar este /32 quando o IP mudar.
+    this.sgRds.addIngressRule(ec2.Peer.ipv4('186.236.211.186/32'), ec2.Port.tcp(5432), 'Postgres do operador (dev local)');
+
+    // Rota para o IGW nas subnets do RDS: necessária para o acesso público
+    // direto ao RDS (PubliclyAccessible=true) funcionar — sem esta rota o
+    // tráfego de retorno não sai da VPC e a conexão dá timeout. As subnets
+    // continuam sem NAT; instâncias sem IP público seguem inalcançáveis.
+    this.vpc.isolatedSubnets.forEach((subnet, i) => {
+      new ec2.CfnRoute(this, `RdsSubnetIgwRoute${i + 1}`, {
+        routeTableId: (subnet as ec2.Subnet).routeTable.routeTableId,
+        destinationCidrBlock: '0.0.0.0/0',
+        gatewayId: this.vpc.internetGatewayId,
+      });
+    });
 
 
     // --- Key Pair dedicado do projeto ---
