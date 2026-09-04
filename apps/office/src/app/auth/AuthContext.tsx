@@ -8,15 +8,8 @@
  * - Ao montar, tenta silenciosamente POST /auth/refresh para restaurar sessão
  *   via cookie existente. Falha tratada como "deslogado" sem erro visível.
  *
- * LIMITAÇÃO TEMPORÁRIA (débito técnico — ADR proposto por Ari/aws-architect):
- * No cenário de deploy cross-origin sem HTTPS (Office no S3 + API na EC2 sem
- * domínio próprio), o cookie HttpOnly de refresh NÃO é enviado pelo browser na
- * requisição POST /auth/refresh (política SameSite + ausência de Secure).
- * Por isso, a tentativa de restauração silenciosa de sessão ao montar sempre
- * falhará nesse ambiente — o usuário precisará fazer login manualmente após
- * cada expiração do access token (~15 min).
- * A renovação automática será reativada quando houver domínio + HTTPS
- * configurados (ambas as origens sob o mesmo domínio ou CORS com credenciais).
+ * Em desenvolvimento, React StrictMode pode remontar efeitos; a restauração
+ * de sessão precisa ser deduplicada porque refresh token é rotativo e single-use.
  */
 
 import {
@@ -48,6 +41,18 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | null>(null)
 
+let restoreSessionPromise: Promise<AccessTokenResponse | null> | null = null
+
+function restoreSessionOnce(): Promise<AccessTokenResponse | null> {
+  restoreSessionPromise ??= apiClient
+    .post<AccessTokenResponse>('/auth/refresh')
+    .finally(() => {
+      restoreSessionPromise = null
+    })
+
+  return restoreSessionPromise
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<AuthState>({
     accessToken: null,
@@ -69,18 +74,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     tokenRef.current = state.accessToken
   }, [state.accessToken])
 
-  // Tentativa silenciosa de restaurar sessão ao montar.
-  //
-  // NOTA: Em deploy cross-origin sem HTTPS (S3 + EC2), o cookie de refresh não
-  // chega ao servidor — a chamada retorna 401 e o catch abaixo garante logout
-  // limpo (accessToken=null, isLoading=false), sem loop ou erro não tratado.
-  // Esse é o comportamento esperado enquanto não houver domínio + HTTPS.
-  // Ref.: ADR proposto (débito técnico) — ver comentário no topo deste arquivo.
   useEffect(() => {
     let cancelled = false
 
-    apiClient
-      .post<AccessTokenResponse>('/auth/refresh')
+    restoreSessionOnce()
       .then((data) => {
         if (!cancelled && data) {
           setState({ accessToken: data.accessToken, isLoading: false })

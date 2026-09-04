@@ -47,12 +47,14 @@ docker compose ps
 | PostgreSQL  | localhost   | 5432   | atua     | atua    | atua_dev  |
 | MongoDB     | localhost   | 27017  | atua     | atua    | atua_dev  |
 
-**Connection string do PostgreSQL** (usada em `appsettings.Development.json` e migrations):
+**Connection string do PostgreSQL** (padrão do projeto: chave `Postgres:ConnectionString`,
+ou variável de ambiente `Postgres__ConnectionString` — usada pela API, pelo Coletor e pelas migrations):
 ```
 Host=localhost;Port=5432;Database=atua;Username=atua;Password=atua_dev
 ```
 
-**Connection string do MongoDB** (consumida pelo Worker Coletor):
+**Connection string do MongoDB** (chave `MongoDB:ConnectionString`, ou variável de
+ambiente `MongoDB__ConnectionString` — consumida pelo Worker Coletor):
 ```
 mongodb://atua:atua_dev@localhost:27017/atua?authSource=admin
 ```
@@ -90,8 +92,10 @@ dotnet ef database update
 ```
 
 > **Nota:** O `AtuaDbContextFactory` lê a connection string na ordem de precedência padrão do ASP.NET Core
-> (`appsettings.json` → `appsettings.Development.json` → user-secrets → variáveis de ambiente).
-> **Não é necessário exportar `ConnectionStrings__Atua` manualmente** antes de rodar `dotnet ef`.
+> (`appsettings.json` → `appsettings.Development.json` → user-secrets → variáveis de ambiente),
+> buscando `Postgres:ConnectionString` primeiro e `ConnectionStrings:Atua` (legado) como fallback.
+> **Não é necessário exportar `Postgres__ConnectionString` manualmente** antes de rodar `dotnet ef`
+> se o valor estiver no `appsettings.Development.json` ou já exportado no shell.
 
 Se o comando `dotnet ef` não estiver disponível:
 

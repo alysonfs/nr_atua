@@ -62,20 +62,16 @@ function resolveUrl(path: string): string {
 /**
  * Modo de credentials do fetch.
  *
- * BUG CORRIGIDO (2026-09-01): 'include' estava fixo, mas a API nunca envia
- * Access-Control-Allow-Credentials (Opção D — CORS sem AllowCredentials(),
- * ver Program.cs). O navegador rejeita QUALQUER resposta de preflight
- * cross-origin quando credentials='include' e esse header não vem 'true' —
- * isso bloqueava inclusive o /auth/signin, não só o /auth/refresh.
- *
- * Com VITE_API_BASE_URL definida (cenário cross-origin: S3 + EC2), o cookie
- * de refresh não seria entregue de qualquer forma (SameSite/Secure exigem
- * HTTPS), então 'omit' não perde nenhuma funcionalidade hoje. Sem a variável
- * (dev local, mesma origem via proxy do Vite), mantém 'include' para o
- * cookie de refresh continuar funcionando.
+ * Em desenvolvimento local, `localhost:5175` -> `localhost:5240` precisa de
+ * 'include' para enviar o cookie HttpOnly de refresh. Em deploy cross-origin
+ * sem HTTPS/domínio próprio, mantém 'omit' porque o refresh cookie não é viável.
  */
 function resolveCredentialsMode(): RequestCredentials {
-  return import.meta.env.VITE_API_BASE_URL ? 'omit' : 'include'
+  const base = import.meta.env.VITE_API_BASE_URL as string | undefined
+  if (!base) return 'include'
+
+  const url = new URL(base, window.location.origin)
+  return url.hostname === 'localhost' || url.hostname === '127.0.0.1' ? 'include' : 'omit'
 }
 
 async function request<TResponse>(

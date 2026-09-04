@@ -12,7 +12,7 @@ public sealed class AtuaDbContextFactory : IDesignTimeDbContextFactory<AtuaDbCon
 
         // Lê configuração na mesma ordem de precedência do runtime ASP.NET Core:
         // appsettings.json → appsettings.{env}.json → user-secrets → variáveis de ambiente.
-        // Isso permite que `dotnet ef` funcione sem exportar ConnectionStrings__Atua manualmente.
+        // Isso permite que `dotnet ef` funcione sem exportar Postgres__ConnectionString manualmente.
         var configuration = new ConfigurationBuilder()
             .SetBasePath(Directory.GetCurrentDirectory())
             .AddJsonFile("appsettings.json", optional: true)
@@ -21,7 +21,9 @@ public sealed class AtuaDbContextFactory : IDesignTimeDbContextFactory<AtuaDbCon
             .AddEnvironmentVariables()
             .Build();
 
-        var connectionString = configuration.GetConnectionString("Atua")
+        // Mesma precedência do Program.cs: padrão novo primeiro, legado como fallback.
+        var connectionString = configuration["Postgres:ConnectionString"]
+            ?? configuration.GetConnectionString("Atua")
             ?? "Host=localhost;Port=5432;Database=atua;Username=atua";
 
         var options = new DbContextOptionsBuilder<AtuaDbContext>()

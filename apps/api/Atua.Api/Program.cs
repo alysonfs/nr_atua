@@ -22,7 +22,10 @@ var builder = WebApplication.CreateBuilder(args);
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();
 
-var connectionString = builder.Configuration.GetConnectionString("Atua")
+// Padrão do projeto: Postgres:ConnectionString (env Postgres__ConnectionString),
+// igual ao Collector. ConnectionStrings:Atua é fallback legado (user-data EC2 antigo).
+var connectionString = builder.Configuration["Postgres:ConnectionString"]
+    ?? builder.Configuration.GetConnectionString("Atua")
     ?? Environment.GetEnvironmentVariable("ConnectionStrings__Atua")
     ?? "Host=localhost;Database=atua;Username=atua";
 
@@ -160,12 +163,17 @@ builder.Services.AddCors(options =>
     options.AddDefaultPolicy(policy =>
     {
         if (corsOrigins.Length > 0)
+        {
             policy.WithOrigins(corsOrigins);
+            if (builder.Environment.IsDevelopment())
+                policy.AllowCredentials();
+        }
         else
+        {
             policy.AllowAnyOrigin();  // fallback apenas; produção deve sempre configurar Cors:AllowedOrigins
+        }
 
         policy.AllowAnyHeader().AllowAnyMethod();
-        // NÃO usar AllowCredentials() — incompatível com AllowAnyOrigin() e desnecessário na Opção D.
     });
 });
 
@@ -174,7 +182,6 @@ var app = builder.Build();
 // Verificação de segurança: KmsKeyArn obrigatório em produção (Achado 1 / D9).
 // Em produção, cifrar credenciais de cliente com chave local é uma falha de
 // segurança silenciosa inaceitável — preferimos não subir a aplicação.
-// Em desenvolvimento, o cipher local é aceito mas registra aviso explícito.
 var startupLogger = app.Logger;
 if (string.IsNullOrWhiteSpace(kmsKeyArn))
 {

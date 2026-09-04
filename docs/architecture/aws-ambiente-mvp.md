@@ -81,10 +81,15 @@ opcional.
 
 - **Sem NAT Gateway** (`natGateways: 0`). Decisão de custo: um NAT Gateway em
   `sa-east-1` custaria mais que todo o restante do ambiente somado. As
-  subnets privadas são **isoladas** (sem saída para a internet); recursos que
-  precisam de internet ficam na subnet pública com IP público.
-- **SSH restrito** ao IP `186.236.211.36/32` do operador. Não há `0.0.0.0/0`
-  na porta 22.
+  subnets privadas do RDS **ganharam rota `0.0.0.0/0` → IGW em 2026-09-03**
+  para viabilizar o acesso público direto ao RDS (dev local, sem túnel SSH);
+  instâncias sem IP público nessas subnets continuam inalcançáveis de fora.
+- **SSH restrito** ao IP do operador (`186.236.211.36/32` — IP dinâmico,
+  pode divergir do atual). Não há `0.0.0.0/0` na porta 22.
+- **Postgres (5432) liberado no SG do RDS** para o IP do operador
+  (`186.236.211.186/32` em 2026-09-03) além dos SGs da API e do Collector.
+  IP dinâmico: quando mudar, atualizar o `/32` em
+  `infra/lib/atua-network-stack.ts` e redeployar o `AtuaNetworkStack`.
 - A **chave privada** do Key Pair é gerada pela AWS e armazenada em
   SSM Parameter Store como `SecureString`. O material privado não está no
   repositório, no `cdk.out`, nem neste documento. Recuperação via
@@ -105,7 +110,7 @@ opcional.
 | Storage | 20 GB, `gp2` |
 | Multi-AZ | Não (Single-AZ) |
 | `StorageEncrypted` | `true` (chave gerenciada `aws/rds`) |
-| `PubliclyAccessible` | `false` |
+| `PubliclyAccessible` | `true` (desde 2026-09-03 — dev local sem túnel SSH; ingress restrito ao IP do operador) |
 | Retenção de backup | **1 dia** (ver §3.1) |
 
 ### 3.1 Restrição do Free Tier na retenção de backup

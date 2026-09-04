@@ -65,58 +65,80 @@ public static class AuthEndpoints
         .Produces(StatusCodes.Status400BadRequest)
         .Produces(StatusCodes.Status409Conflict);
 
-        endpoints.MapPost("/auth/signin", async (SignInRequest request, AuthService service,
-            HttpResponse response, CancellationToken cancellationToken) =>
+        endpoints.MapPost("/auth/signin", async (SignInRequest body, AuthService service,
+            HttpRequest request, HttpResponse response, IWebHostEnvironment environment,
+            CancellationToken cancellationToken) =>
         {
-            var tokens = await service.SignInAsync(request.Email, request.Password, cancellationToken);
+            var tokens = await service.SignInAsync(body.Email, body.Password, cancellationToken);
             if (tokens is null) return Results.Unauthorized();
-            SetRefreshCookie(response, tokens.RefreshToken);
+            SetRefreshCookie(request, response, tokens.RefreshToken, environment);
             return Results.Ok(new AccessTokenResponse(tokens.AccessToken));
         });
 
         endpoints.MapPost("/auth/refresh", async (HttpRequest request, HttpResponse response,
-            AuthService service, CancellationToken cancellationToken) =>
+                AuthService service, IWebHostEnvironment environment, CancellationToken cancellationToken) =>
         {
             if (!request.Cookies.TryGetValue(RefreshCookieName, out var refreshToken))
                 return Results.Unauthorized();
             var tokens = await service.RefreshAsync(refreshToken, cancellationToken);
             if (tokens is null)
             {
-                response.Cookies.Delete(RefreshCookieName);
+                DeleteRefreshCookie(request, response, environment);
                 return Results.Unauthorized();
             }
-            SetRefreshCookie(response, tokens.RefreshToken);
+            SetRefreshCookie(request, response, tokens.RefreshToken, environment);
             return Results.Ok(new AccessTokenResponse(tokens.AccessToken));
         });
 
         endpoints.MapPost("/auth/signout", async (ClaimsPrincipal user, AuthService service,
-            HttpResponse response, CancellationToken cancellationToken) =>
+            HttpRequest request, HttpResponse response, IWebHostEnvironment environment,
+            CancellationToken cancellationToken) =>
         {
             if (Guid.TryParse(user.FindFirstValue("sid"), out var sessionId))
                 await service.SignOutAsync(sessionId, cancellationToken);
-            response.Cookies.Delete(RefreshCookieName);
+            DeleteRefreshCookie(request, response, environment);
             return Results.NoContent();
         }).RequireAuthorization("BrowserSession");
     }
 
     private const string RefreshCookieName = "atua_refresh";
 
-    private static void SetRefreshCookie(HttpResponse response, string refreshToken) =>
+    private static void SetRefreshCookie(HttpRequest request, HttpResponse response,
+        string refreshToken, IWebHostEnvironment environment)
+    {
+        var localDevelopment = IsLocalDevelopmentRequest(request, environment);
         // OPÇÃO D (aprovada pelo usuário, 2026-09-01 — débito técnico documentado):
-        // O cookie usa Secure=true e SameSite=Strict, o que é correto para consumidores
-        // na mesma origem (ex.: localhost em dev). Para consumidores cross-origin sem HTTPS
-        // (ex.: Office no S3 falando com API na EC2), o browser NÃO enviará este cookie —
-        // isso é um comportamento esperado e não um bug. Nesses cenários, o cliente deve
-        // operar exclusivamente com o access token JWT em memória via Authorization: Bearer.
-        // O fluxo de refresh via cookie (/auth/refresh) permanece funcional para same-origin.
-        // Reverter para SameSite=None + Secure quando houver domínio próprio + HTTPS.
+        // Em dev local, Office e API rodam em portas diferentes; SameSite=Lax permite
+        // restaurar sessão sem exigir HTTPS. Produção continua Secure + Strict.
         response.Cookies.Append(RefreshCookieName, refreshToken, new CookieOptions
         {
             HttpOnly = true,
-            Secure = true,
-            SameSite = SameSiteMode.Strict,
+            Secure = !localDevelopment,
+            SameSite = localDevelopment ? SameSiteMode.Lax : SameSiteMode.Strict,
             Path = "/auth"
         });
+    }
+
+    private static void DeleteRefreshCookie(HttpRequest request, HttpResponse response,
+        IWebHostEnvironment environment)
+    {
+        var localDevelopment = IsLocalDevelopmentRequest(request, environment);
+        response.Cookies.Delete(RefreshCookieName, new CookieOptions
+        {
+            Secure = !localDevelopment,
+            SameSite = localDevelopment ? SameSiteMode.Lax : SameSiteMode.Strict,
+            Path = "/auth"
+        });
+    }
+
+    private static bool IsLocalDevelopmentRequest(HttpRequest request, IWebHostEnvironment environment)
+    {
+        var host = request.Host.Host;
+        return environment.IsDevelopment()
+            || string.Equals(host, "localhost", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(host, "127.0.0.1", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(host, "::1", StringComparison.OrdinalIgnoreCase);
+    }
 }
 
 public sealed record SignUpRequest(string Email, string Password, string PasswordConfirmation);
