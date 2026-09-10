@@ -1,0 +1,90 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Atua.Api",
+      "type": "coreclr",
+      "request": "launch",
+      "program": "${workspaceFolder}/apps/api/Atua.Api/bin/Debug/net10.0/Atua.Api.dll",
+      "cwd": "${workspaceFolder}/apps/api/Atua.Api",
+      "stopAtEntry": false,
+      "launchSettingsProfile": "http",
+      "preLaunchTask": "build Atua.Api",
+      "console": "integratedTerminal",
+      "justMyCode": true
+    },
+    {
+      "name": "Atua.Collector",
+      "type": "coreclr",
+      "request": "launch",
+      "program": "${workspaceFolder}/apps/collector/Atua.Collector/bin/Debug/net10.0/Atua.Collector.dll",
+      "cwd": "${workspaceFolder}/apps/collector/Atua.Collector",
+      "stopAtEntry": false,
+      "launchSettingsProfile": "Atua.Collector",
+      "preLaunchTask": "build Atua.Collector",
+      "console": "integratedTerminal",
+      "justMyCode": true,
+      "env": {
+        "CollectorWorker__ClaimServiceToken": "ThskIWrhWwqhi5V94b67ecMjJGsx3xV2hSyAb7srItg5qiwgm6VjvhykzKVcX+Wg",
+        "CollectorWorker__CompleteServiceToken": "DfLbJOzEFZqWlP7/TGF/Uvo2OmJqbApnUeE6lXeIrLVYmjNJsDJ5IgouqK0R8tyx",
+        "CollectorWorker__EligibilityServiceToken": "CcbOFcYLPbwy70osq326BkuPWpKT0o77aYDpVN8HL/xOgyMYXXcV5kRZbTFNJ/ec"
+      }
+    },
+    {
+      "name": "React: landing",
+      "type": "pwa-chrome",
+      "request": "launch",
+      "url": "http://localhost:5173",
+      "webRoot": "${workspaceFolder}/apps/landing",
+      "preLaunchTask": "dev landing",
+      "sourceMaps": true
+    },
+    {
+      "name": "React: manager",
+      "type": "pwa-chrome",
+      "request": "launch",
+      "url": "http://localhost:5174",
+      "webRoot": "${workspaceFolder}/apps/manager",
+      "preLaunchTask": "dev manager",
+      "sourceMaps": true
+    },
+    {
+      "name": "React: office",
+      "type": "pwa-chrome",
+      "request": "launch",
+      "url": "http://localhost:5175",
+      "webRoot": "${workspaceFolder}/apps/office",
+      "preLaunchTask": "dev office",
+      "sourceMaps": true
+    },
+    {
+      "name": "React: tecnica",
+      "type": "pwa-chrome",
+      "request": "launch",
+      "url": "http://localhost:5176",
+      "webRoot": "${workspaceFolder}/apps/tecnica",
+      "preLaunchTask": "dev tecnica",
+      "sourceMaps": true
+    }
+  ],
+  "compounds": [
+    {
+      "name": "Atua.Api + Atua.Collector",
+      "configurations": [
+        "Atua.Api",
+        "Atua.Collector"
+      ],
+      "stopAll": true
+    },
+    {
+      "name": "React: todos os apps",
+      "configurations": [
+        "React: landing",
+        "React: manager",
+        "React: office",
+        "React: tecnica"
+      ],
+      "stopAll": true
+    }
+  ]
+}
