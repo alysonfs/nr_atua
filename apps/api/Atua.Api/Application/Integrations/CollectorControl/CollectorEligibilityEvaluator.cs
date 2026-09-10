@@ -1,4 +1,4 @@
-using Atua.Api.Application.Billing;
+using Atua.Api.Domain.Billing;
 using Atua.Api.Domain.Integrations;
 using Atua.Api.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -7,15 +7,14 @@ namespace Atua.Api.Application.Integrations.CollectorControl;
 
 /// <summary>
 /// Implementação local (mesma fronteira transacional) de
-/// <see cref="ICollectorEligibilityEvaluator"/>, conforme ADR-020.
+/// <see cref="ICollectorEligibilityEvaluator"/>, conforme ADR-020/ADR-024.
 ///
-/// Reusa <see cref="TrialEligibilityService"/> (ADR-015) como regra única de
-/// Trial e lê o <c>ValidationStatus</c> vigente da credencial iService da
-/// integração (ADR-018/RF-007).
+/// Verifica apenas o <see cref="TenantPlan"/> ativo e não expirado do tenant.
+/// Não bloqueia mais por <c>ValidationStatus</c> da credencial iService: o
+/// status de validação continua sendo lido apenas para informar o usuário
+/// (ADR-024).
 /// </summary>
-public sealed class CollectorEligibilityEvaluator(
-    AtuaDbContext dbContext,
-    TrialEligibilityService trialEligibilityService)
+public sealed class CollectorEligibilityEvaluator(AtuaDbContext dbContext, TimeProvider timeProvider)
     : ICollectorEligibilityEvaluator
 {
     public async Task<CollectorEligibility> EvaluateAsync(Guid tenantId, Guid integrationId,
@@ -30,19 +29,16 @@ public sealed class CollectorEligibilityEvaluator(
 
         var validationStatus = credentialStatus ?? EIServiceValidationStatus.NotValidated;
 
-        var trialEligible = await trialEligibilityService.IsTenantEligibleAsync(tenantId, cancellationToken);
-        if (!trialEligible)
-        {
-            // RN-008.3: Trial inelegível bloqueia antes de qualquer outra
-            // consideração.
-            return CollectorEligibility.Blocked(EActivationBlockReason.TrialIneligible, validationStatus);
-        }
+        var now = timeProvider.GetUtcNow();
+        var hasActivePlan = await dbContext.TenantPlans.AsNoTracking().AnyAsync(
+            tenantPlan => tenantPlan.TenantId == tenantId && tenantPlan.Status == EBillingStatus.Active &&
+                          (tenantPlan.ExpiresAt == null || tenantPlan.ExpiresAt > now), cancellationToken);
 
-        if (validationStatus != EIServiceValidationStatus.Succeeded)
+        if (!hasActivePlan)
         {
-            // RN-008.3: credencial ausente ou sem validação Succeeded.
-            return CollectorEligibility.Blocked(EActivationBlockReason.CredentialsNotValidated,
-                validationStatus);
+            // RN-008.3/RF-020.7: plano inelegível (ausente/expirado) bloqueia
+            // antes de qualquer outra consideração.
+            return CollectorEligibility.Blocked(EActivationBlockReason.PlanIneligible, validationStatus);
         }
 
         return CollectorEligibility.Allowed(validationStatus);

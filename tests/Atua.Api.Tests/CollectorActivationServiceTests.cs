@@ -1,4 +1,3 @@
-using Atua.Api.Application.Billing;
 using Atua.Api.Application.Integrations.CollectorControl;
 using Atua.Api.Domain.Billing;
 using Atua.Api.Domain.Identity;
@@ -55,7 +54,7 @@ public class CollectorActivationServiceTests
     }
 
     [Fact]
-    public async Task AtivacaoEhRecusadaQuandoTrialInelegivelENenhumComandoEhCriado()
+    public async Task AtivacaoEhRecusadaQuandoPlanoInelegivelENenhumComandoEhCriado()
     {
         await using var context = CreateContext();
         var seed = await SeedAsync(context, trialActive: false,
@@ -66,14 +65,15 @@ public class CollectorActivationServiceTests
             "chave-1", CancellationToken.None);
 
         Assert.Equal(ECollectorActivationStatusResult.NotEligible, result.Status);
-        Assert.Equal(EActivationBlockReason.TrialIneligible, result.BlockReason);
+        Assert.Equal(EActivationBlockReason.PlanIneligible, result.BlockReason);
         Assert.Empty(context.ImmediateCollectionCommands);
         Assert.Empty(context.CollectorActivations);
     }
 
     [Fact]
-    public async Task AtivacaoEhRecusadaQuandoCredencialNaoEstaSucceeded()
+    public async Task AtivacaoEhPermitidaMesmoComCredencialNaoSucceeded()
     {
+        // ADR-024: a validação de credencial não bloqueia mais a ativação.
         await using var context = CreateContext();
         var seed = await SeedAsync(context, trialActive: true,
             credentialStatus: EIServiceValidationStatus.Failed);
@@ -82,14 +82,14 @@ public class CollectorActivationServiceTests
         var result = await service.ActivateAsync(seed.OwnerId, seed.TenantId, seed.IntegrationId,
             "chave-1", CancellationToken.None);
 
-        Assert.Equal(ECollectorActivationStatusResult.NotEligible, result.Status);
-        Assert.Equal(EActivationBlockReason.CredentialsNotValidated, result.BlockReason);
-        Assert.Empty(context.ImmediateCollectionCommands);
+        Assert.Equal(ECollectorActivationStatusResult.Success, result.Status);
+        Assert.Single(context.ImmediateCollectionCommands);
     }
 
     [Fact]
-    public async Task AtivacaoEhRecusadaQuandoCredencialAusente()
+    public async Task AtivacaoEhPermitidaMesmoComCredencialAusente()
     {
+        // ADR-024: a validação de credencial não bloqueia mais a ativação.
         await using var context = CreateContext();
         var seed = await SeedAsync(context, trialActive: true, credentialStatus: null);
         var service = CreateService(context);
@@ -97,9 +97,8 @@ public class CollectorActivationServiceTests
         var result = await service.ActivateAsync(seed.OwnerId, seed.TenantId, seed.IntegrationId,
             "chave-1", CancellationToken.None);
 
-        Assert.Equal(ECollectorActivationStatusResult.NotEligible, result.Status);
-        Assert.Equal(EActivationBlockReason.CredentialsNotValidated, result.BlockReason);
-        Assert.Empty(context.ImmediateCollectionCommands);
+        Assert.Equal(ECollectorActivationStatusResult.Success, result.Status);
+        Assert.Single(context.ImmediateCollectionCommands);
     }
 
     [Fact]
@@ -228,9 +227,9 @@ public class CollectorActivationServiceTests
     }
 
     [Fact]
-    public async Task ReconciliacaoDesativaECancelaQuandoTrialExpira()
+    public async Task ReconciliacaoDesativaECancelaQuandoPlanoExpira()
     {
-        // RF-008.6.
+        // RF-008.6/RF-020.7.
         await using var context = CreateContext();
         var seed = await SeedAsync(context, trialActive: true,
             credentialStatus: EIServiceValidationStatus.Succeeded);
@@ -238,7 +237,7 @@ public class CollectorActivationServiceTests
         await service.ActivateAsync(seed.OwnerId, seed.TenantId, seed.IntegrationId, "chave-1",
             CancellationToken.None);
 
-        context.TrialSubscriptions.RemoveRange(context.TrialSubscriptions);
+        context.TenantPlans.RemoveRange(context.TenantPlans);
         await context.SaveChangesAsync();
 
         await service.ReconcileEligibilityAsync(seed.TenantId, seed.IntegrationId, CancellationToken.None);
@@ -246,31 +245,7 @@ public class CollectorActivationServiceTests
 
         var activation = Assert.Single(context.CollectorActivations);
         Assert.Equal(ECollectorActivationStatus.Inactive, activation.Status);
-        Assert.Equal(ECollectorDeactivationReason.TrialIneligible, activation.DeactivationReason);
-        var command = Assert.Single(context.ImmediateCollectionCommands);
-        Assert.Equal(EImmediateCollectionCommandStatus.Cancelled, command.Status);
-    }
-
-    [Fact]
-    public async Task ReconciliacaoDesativaECancelaQuandoCredencialPerdeSucceeded()
-    {
-        await using var context = CreateContext();
-        var seed = await SeedAsync(context, trialActive: true,
-            credentialStatus: EIServiceValidationStatus.Succeeded);
-        var service = CreateService(context);
-        await service.ActivateAsync(seed.OwnerId, seed.TenantId, seed.IntegrationId, "chave-1",
-            CancellationToken.None);
-
-        var credential = await context.IServiceCredentials.SingleAsync();
-        credential.RecordValidation(EIServiceValidationStatus.Failed, DateTimeOffset.UtcNow);
-        await context.SaveChangesAsync();
-
-        await service.ReconcileEligibilityAsync(seed.TenantId, seed.IntegrationId, CancellationToken.None);
-        await context.SaveChangesAsync();
-
-        var activation = Assert.Single(context.CollectorActivations);
-        Assert.Equal(ECollectorActivationStatus.Inactive, activation.Status);
-        Assert.Equal(ECollectorDeactivationReason.CredentialNotValidated, activation.DeactivationReason);
+        Assert.Equal(ECollectorDeactivationReason.PlanIneligible, activation.DeactivationReason);
         var command = Assert.Single(context.ImmediateCollectionCommands);
         Assert.Equal(EImmediateCollectionCommandStatus.Cancelled, command.Status);
     }
@@ -394,7 +369,7 @@ public class CollectorActivationServiceTests
 
         Assert.NotNull(view);
         Assert.False(view!.CanActivate);
-        Assert.Equal("TrialIneligible", view.ActivationBlockReason);
+        Assert.Equal("PlanIneligible", view.ActivationBlockReason);
         var serialized = System.Text.Json.JsonSerializer.Serialize(view);
         Assert.DoesNotContain("senha", serialized, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("ciphertext", serialized, StringComparison.OrdinalIgnoreCase);
@@ -402,8 +377,7 @@ public class CollectorActivationServiceTests
 
     private static CollectorActivationService CreateService(AtuaDbContext context) =>
         new(context,
-            new CollectorEligibilityEvaluator(context,
-                new TrialEligibilityService(context, TimeProvider.System)),
+            new CollectorEligibilityEvaluator(context, TimeProvider.System),
             TimeProvider.System);
 
     private sealed record Seed(Guid TenantId, Guid IntegrationId, Guid OwnerId, Guid AdminId);
@@ -424,10 +398,11 @@ public class CollectorActivationServiceTests
 
         if (trialActive)
         {
-            var trial = new TrialSubscription(Guid.CreateVersion7(), owner.Id, DateTimeOffset.UtcNow,
-                DateTimeOffset.UtcNow.AddDays(7));
-            trial.AssociateWithTenant(tenant.Id);
-            context.TrialSubscriptions.Add(trial);
+            var plan = new Plan(Guid.CreateVersion7(), "trial", "Trial", isFree: true, value: 0m,
+                durationDays: 7, maxIntegrations: 2, maxUsers: 5, isActive: true);
+            context.Plans.Add(plan);
+            context.TenantPlans.Add(new TenantPlan(Guid.CreateVersion7(), tenant.Id, plan.Id,
+                DateTimeOffset.UtcNow, DateTimeOffset.UtcNow.AddDays(7)));
         }
 
         if (credentialStatus is not null)

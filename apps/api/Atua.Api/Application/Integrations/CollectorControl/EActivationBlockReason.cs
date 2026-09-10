@@ -7,6 +7,5 @@ namespace Atua.Api.Application.Integrations.CollectorControl;
 public enum EActivationBlockReason
 {
     None,
-    TrialIneligible,
-    CredentialsNotValidated
+    PlanIneligible
 }

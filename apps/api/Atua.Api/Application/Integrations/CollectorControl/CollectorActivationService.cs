@@ -171,10 +171,9 @@ public sealed class CollectorActivationService(
         if (eligibility.Eligible) return;
 
         // RF-008.7: um comando cancelado nunca é reativado automaticamente;
-        // recuperar a elegibilidade não reativa o Agente.
-        var reason = eligibility.BlockReason == EActivationBlockReason.TrialIneligible
-            ? ECollectorDeactivationReason.TrialIneligible
-            : ECollectorDeactivationReason.CredentialNotValidated;
+        // recuperar a elegibilidade não reativa o Agente. ADR-024: o único
+        // motivo de bloqueio restante é o plano do tenant.
+        var reason = ECollectorDeactivationReason.PlanIneligible;
 
         var now = timeProvider.GetUtcNow();
         if (activation.Status == ECollectorActivationStatus.Active)

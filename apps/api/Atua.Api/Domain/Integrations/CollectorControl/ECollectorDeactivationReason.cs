@@ -7,8 +7,7 @@ namespace Atua.Api.Domain.Integrations.CollectorControl;
 public enum ECollectorDeactivationReason
 {
     Manual,
-    TrialIneligible,
-    CredentialNotValidated,
+    PlanIneligible,
 
     /// <summary>
     /// Timeout de re-claim: o Worker não concluiu o comando dentro do prazo

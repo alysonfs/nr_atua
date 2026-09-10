@@ -1,4 +1,3 @@
-using Atua.Api.Application.Billing;
 using Atua.Api.Application.Integrations;
 using Atua.Api.Application.Integrations.CollectorControl;
 using Atua.Api.Domain.Billing;
@@ -204,8 +203,11 @@ public class ImmediateCollectionCommandServiceTests
     // -----------------------------------------------------------------------
 
     [Fact]
-    public async Task Complete_CredentialRejected_InvalidaValidationStatusEReconciliaElegibilidade()
+    public async Task Complete_CredentialRejected_InvalidaValidationStatusMasNaoDesativaAgente()
     {
+        // ADR-024: a reconciliação de elegibilidade passou a considerar
+        // apenas o plano do tenant; invalidar a credencial não desativa mais
+        // o Agente Coletor (apenas atualiza o ValidationStatus informativo).
         await using var context = CreateContext();
         var cipher = CreateCipher();
         var (tenant, integration, provider, command) = await SeedWithCommandAsync(context, trialActive: true);
@@ -235,8 +237,7 @@ public class ImmediateCollectionCommandServiceTests
         Assert.Equal(EIServiceValidationStatus.Failed, credential.ValidationStatus);
 
         var act = await context.CollectorActivations.SingleAsync();
-        Assert.Equal(ECollectorActivationStatus.Inactive, act.Status);
-        Assert.Equal(ECollectorDeactivationReason.CredentialNotValidated, act.DeactivationReason);
+        Assert.Equal(ECollectorActivationStatus.Active, act.Status);
     }
 
     [Fact]
@@ -468,8 +469,7 @@ public class ImmediateCollectionCommandServiceTests
         var tp = timeProvider ?? TimeProvider.System;
         var activationService = new CollectorActivationService(
             context,
-            new CollectorEligibilityEvaluator(context,
-                new TrialEligibilityService(context, tp)),
+            new CollectorEligibilityEvaluator(context, tp),
             tp);
         return new ImmediateCollectionCommandService(
             context, cipher, activationService, tp,
@@ -494,10 +494,11 @@ public class ImmediateCollectionCommandServiceTests
 
         if (trialActive)
         {
-            var trial = new TrialSubscription(Guid.CreateVersion7(), owner.Id, DateTimeOffset.UtcNow,
-                DateTimeOffset.UtcNow.AddDays(7));
-            trial.AssociateWithTenant(tenant.Id);
-            context.TrialSubscriptions.Add(trial);
+            var plan = new Plan(Guid.CreateVersion7(), "trial", "Trial", isFree: true, value: 0m,
+                durationDays: 7, maxIntegrations: 2, maxUsers: 5, isActive: true);
+            context.Plans.Add(plan);
+            context.TenantPlans.Add(new TenantPlan(Guid.CreateVersion7(), tenant.Id, plan.Id,
+                DateTimeOffset.UtcNow, DateTimeOffset.UtcNow.AddDays(7)));
         }
 
         var command = new ImmediateCollectionCommand(Guid.CreateVersion7(), tenant.Id, integration.Id,

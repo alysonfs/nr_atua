@@ -2,7 +2,6 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Security.Claims;
 using System.Text.Encodings.Web;
-using Atua.Api.Application.Billing;
 using Atua.Api.Application.Integrations.CollectorControl;
 using Atua.Api.Domain.Billing;
 using Atua.Api.Domain.Identity;
@@ -62,18 +61,18 @@ public class CollectorActivationEndpointsTests
     }
 
     [Fact]
-    public async Task PutRetorna409QuandoCredencialNaoValidada()
+    public async Task PutAtivaMesmoSemCredencialValidada()
     {
+        // ADR-024: a ativação não é mais bloqueada por validação de
+        // credencial iService, apenas pela elegibilidade de plano.
         var (app, databaseName) = await CreateApplicationAsync();
         await using var appDisposable = app;
         var seed = await SeedAsync(databaseName, trialActive: true, credentialStatus: null);
         var client = CreateClient(app, seed.OwnerId, "chave-1");
 
         var response = await client.PutAsync(RouteFor(seed), null);
-        var raw = await response.Content.ReadAsStringAsync();
 
-        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
-        Assert.Contains("CredentialsNotValidated", raw);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
     [Fact]
@@ -204,10 +203,11 @@ public class CollectorActivationEndpointsTests
 
         if (trialActive)
         {
-            var trial = new TrialSubscription(Guid.CreateVersion7(), owner.Id, DateTimeOffset.UtcNow,
-                DateTimeOffset.UtcNow.AddDays(7));
-            trial.AssociateWithTenant(tenant.Id);
-            context.TrialSubscriptions.Add(trial);
+            var plan = new Plan(Guid.CreateVersion7(), "trial", "Trial", isFree: true, value: 0m,
+                durationDays: 7, maxIntegrations: 2, maxUsers: 5, isActive: true);
+            context.Plans.Add(plan);
+            context.TenantPlans.Add(new TenantPlan(Guid.CreateVersion7(), tenant.Id, plan.Id,
+                DateTimeOffset.UtcNow, DateTimeOffset.UtcNow.AddDays(7)));
         }
 
         if (credentialStatus is not null)
@@ -234,7 +234,6 @@ public class CollectorActivationEndpointsTests
         builder.Services.AddDbContext<AtuaDbContext>(options =>
             options.UseInMemoryDatabase(capturedDatabaseName));
         builder.Services.AddSingleton(TimeProvider.System);
-        builder.Services.AddScoped<TrialEligibilityService>();
         builder.Services.AddScoped<ICollectorEligibilityEvaluator, CollectorEligibilityEvaluator>();
         builder.Services.AddScoped<CollectorActivationService>();
         builder.Services.AddAuthorization(options =>
