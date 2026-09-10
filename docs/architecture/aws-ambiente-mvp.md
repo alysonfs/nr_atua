@@ -154,13 +154,23 @@ scraping ou agendamento foi implantada (ver `infra/README.md` §6).
 - `atua-462991286554-backups` — backups de RDS
 - `atua-462991286554-releases` — artifacts de release
 
-### 5.1 Frontends publicados (2026-08-30)
+### 5.1 Frontends publicados (atualizado em 2026-09-10)
 
 **Bucket:** `atua-462991286554-frontends`  
 **Região:** `sa-east-1`  
-**Tipo:** website estático (sem CloudFront)
+**Tipo:** origem S3 privada para CloudFront/OAC.
 
-**URLs de acesso (website hosting):**
+**URLs públicas HTTPS atuais:**
+
+| App | URL |
+|---|---|
+| Landing | `https://atyno.com.br/` |
+| Landing (`www`) | `https://www.atyno.com.br/` |
+| Office | `https://office.atyno.com.br/` |
+| Manager | `https://manager.atyno.com.br/` |
+| Tecnica | `https://tecnica.atyno.com.br/` |
+
+**URLs de acesso legado por website hosting:**
 
 | App | URL | Base path | Deploy |
 |---|---|---|---|
@@ -171,11 +181,31 @@ scraping ou agendamento foi implantada (ver `infra/README.md` §6).
 
 **Configuração:**
 
-- Cada app usa base path condicional no `vite.config.ts`:
-  - Em `serve` (desenvolvimento): base path é `/`.
-  - Em `build` (produção): base path é `/<prefixo>/` (ex.: `/office/`).
+- No estado legado, cada app usava um prefixo no `vite.config.ts`. Para o
+  domínio aprovado, os builds usam `/` na raiz de cada subdomínio.
 - Referências absolutas a `icons.svg` e outros assets foram migradas para `import.meta.env.BASE_URL` (commits `c4ed31d`, `0d5551f`, `8c75772`).
-- Bucket policy `PublicReadFrontends` no CDK cobre os 4 prefixos; a raiz do bucket (`/`) permanece `403 Forbidden`.
+- O bucket bloqueia acesso público e permite leitura via CloudFront/OAC.
+
+**Destino aprovado para o domínio `atyno.com.br`:**
+
+| App | URL pública desejada |
+|---|---|
+| Landing | `https://atyno.com.br/` |
+| Office | `https://office.atyno.com.br/` |
+| Manager | `https://manager.atyno.com.br/` |
+| Tecnica | `https://tecnica.atyno.com.br/` |
+| API | `https://api.atyno.com.br/` |
+
+Essa publicação usa Route 53, certificado ACM em `us-east-1` e CloudFront com
+origem S3 protegida por OAC. O registro `.com.br` permanece no GoDaddy;
+somente os nameservers foram delegados para a hosted zone Route 53. O
+procedimento completo e os bloqueios remanescentes estão em
+[`dominio-atyno-aws.md`](./dominio-atyno-aws.md).
+
+A API pública responde em `https://api.atyno.com.br`. A distribuição
+CloudFront usa a origem técnica `api-origin.atyno.com.br`, atualizada pelo alvo
+`make sync-api-domain` com o IP público atual da EC2 efêmera após cada
+`make up`.
 
 **Estado do conteúdo (2026-08-30):**
 
@@ -188,11 +218,14 @@ scraping ou agendamento foi implantada (ver `infra/README.md` §6).
 ```bash
 cd infra/
 
-# Deploy individual
-make deploy-landing   # publica Landing em /landing/
-make deploy-office    # publica Office em /office/
-make deploy-manager   # publica Manager em /manager/
-make deploy-tecnica   # publica Tecnica em /tecnica/
+# Deploy individual — destinos S3 usados pelas distribuições CloudFront
+make deploy-landing
+make deploy-office
+make deploy-manager
+make deploy-tecnica
+
+# Atualizar a origem da API quando a EC2 for recriada
+make sync-api-domain
 
 # Listar todos os alvos
 make help | grep deploy

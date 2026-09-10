@@ -238,7 +238,10 @@ export class AtuaComputeStack extends cdk.Stack {
       'Postgres__ConnectionString=Host=${ATUA_DB_HOST};Port=${ATUA_DB_PORT};Database=${ATUA_DB_NAME};Username=${ATUA_DB_USER};Password=${ATUA_DB_PASS}',
       'ConnectionStrings__Atua=Host=${ATUA_DB_HOST};Port=${ATUA_DB_PORT};Database=${ATUA_DB_NAME};Username=${ATUA_DB_USER};Password=${ATUA_DB_PASS}',
       'Authentication__SigningKey=${ATUA_JWT_SIGNING_KEY}',
-      'Cors__AllowedOrigins__0=http://atua-462991286554-frontends.s3-website-sa-east-1.amazonaws.com',
+      'Cors__AllowedOrigins__0=https://atyno.com.br',
+      'Cors__AllowedOrigins__1=https://office.atyno.com.br',
+      'Cors__AllowedOrigins__2=https://manager.atyno.com.br',
+      'Cors__AllowedOrigins__3=https://tecnica.atyno.com.br',
       // Placeholder ate existir dominio + identidade verificada no SES.
       // O envio real de e-mail (confirmacao de cadastro) provavelmente falhara
       // (SES em sandbox / sem identidade verificada), mas isso e uma falha
@@ -550,4 +553,3 @@ export class AtuaComputeStack extends cdk.Stack {
     new cdk.CfnOutput(this, 'CollectorPublicIp', { value: this.collectorInstance.instancePublicIp });
   }
 }
-

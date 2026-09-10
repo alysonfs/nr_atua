@@ -152,12 +152,9 @@ builder.Services.Configure<ImmediateCollectionOptions>(
 builder.Services.AddScoped<ImmediateCollectionCommandService>();
 builder.Services.AddHostedService<ClaimTimeoutJob>();
 
-// CORS — Opção D (aprovada pelo usuário, 2026-09-01):
-// Sem domínio próprio + sem HTTPS no S3, não é possível usar cookies cross-origin
-// com Secure/SameSite. O frontend (Office no S3) opera apenas com access token JWT
-// em memória via Authorization: Bearer. AllowCredentials() é deliberadamente omitido.
-// Débito técnico: reverter para política com AllowCredentials() e SameSite=Strict
-// quando houver domínio próprio + HTTPS. Ver ADR correspondente.
+// CORS: as origens de produção são injetadas pelo user-data da EC2 via
+// Cors__AllowedOrigins__*. O fallback aberto abaixo existe apenas para
+// desenvolvimento local; produção deve sempre configurar a lista.
 var corsOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>()
     ?? [];
 builder.Services.AddCors(options =>
@@ -166,9 +163,7 @@ builder.Services.AddCors(options =>
     {
         if (corsOrigins.Length > 0)
         {
-            policy.WithOrigins(corsOrigins);
-            if (builder.Environment.IsDevelopment())
-                policy.AllowCredentials();
+            policy.WithOrigins(corsOrigins).AllowCredentials();
         }
         else
         {
@@ -209,11 +204,11 @@ if (app.Environment.IsDevelopment())
     app.MapOpenApi();
 }
 
-app.MapGet("/health", () => Results.Ok(new { status = "healthy" }));
-
 app.UseCors();
 app.UseAuthentication();
 app.UseAuthorization();
+
+app.MapGet("/health", () => Results.Ok(new { status = "healthy" }));
 app.MapAuthEndpoints();
 app.MapTenantEndpoints();
 app.MapTimeZoneEndpoints();

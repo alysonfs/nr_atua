@@ -63,15 +63,18 @@ function resolveUrl(path: string): string {
  * Modo de credentials do fetch.
  *
  * Em desenvolvimento local, `localhost:5175` -> `localhost:5240` precisa de
- * 'include' para enviar o cookie HttpOnly de refresh. Em deploy cross-origin
- * sem HTTPS/domínio próprio, mantém 'omit' porque o refresh cookie não é viável.
+ * 'include' para enviar o cookie HttpOnly de refresh. Em produção,
+ * `office.atyno.com.br` -> `api.atyno.com.br` também precisa de 'include' para
+ * aceitar e enviar o cookie seguro emitido pela API.
  */
 function resolveCredentialsMode(): RequestCredentials {
   const base = import.meta.env.VITE_API_BASE_URL as string | undefined
   if (!base) return 'include'
 
   const url = new URL(base, window.location.origin)
-  return url.hostname === 'localhost' || url.hostname === '127.0.0.1' ? 'include' : 'omit'
+  return url.protocol === 'https:' || url.hostname === 'localhost' || url.hostname === '127.0.0.1'
+    ? 'include'
+    : 'omit'
 }
 
 async function request<TResponse>(

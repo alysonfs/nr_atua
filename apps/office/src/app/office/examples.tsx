@@ -227,8 +227,10 @@ export function ExampleOnboardingAfterEmailConfirmation() {
           showCTA={false}
         />
 
+        {/* Rota raiz do app (ver `AppRouter.tsx`): o Office é publicado no
+            subdomínio próprio (office.atyno.com.br), sem prefixo de path. */}
         <a
-          href="/office/dashboard"
+          href="/"
           className="block rounded-lg bg-blue-600 px-4 py-2 text-center font-semibold text-white hover:bg-blue-700"
         >
           Ir para o Office

@@ -15,7 +15,7 @@ import { Construct } from 'constructs';
  * (irreversível, ação explícita e separada).
  *
  * Contém:
- *  - S3 "frontends": hospedagem estática dos frontends (sem CloudFront).
+ *  - S3 "frontends": origem privada para CloudFront/OAC.
  *  - S3 "backups": export de RDS/MongoDB (lifecycle -> Glacier em 35 dias,
  *    conforme retenção de 5 anos da ADR-008).
  *  - S3 "releases": artefatos de deploy da API, consumidos pelo user-data
@@ -148,37 +148,33 @@ export class AtuaDataStack extends cdk.Stack {
       description: 'Alias da CMK de cifragem de credenciais (D9)',
     });
 
-    // --- S3: frontends (estático, leitura pública apenas dos objetos publicados) ---
+    // --- S3: frontends (origem privada do CloudFront/OAC) ---
     this.frontendsBucket = new s3.Bucket(this, 'FrontendsBucket', {
       bucketName: `atua-${accountId}-frontends`,
       removalPolicy: cdk.RemovalPolicy.RETAIN, // não remove dados em `cdk destroy` simples
       autoDeleteObjects: false,
       encryption: s3.BucketEncryption.S3_MANAGED, // chave padrão AWS, sem CMK
-      blockPublicAccess: new s3.BlockPublicAccess({
-        blockPublicAcls: false,
-        blockPublicPolicy: false,
-        ignorePublicAcls: false,
-        restrictPublicBuckets: false,
-      }),
+      blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
       websiteIndexDocument: 'index.html',
       websiteErrorDocument: 'index.html',
       versioned: false,
     });
 
-    // Política pública: somente leitura de objetos nos prefixos landing/*, office/* e manager/*
-    // Raiz do bucket e demais prefixos permanecem privados (403).
+    // A distribuição CloudFront usa OAC. A condição por conta impede que uma
+    // distribuição de outra conta leia o bucket, sem acoplar DataStack ao
+    // stack de edge.
     this.frontendsBucket.addToResourcePolicy(
       new iam.PolicyStatement({
-        sid: 'PublicReadFrontends',
+        sid: 'CloudFrontReadFrontends',
         effect: iam.Effect.ALLOW,
-        principals: [new iam.StarPrincipal()],
+        principals: [new iam.ServicePrincipal('cloudfront.amazonaws.com')],
         actions: ['s3:GetObject'],
-        resources: [
-          this.frontendsBucket.arnForObjects('landing/*'),
-          this.frontendsBucket.arnForObjects('office/*'),
-          this.frontendsBucket.arnForObjects('manager/*'),
-          this.frontendsBucket.arnForObjects('tecnica/*'),
-        ],
+        resources: [this.frontendsBucket.arnForObjects('*')],
+        conditions: {
+          StringEquals: {
+            'AWS:SourceAccount': accountId,
+          },
+        },
       }),
     );
 

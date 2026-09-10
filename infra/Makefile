@@ -23,10 +23,12 @@ export AWS_REGION := $(REGION)
 STACK_NET=AtuaNetworkStack
 STACK_DATA=AtuaDataStack
 STACK_COMPUTE=AtuaComputeStack
+STACK_DOMAIN=AtuaDomainStack
+OFFICE_API_BASE_URL ?= https://api.atyno.com.br
 
 ACCOUNT_ID := $(shell aws sts get-caller-identity --query Account --output text --region $(REGION) 2>/dev/null)
 
-.PHONY: install synth diff bootstrap-cdk up down destroy destroy-all-data status rds-bootstrap rds-up rds-down retrieve-keypair deploy-landing deploy-office deploy-manager deploy-tecnica deploy-api deploy-collector redeploy-api redeploy-collector collector-trigger-cycle logs-api logs-collector logs-api-follow logs-collector-follow mongo-peek mongo-peek-all pg-peek pg-peek-all
+.PHONY: install synth diff bootstrap-cdk deploy-domain sync-api-domain up down destroy destroy-all-data status rds-bootstrap rds-up rds-down retrieve-keypair deploy-landing deploy-office deploy-manager deploy-tecnica deploy-api deploy-collector redeploy-api redeploy-collector collector-trigger-cycle logs-api logs-collector logs-api-follow logs-collector-follow mongo-peek mongo-peek-all pg-peek pg-peek-all
 
 ## Instala dependências (pnpm, alinhado ao monorepo)
 install:
@@ -38,6 +40,31 @@ synth:
 
 diff:
 	pnpm --filter @atua/infra exec cdk diff
+
+## Provisiona Route 53, ACM e CloudFront para atyno.com.br.
+## Requer revisão dos registros existentes no GoDaddy antes da troca de NS.
+## Este alvo altera recursos reais e não é executado por `make up`.
+deploy-domain:
+	pnpm --filter @atua/infra exec cdk deploy $(STACK_DOMAIN) --require-approval never
+
+## Atualiza a origem operacional da API usada pelo CloudFront.
+## Deve rodar após cada `make up`, pois a EC2 da API é efêmera e troca de IP.
+sync-api-domain:
+	@HOSTED_ZONE_ID=$$(aws route53 list-hosted-zones-by-name --dns-name atyno.com.br \
+	  --query "HostedZones[?Name=='atyno.com.br.'].Id | [0]" --output text | cut -d/ -f3); \
+	API_PUBLIC_IP=$$(aws cloudformation describe-stacks --region $(REGION) --stack-name $(STACK_COMPUTE) \
+	  --query "Stacks[0].Outputs[?OutputKey=='ApiPublicIp'].OutputValue | [0]" --output text); \
+	if [ -z "$$HOSTED_ZONE_ID" ] || [ "$$HOSTED_ZONE_ID" = "None" ]; then \
+	  echo "Hosted zone atyno.com.br nao encontrada. Rode 'make deploy-domain' primeiro."; \
+	  exit 1; \
+	fi; \
+	if [ -z "$$API_PUBLIC_IP" ] || [ "$$API_PUBLIC_IP" = "None" ]; then \
+	  echo "IP publico da API nao encontrado. Rode 'make up' primeiro."; \
+	  exit 1; \
+	fi; \
+	aws route53 change-resource-record-sets --hosted-zone-id "$$HOSTED_ZONE_ID" \
+	  --change-batch "{\"Comment\":\"Atualiza origem HTTP da API efemera ATUA\",\"Changes\":[{\"Action\":\"UPSERT\",\"ResourceRecordSet\":{\"Name\":\"api-origin.atyno.com.br\",\"Type\":\"A\",\"TTL\":60,\"ResourceRecords\":[{\"Value\":\"$$API_PUBLIC_IP\"}]}}]}"; \
+	echo "api-origin.atyno.com.br atualizado para $$API_PUBLIC_IP."
 
 ## cdk bootstrap: prepara a conta para receber assets do CDK
 ## (bucket interno do CDK). Só rodar 1x por conta/região, mediante aprovação.
@@ -80,6 +107,7 @@ up:
 		exit 1; \
 	fi
 	pnpm --filter @atua/infra exec cdk deploy $(STACK_COMPUTE) --require-approval never
+	$(MAKE) sync-api-domain
 	@echo "up concluído. API Master E Collector-base (sem lógica) no ar."
 	@echo "Rode 'make retrieve-keypair' se ainda não tiver a chave privada localmente."
 
@@ -139,7 +167,7 @@ deploy-landing:
 ## URL resultante: http://atua-$(ACCOUNT_ID)-frontends.s3-website-$(REGION).amazonaws.com/office/
 deploy-office:
 	@echo "Building office..."
-	pnpm --filter office build
+	VITE_API_BASE_URL=$(OFFICE_API_BASE_URL) pnpm --filter office build
 	@echo "Sincronizando assets com cache longa duração..."
 	aws s3 sync ../apps/office/dist/ s3://atua-$(ACCOUNT_ID)-frontends/office/ \
 	  --region $(REGION) --delete \
