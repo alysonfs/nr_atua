@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using Atua.Api.Application.Billing;
 using Atua.Api.Application.Integrations;
 using Atua.Api.Application.Tenants;
 using Atua.Api.Domain.Tenants;
@@ -28,6 +29,16 @@ public static class TenantEndpoints
         endpoints.MapPost(
                 "/api/tenants/{tenantId:guid}/integrations/{integrationId:guid}/credentials/validate",
                 ValidateCredentials)
+            .RequireAuthorization("BrowserSession");
+
+        endpoints.MapGet("/api/tenants/{tenantId:guid}/plan", GetTenantPlan)
+            .RequireAuthorization("BrowserSession");
+
+        endpoints.MapPut("/api/tenants/{tenantId:guid}/plan", ChangeTenantPlan)
+            .RequireAuthorization("BrowserSession");
+
+        endpoints.MapPut("/api/tenants/{tenantId:guid}/memberships/{targetUserId:guid}/role",
+                ChangeTenantMembershipRole)
             .RequireAuthorization("BrowserSession");
     }
 
@@ -59,7 +70,7 @@ public static class TenantEndpoints
     }
 
     private static async Task<IResult> CreateTenant(ClaimsPrincipal user, CreateTenantRequest request,
-        TenantOnboardingService service, CancellationToken cancellationToken)
+        AddTenantUseCase service, CancellationToken cancellationToken)
     {
         var userId = GetGuidClaim(user, "sub");
         if (userId is null) return Results.Unauthorized();
@@ -76,7 +87,10 @@ public static class TenantEndpoints
                 new { error = "cnpj_already_registered" }),
             ECreateTenantStatus.UserAlreadyHasTenant => Results.Conflict(
                 new { error = "user_already_has_tenant" }),
-            ECreateTenantStatus.TrialNotFound => Results.Conflict(new { error = "trial_not_found" }),
+            ECreateTenantStatus.EmailNotConfirmed => Results.Conflict(
+                new { error = "email_not_confirmed" }),
+            ECreateTenantStatus.PlanCatalogInconsistent => Results.Problem(
+                statusCode: StatusCodes.Status500InternalServerError),
             _ => Results.Problem(statusCode: StatusCodes.Status500InternalServerError)
         };
     }
@@ -134,6 +148,70 @@ public static class TenantEndpoints
             result.EvaluatedAtUtc!.Value));
     }
 
+    private static async Task<IResult> GetTenantPlan(Guid tenantId, ClaimsPrincipal user,
+        GetTenantPlanUseCase service, CancellationToken cancellationToken)
+    {
+        var userId = GetGuidClaim(user, "sub");
+        if (userId is null) return Results.Unauthorized();
+
+        var result = await service.ExecuteAsync(userId.Value, tenantId, cancellationToken);
+        if (result is null) return Results.Forbid();
+        if (!result.IsConsistent)
+        {
+            return Results.Problem(statusCode: StatusCodes.Status500InternalServerError);
+        }
+
+        return Results.Ok(new GetTenantPlanResponse(result.PlanName!, result.IsFree!.Value,
+            result.DaysRemaining, result.MaxIntegrations!.Value, result.UsedIntegrations!.Value,
+            result.MaxUsers!.Value, result.UsedUsers!.Value, result.Status!));
+    }
+
+    private static async Task<IResult> ChangeTenantPlan(Guid tenantId, ClaimsPrincipal user,
+        ChangeTenantPlanRequest request, ChangeTenantPlanUseCase service,
+        CancellationToken cancellationToken)
+    {
+        var userId = GetGuidClaim(user, "sub");
+        if (userId is null) return Results.Unauthorized();
+
+        var status = await service.ExecuteAsync(userId.Value, tenantId, request.PlanCode,
+            cancellationToken);
+
+        return status switch
+        {
+            EChangeTenantPlanStatus.Success => Results.NoContent(),
+            EChangeTenantPlanStatus.Forbidden => Results.Forbid(),
+            EChangeTenantPlanStatus.PlanNotFound => Results.NotFound(new { error = "plan_not_found" }),
+            EChangeTenantPlanStatus.NoActivePlan => Results.Problem(
+                statusCode: StatusCodes.Status500InternalServerError),
+            _ => Results.Problem(statusCode: StatusCodes.Status500InternalServerError)
+        };
+    }
+
+    private static async Task<IResult> ChangeTenantMembershipRole(Guid tenantId, Guid targetUserId,
+        ClaimsPrincipal user, ChangeTenantMembershipRoleRequest request,
+        ChangeTenantMembershipRoleUseCase service, CancellationToken cancellationToken)
+    {
+        var userId = GetGuidClaim(user, "sub");
+        if (userId is null) return Results.Unauthorized();
+
+        if (!Enum.TryParse<ETenantMembershipRole>(request.Role, ignoreCase: true, out var newRole))
+        {
+            return Results.BadRequest(new { error = "invalid_role" });
+        }
+
+        var status = await service.ExecuteAsync(userId.Value, tenantId, targetUserId, newRole,
+            cancellationToken);
+
+        return status switch
+        {
+            EChangeMembershipRoleStatus.Success => Results.NoContent(),
+            EChangeMembershipRoleStatus.Forbidden => Results.Forbid(),
+            EChangeMembershipRoleStatus.MembershipNotFound => Results.NotFound(
+                new { error = "membership_not_found" }),
+            _ => Results.Problem(statusCode: StatusCodes.Status500InternalServerError)
+        };
+    }
+
     private static Guid? GetGuidClaim(ClaimsPrincipal user, string type) =>
         Guid.TryParse(user.FindFirstValue(type), out var value) ? value : null;
 }
@@ -150,3 +228,10 @@ public sealed record GetCredentialsResponse(bool HasCredentials, string Validati
     DateTimeOffset? LastValidatedAtUtc, DateTimeOffset? UpdatedAtUtc);
 
 public sealed record ValidateCredentialsResponse(string ValidationStatus, DateTimeOffset EvaluatedAtUtc);
+
+public sealed record GetTenantPlanResponse(string PlanName, bool IsFree, int? DaysRemaining,
+    int MaxIntegrations, int UsedIntegrations, int MaxUsers, int UsedUsers, string Status);
+
+public sealed record ChangeTenantPlanRequest(string PlanCode);
+
+public sealed record ChangeTenantMembershipRoleRequest(string Role);
