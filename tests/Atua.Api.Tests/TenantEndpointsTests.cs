@@ -278,9 +278,13 @@ public class TenantEndpointsTests
     {
         await using var context = CreateContext(databaseName);
         var user = new User(userId, null, "user@atua.com", "hash");
+        user.ConfirmEmail(DateTimeOffset.UtcNow);
         context.Users.Add(user);
-        context.TrialSubscriptions.Add(new TrialSubscription(Guid.CreateVersion7(), userId,
-            DateTimeOffset.UtcNow, DateTimeOffset.UtcNow.AddDays(7)));
+        if (!await context.Plans.AnyAsync(plan => plan.Id == WellKnownPlans.TrialPlanId))
+        {
+            context.Plans.Add(new Plan(WellKnownPlans.TrialPlanId, WellKnownPlans.TrialCode, "Trial",
+                isFree: true, value: 0m, durationDays: 7, maxIntegrations: 2, maxUsers: 5, isActive: true));
+        }
         await context.SaveChangesAsync();
     }
 
@@ -301,8 +305,10 @@ public class TenantEndpointsTests
         });
         builder.Services.AddSingleton<ICredentialCipher, AesGcmCredentialCipher>();
         builder.Services.AddSingleton<IIServiceAuthClient, FakeIServiceAuthClient>();
-        builder.Services.AddScoped<TenantOnboardingService>();
-        builder.Services.AddScoped<TrialEligibilityService>();
+        builder.Services.AddScoped<AddTenantUseCase>();
+        builder.Services.AddScoped<GetTenantPlanUseCase>();
+        builder.Services.AddScoped<ChangeTenantPlanUseCase>();
+        builder.Services.AddScoped<ChangeTenantMembershipRoleUseCase>();
         builder.Services.AddScoped<Atua.Api.Application.Integrations.CollectorControl.ICollectorEligibilityEvaluator,
             Atua.Api.Application.Integrations.CollectorControl.CollectorEligibilityEvaluator>();
         builder.Services.AddScoped<Atua.Api.Application.Integrations.CollectorControl.CollectorActivationService>();

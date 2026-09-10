@@ -1,7 +1,6 @@
 ﻿namespace Atua.Api.Tests;
 
 using Atua.Api.Domain;
-using Atua.Api.Domain.Billing;
 using Atua.Api.Domain.Identity;
 using Atua.Api.Domain.Integrations;
 using Atua.Api.Domain.Tenants;
@@ -52,19 +51,6 @@ public class TenancyTests
 
         Assert.Equal(provider.Id, integration.ProviderId);
         Assert.False(integration.IsEnabled);
-    }
-
-    [Fact]
-    public void TrialPodeSerAssociadoUmaUnicaVezAoTenant()
-    {
-        var trial = new TrialSubscription(Uuid7.New(), Uuid7.New(),
-            DateTimeOffset.UtcNow, DateTimeOffset.UtcNow.AddDays(7));
-        var tenantId = Uuid7.New();
-
-        trial.AssociateWithTenant(tenantId);
-
-        Assert.Equal(tenantId, trial.TenantId);
-        Assert.Throws<InvalidOperationException>(() => trial.AssociateWithTenant(Uuid7.New()));
     }
 
     [Fact]

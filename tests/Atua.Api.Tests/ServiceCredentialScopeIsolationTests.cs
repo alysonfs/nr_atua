@@ -1,5 +1,4 @@
 using System.Net;
-using Atua.Api.Application.Billing;
 using Atua.Api.Application.Identity;
 using Atua.Api.Application.Integrations.CollectorControl;
 using Atua.Api.Domain.Billing;
@@ -161,7 +160,6 @@ public class ServiceCredentialScopeIsolationTests
         builder.Services.AddDbContext<AtuaDbContext>(o => o.UseInMemoryDatabase(dbName));
         builder.Services.AddSingleton(TimeProvider.System);
         builder.Services.AddSingleton<ITokenHashService, TokenHashService>();
-        builder.Services.AddScoped<TrialEligibilityService>();
         builder.Services.AddScoped<TimeZonePreferenceService>();
         builder.Services.AddScoped<ICollectorEligibilityEvaluator, CollectorEligibilityEvaluator>();
         builder.Services.AddScoped<CollectorActivationService>();
@@ -191,7 +189,7 @@ public class ServiceCredentialScopeIsolationTests
         var app = builder.Build();
         app.UseAuthentication();
         app.UseAuthorization();
-        app.MapTrialEndpoints();
+        app.MapCollectorEligibilityEndpoints();
         app.MapCollectorCommandEndpoints();
         await app.StartAsync();
         return (app, dbName);

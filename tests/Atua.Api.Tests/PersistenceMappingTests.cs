@@ -46,15 +46,15 @@ public class PersistenceMappingTests
     }
 
     [Fact]
-    public void TrialPossuiIndiceUnicoParaUsuario()
+    public void TenantPlanPossuiIndiceUnicoParaPlanoAtivoPorTenant()
     {
         using var context = CreateContext();
-        var trial = context.Model.FindEntityType(typeof(Domain.Billing.TrialSubscription))!;
+        var tenantPlan = context.Model.FindEntityType(typeof(Domain.Billing.TenantPlan))!;
 
-        var userIndex = trial.GetIndexes().Single(index =>
-            index.Properties.Single().Name == nameof(Domain.Billing.TrialSubscription.UserId));
+        var tenantIndex = tenantPlan.GetIndexes().Single(index =>
+            index.Properties.Single().Name == nameof(Domain.Billing.TenantPlan.TenantId));
 
-        Assert.True(userIndex.IsUnique);
+        Assert.True(tenantIndex.IsUnique);
     }
 
     [Fact]

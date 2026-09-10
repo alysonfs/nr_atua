@@ -88,22 +88,23 @@ public class IServiceCredentialServiceTests
     }
 
     /// <summary>
-    /// G-1: RF-008.6/ADR-020 — trocar credencial (SetCredentialsAsync) zera o
-    /// ValidationStatus, tornando a elegibilidade falsa. O agente deve ser
-    /// desativado e o comando Pending cancelado na mesma unidade de trabalho.
+    /// G-1: RF-008.6/ADR-024 — trocar credencial (SetCredentialsAsync) zera o
+    /// ValidationStatus, mas isso não afeta mais a elegibilidade (que passou
+    /// a depender apenas do plano do tenant). O agente permanece Active.
     /// </summary>
     [Fact]
-    public async Task TrocarCredencialDesativaAgenteECancelaComandoPendente()
+    public async Task TrocarCredencialNaoDesativaAgente()
     {
         await using var context = CreateContext();
         var (tenant, integration, owner, _) = await SeedAsync(context);
         var cipher = CreateCipher();
 
-        // Seed: credencial com Succeeded e trial ativo para que a ativação funcione.
-        var trial = new Atua.Api.Domain.Billing.TrialSubscription(Guid.CreateVersion7(), owner.Id,
-            DateTimeOffset.UtcNow, DateTimeOffset.UtcNow.AddDays(7));
-        trial.AssociateWithTenant(tenant.Id);
-        context.TrialSubscriptions.Add(trial);
+        // Seed: credencial com Succeeded e plano ativo para que a ativação funcione.
+        var plan = new Atua.Api.Domain.Billing.Plan(Guid.CreateVersion7(), "trial", "Trial",
+            isFree: true, value: 0m, durationDays: 7, maxIntegrations: 2, maxUsers: 5, isActive: true);
+        context.Plans.Add(plan);
+        context.TenantPlans.Add(new Atua.Api.Domain.Billing.TenantPlan(Guid.CreateVersion7(), tenant.Id,
+            plan.Id, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow.AddDays(7)));
         var credential = new Atua.Api.Domain.Integrations.IServiceCredential(Guid.CreateVersion7(),
             tenant.Id, integration.Id, "cipher-user", "cipher-pass", null, [1], [2],
             "cipher-key", "local-v1", 1, DateTimeOffset.UtcNow);
@@ -125,15 +126,12 @@ public class IServiceCredentialServiceTests
             "novo-usuario", "nova-senha", null, CancellationToken.None);
         Assert.Equal(ESetCredentialsStatus.Success, setStatus);
 
-        // Agente deve estar Inactive e o comando deve ter sido cancelado com
-        // motivo CredentialNotValidated (RF-008.6).
+        // O plano continua ativo, então o agente permanece Active.
         var activation = await context.CollectorActivations.SingleAsync();
-        Assert.Equal(ECollectorActivationStatus.Inactive, activation.Status);
-        Assert.Equal(ECollectorDeactivationReason.CredentialNotValidated, activation.DeactivationReason);
+        Assert.Equal(ECollectorActivationStatus.Active, activation.Status);
 
         var command = await context.ImmediateCollectionCommands.SingleAsync();
-        Assert.Equal(EImmediateCollectionCommandStatus.Cancelled, command.Status);
-        Assert.Equal(ECollectorDeactivationReason.CredentialNotValidated, command.CancellationReason);
+        Assert.Equal(EImmediateCollectionCommandStatus.Pending, command.Status);
     }
 
     [Fact]
@@ -190,7 +188,6 @@ public class IServiceCredentialServiceTests
     /// </summary>
     private static CollectorActivationService CreateCollectorActivationService(AtuaDbContext context) =>
         new(context,
-            new CollectorEligibilityEvaluator(context,
-                new TrialEligibilityService(context, TimeProvider.System)),
+            new CollectorEligibilityEvaluator(context, TimeProvider.System),
             TimeProvider.System);
 }
