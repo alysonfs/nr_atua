@@ -22,31 +22,110 @@ namespace Atua.Api.Infrastructure.Persistence.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
-            modelBuilder.Entity("Atua.Api.Domain.Billing.TrialSubscription", b =>
+            modelBuilder.Entity("Atua.Api.Domain.Billing.Plan", b =>
                 {
                     b.Property<Guid>("Id")
                         .HasColumnType("uuid");
 
-                    b.Property<DateTimeOffset>("ExpiresAt")
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<int?>("DurationDays")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("IsFree")
+                        .HasColumnType("boolean");
+
+                    b.Property<int>("MaxIntegrations")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("MaxUsers")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<decimal>("Value")
+                        .HasColumnType("numeric(10,2)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Code")
+                        .IsUnique();
+
+                    b.ToTable("plans", (string)null);
+
+                    b.HasData(
+                        new
+                        {
+                            Id = new Guid("00000000-0000-0000-0000-0000000000f1"),
+                            Code = "trial",
+                            DurationDays = 7,
+                            IsActive = true,
+                            IsFree = true,
+                            MaxIntegrations = 2,
+                            MaxUsers = 5,
+                            Name = "Trial",
+                            Value = 0m
+                        },
+                        new
+                        {
+                            Id = new Guid("00000000-0000-0000-0000-0000000000f2"),
+                            Code = "essencial",
+                            IsActive = true,
+                            IsFree = false,
+                            MaxIntegrations = 2,
+                            MaxUsers = 5,
+                            Name = "Essencial",
+                            Value = 500m
+                        });
+                });
+
+            modelBuilder.Entity("Atua.Api.Domain.Billing.TenantPlan", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset?>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("PlanId")
+                        .HasColumnType("uuid");
 
                     b.Property<DateTimeOffset>("StartsAt")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<Guid?>("TenantId")
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<Guid>("TenantId")
                         .HasColumnType("uuid");
 
-                    b.Property<Guid>("UserId")
-                        .HasColumnType("uuid");
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
 
                     b.HasKey("Id");
 
-                    b.HasIndex("TenantId");
+                    b.HasIndex("PlanId");
 
-                    b.HasIndex("UserId")
-                        .IsUnique();
+                    b.HasIndex("TenantId")
+                        .IsUnique()
+                        .HasDatabaseName("IX_tenant_plans_TenantId_Active")
+                        .HasFilter("\"Status\" = 'Active'");
 
-                    b.ToTable("trial_subscriptions", (string)null);
+                    b.ToTable("tenant_plans", (string)null);
                 });
 
             modelBuilder.Entity("Atua.Api.Domain.Identity.AuthRefreshToken", b =>
@@ -429,14 +508,23 @@ namespace Atua.Api.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("Id")
                         .HasColumnType("uuid");
 
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<bool>("IsEnabled")
                         .HasColumnType("boolean");
+
+                    b.Property<DateTimeOffset?>("LastCollectionAtUtc")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<Guid>("ProviderId")
                         .HasColumnType("uuid");
 
                     b.Property<Guid>("TenantId")
                         .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
 
                     b.HasKey("Id");
 
@@ -627,17 +715,18 @@ namespace Atua.Api.Infrastructure.Persistence.Migrations
                     b.ToTable("work_order_histories", (string)null);
                 });
 
-            modelBuilder.Entity("Atua.Api.Domain.Billing.TrialSubscription", b =>
+            modelBuilder.Entity("Atua.Api.Domain.Billing.TenantPlan", b =>
                 {
+                    b.HasOne("Atua.Api.Domain.Billing.Plan", null)
+                        .WithMany()
+                        .HasForeignKey("PlanId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
                     b.HasOne("Atua.Api.Domain.Tenants.Tenant", null)
                         .WithMany()
                         .HasForeignKey("TenantId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
-                    b.HasOne("Atua.Api.Domain.Identity.User", null)
-                        .WithMany()
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Restrict)
+                        .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });
 

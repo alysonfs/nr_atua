@@ -23,7 +23,9 @@ public sealed class AtuaDbContext(DbContextOptions<AtuaDbContext> options) : DbC
 
     public DbSet<TenantMembership> TenantMemberships => Set<TenantMembership>();
 
-    public DbSet<TrialSubscription> TrialSubscriptions => Set<TrialSubscription>();
+    public DbSet<Plan> Plans => Set<Plan>();
+
+    public DbSet<TenantPlan> TenantPlans => Set<TenantPlan>();
 
     public DbSet<IntegrationProvider> IntegrationProviders => Set<IntegrationProvider>();
 
@@ -54,7 +56,8 @@ public sealed class AtuaDbContext(DbContextOptions<AtuaDbContext> options) : DbC
         ConfigureServiceCredential(modelBuilder.Entity<ServiceCredential>());
         ConfigureTenant(modelBuilder.Entity<Tenant>());
         ConfigureTenantMembership(modelBuilder.Entity<TenantMembership>());
-        ConfigureTrialSubscription(modelBuilder.Entity<TrialSubscription>());
+        ConfigurePlan(modelBuilder.Entity<Plan>());
+        ConfigureTenantPlan(modelBuilder.Entity<TenantPlan>());
         ConfigureIntegrationProvider(modelBuilder.Entity<IntegrationProvider>());
         ConfigureIntegration(modelBuilder.Entity<Integration>());
         ConfigureIServiceCredential(modelBuilder.Entity<IServiceCredential>());
@@ -154,18 +157,66 @@ public sealed class AtuaDbContext(DbContextOptions<AtuaDbContext> options) : DbC
             .OnDelete(DeleteBehavior.Restrict);
     }
 
-    private static void ConfigureTrialSubscription(EntityTypeBuilder<TrialSubscription> builder)
+    private static void ConfigurePlan(EntityTypeBuilder<Plan> builder)
     {
-        builder.ToTable("trial_subscriptions");
-        builder.HasKey(subscription => subscription.Id);
-        builder.Property(subscription => subscription.Id).ValueGeneratedNever();
-        builder.Property(subscription => subscription.StartsAt).IsRequired();
-        builder.Property(subscription => subscription.ExpiresAt).IsRequired();
-        builder.HasOne<User>().WithMany().HasForeignKey(subscription => subscription.UserId)
+        builder.ToTable("plans");
+        builder.HasKey(plan => plan.Id);
+        builder.Property(plan => plan.Id).ValueGeneratedNever();
+        builder.Property(plan => plan.Code).HasMaxLength(32).IsRequired();
+        builder.Property(plan => plan.Name).HasMaxLength(100).IsRequired();
+        builder.Property(plan => plan.Value).HasColumnType("numeric(10,2)").IsRequired();
+        builder.HasIndex(plan => plan.Code).IsUnique();
+
+        // RF-020.1: catálogo fixo de planos comerciais. Seed via HasData
+        // para que o EF Core registre no model snapshot (mesmo padrão de
+        // ConfigureIntegrationProvider).
+        builder.HasData(
+            new
+            {
+                Id = WellKnownPlans.TrialPlanId,
+                Code = WellKnownPlans.TrialCode,
+                Name = "Trial",
+                IsFree = true,
+                Value = 0m,
+                DurationDays = (int?)7,
+                MaxIntegrations = 2,
+                MaxUsers = 5,
+                IsActive = true
+            },
+            new
+            {
+                Id = WellKnownPlans.EssencialPlanId,
+                Code = WellKnownPlans.EssencialCode,
+                Name = "Essencial",
+                IsFree = false,
+                Value = 500m,
+                DurationDays = (int?)null,
+                MaxIntegrations = 2,
+                MaxUsers = 5,
+                IsActive = true
+            });
+    }
+
+    private static void ConfigureTenantPlan(EntityTypeBuilder<TenantPlan> builder)
+    {
+        builder.ToTable("tenant_plans");
+        builder.HasKey(tenantPlan => tenantPlan.Id);
+        builder.Property(tenantPlan => tenantPlan.Id).ValueGeneratedNever();
+        builder.Property(tenantPlan => tenantPlan.Status).HasConversion<string>().HasMaxLength(16)
+            .IsRequired();
+        builder.Property(tenantPlan => tenantPlan.StartsAt).IsRequired();
+        builder.HasOne<Tenant>().WithMany().HasForeignKey(tenantPlan => tenantPlan.TenantId)
+            .OnDelete(DeleteBehavior.Cascade);
+        builder.HasOne<Plan>().WithMany().HasForeignKey(tenantPlan => tenantPlan.PlanId)
             .OnDelete(DeleteBehavior.Restrict);
-        builder.HasOne<Tenant>().WithMany().HasForeignKey(subscription => subscription.TenantId)
-            .OnDelete(DeleteBehavior.Restrict);
-        builder.HasIndex(subscription => subscription.UserId).IsUnique();
+        // RN-020.2/RN-020.5: no máximo um TenantPlan Active por tenant.
+        // TenantPlans nunca são excluídos; trocas de plano encerram o vínculo
+        // anterior (Superseded) e criam um novo (mesmo padrão do índice
+        // parcial usado em ImmediateCollectionCommand).
+        builder.HasIndex(tenantPlan => tenantPlan.TenantId)
+            .IsUnique()
+            .HasFilter("\"Status\" = 'Active'")
+            .HasDatabaseName("IX_tenant_plans_TenantId_Active");
     }
 
     private static void ConfigureIntegrationProvider(EntityTypeBuilder<IntegrationProvider> builder)
