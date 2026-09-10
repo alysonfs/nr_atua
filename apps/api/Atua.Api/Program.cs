@@ -117,8 +117,6 @@ builder.Services.AddScoped<SignUpService>();
 builder.Services.AddScoped<ConfirmEmailService>();
 builder.Services.AddScoped<AuthService>();
 builder.Services.AddScoped<TimeZonePreferenceService>();
-builder.Services.AddScoped<CreateTrialService>();
-builder.Services.AddScoped<TrialEligibilityService>();
 builder.Services.Configure<CredentialCipherOptions>(
     builder.Configuration.GetSection(CredentialCipherOptions.SectionName));
 // Seleciona a implementação de ICredentialCipher com base na configuração:
@@ -137,7 +135,11 @@ else
 {
     builder.Services.AddSingleton<ICredentialCipher>(sp => sp.GetRequiredService<AesGcmCredentialCipher>());
 }
-builder.Services.AddScoped<TenantOnboardingService>();
+builder.Services.AddScoped<AddTenantUseCase>();
+builder.Services.AddScoped<TenantPlanLimitService>();
+builder.Services.AddScoped<GetTenantPlanUseCase>();
+builder.Services.AddScoped<ChangeTenantPlanUseCase>();
+builder.Services.AddScoped<ChangeTenantMembershipRoleUseCase>();
 builder.Services.AddScoped<IServiceCredentialService>();
 builder.Services.AddScoped<IServiceCredentialValidationService>();
 builder.Services.AddScoped<ICollectorEligibilityEvaluator, CollectorEligibilityEvaluator>();
@@ -213,9 +215,10 @@ app.UseCors();
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapAuthEndpoints();
-app.MapTrialEndpoints();
 app.MapTenantEndpoints();
+app.MapTimeZoneEndpoints();
 app.MapCollectorActivationEndpoints();
+app.MapCollectorEligibilityEndpoints();
 app.MapCollectorCommandEndpoints();
 
 app.Run();

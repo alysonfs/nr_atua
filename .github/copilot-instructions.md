@@ -45,3 +45,7 @@ Convenções C# do projeto:
 - enums devem começar com `E` e o arquivo deve ter o mesmo nome;
 - interfaces devem começar com `I` e o arquivo deve ter o mesmo nome.
 - interfaces de contrato entre camadas devem ficar em diretórios específicos de contratos, seguindo a convenção de nomenclatura. ex: `src/Feature/Contracts/IFeatureService.cs`
+- classes de `Application` que representam um caso de uso devem terminar em
+  `UseCase` (ex.: `AddTenantUseCase`), nunca `*OnboardingService` ou nomes
+  genéricos de "serviço" para operações que representam uma ação de negócio
+  única e nomeável.

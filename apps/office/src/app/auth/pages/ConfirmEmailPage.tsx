@@ -20,10 +20,12 @@ export function ConfirmEmailPage() {
   const knownEmail = locationState.email ?? ''
 
   const [error, setError] = useState<string | null>(null)
+  const [isResending, setIsResending] = useState(false)
 
   const {
     register,
     handleSubmit,
+    getValues,
     formState: { errors, isSubmitting },
   } = useForm<ConfirmEmailFormValues>({
     resolver: zodResolver(confirmEmailSchema),
@@ -33,6 +35,26 @@ export function ConfirmEmailPage() {
   // O e-mail já vem preenchido quando o usuário chega vindo do cadastro (RN:
   // não pedimos para ele digitar de novo — só exibimos como informação).
   const hasKnownEmail = knownEmail.length > 0
+
+  async function onResendCode() {
+    const email = getValues('email') || knownEmail
+    if (!email) {
+      setError('Informe o e-mail para reenviar o código.')
+      return
+    }
+
+    setError(null)
+    setIsResending(true)
+
+    try {
+      await apiClient.post('/auth/resend-confirmation', { email })
+      toast.success('Código reenviado! Confira sua caixa de entrada.')
+    } catch {
+      toast.error('Não foi possível reenviar o código. Tente novamente mais tarde.')
+    } finally {
+      setIsResending(false)
+    }
+  }
 
   async function onSubmit(values: ConfirmEmailFormValues) {
     setError(null)
@@ -124,7 +146,7 @@ export function ConfirmEmailPage() {
           )}
 
           <form onSubmit={(e) => void handleSubmit(onSubmit)(e)} noValidate>
-            <fieldset disabled={isSubmitting} className="space-y-5">
+            <fieldset disabled={isSubmitting || isResending} className="space-y-5">
               {hasKnownEmail ? (
                 // O e-mail já é conhecido (veio do cadastro): mostramos como
                 // informação, não como campo editável, mas o valor continua
@@ -168,6 +190,14 @@ export function ConfirmEmailPage() {
                 {errors.code && (
                   <p className="mt-1.5 text-sm text-red-700">{errors.code.message}</p>
                 )}
+                <button
+                  type="button"
+                  onClick={() => void onResendCode()}
+                  className="mt-2 text-sm font-semibold text-[#3b82f6] hover:underline disabled:cursor-not-allowed disabled:opacity-60"
+                  aria-busy={isResending}
+                >
+                  {isResending ? 'Reenviando...' : 'Não recebeu o código? Reenviar'}
+                </button>
               </div>
 
               {error && (
