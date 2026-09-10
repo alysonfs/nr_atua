@@ -2,7 +2,14 @@
 
 ## Status
 
-Proposed
+Rejected (2026-09-05)
+
+## Resolucao
+
+O responsavel pelo produto reprovou a hipotese ATUVO em 2026-09-05. A
+plataforma segue avaliando outra hipotese de rename, registrada em
+[proposta-validacao-nome-atyno.md](./proposta-validacao-nome-atyno.md).
+ATUA permanece o nome de referencia ate decisao final sobre ATYNO.
 
 ## Data
 
