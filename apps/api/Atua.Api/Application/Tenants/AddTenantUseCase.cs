@@ -10,9 +10,10 @@ namespace Atua.Api.Application.Tenants;
 /// Orquestra a criação de tenant na primeira integração (RF-006/ADR-018):
 /// valida CNPJ, cria Tenant, cria TenantMembership OWNER, cria a Integration
 /// do provedor iService (emenda "Resolução de integrationId" da ADR-018) e
-/// associa o Trial do usuário, tudo em uma única transação.
+/// atribui o plano trial ativo (RF-020.2/ADR-024), tudo em uma única
+/// transação.
 /// </summary>
-public sealed class TenantOnboardingService(AtuaDbContext dbContext)
+public sealed class AddTenantUseCase(AtuaDbContext dbContext)
 {
     private const string DefaultTimeZoneId = "America/Sao_Paulo";
 
@@ -45,32 +46,36 @@ public sealed class TenantOnboardingService(AtuaDbContext dbContext)
             return CreateTenantResult.Failure(ECreateTenantStatus.CnpjAlreadyRegistered);
         }
 
-        var trial = await dbContext.TrialSubscriptions.SingleOrDefaultAsync(
-            item => item.UserId == userId, cancellationToken);
-        if (trial is null)
+        var user = await dbContext.Users.SingleOrDefaultAsync(item => item.Id == userId, cancellationToken);
+        if (user?.EmailConfirmedAt is null)
         {
-            return CreateTenantResult.Failure(ECreateTenantStatus.TrialNotFound);
+            return CreateTenantResult.Failure(ECreateTenantStatus.EmailNotConfirmed);
         }
 
-        if (trial.TenantId is not null)
+        var trialPlan = await dbContext.Plans.AsNoTracking().SingleOrDefaultAsync(
+            plan => plan.Id == WellKnownPlans.TrialPlanId, cancellationToken);
+        if (trialPlan is null)
         {
-            return CreateTenantResult.Failure(ECreateTenantStatus.UserAlreadyHasTenant);
+            // RN-020.5: estado inconsistente — o catálogo de planos deveria
+            // sempre conter o plano trial seedado. Não deve ocorrer.
+            return CreateTenantResult.Failure(ECreateTenantStatus.PlanCatalogInconsistent);
         }
 
         if (dbContext.Database.IsRelational())
         {
             await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
             return await CreateWithTransactionAsync(tenant: new Tenant(Guid.CreateVersion7(), name,
-                normalizedCnpj, DefaultTimeZoneId), userId, trial, transaction, normalizedCnpj,
-                cancellationToken);
+                normalizedCnpj, DefaultTimeZoneId), userId, user.EmailConfirmedAt.Value, trialPlan,
+                transaction, normalizedCnpj, cancellationToken);
         }
 
         return await CreateWithTransactionAsync(new Tenant(Guid.CreateVersion7(), name, normalizedCnpj,
-            DefaultTimeZoneId), userId, trial, null, normalizedCnpj, cancellationToken);
+            DefaultTimeZoneId), userId, user.EmailConfirmedAt.Value, trialPlan, null, normalizedCnpj,
+            cancellationToken);
     }
 
     private async Task<CreateTenantResult> CreateWithTransactionAsync(Tenant tenant, Guid userId,
-        Domain.Billing.TrialSubscription trial,
+        DateTimeOffset emailConfirmedAt, Plan trialPlan,
         Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction? transaction, string normalizedCnpj,
         CancellationToken cancellationToken)
     {
@@ -86,9 +91,19 @@ public sealed class TenantOnboardingService(AtuaDbContext dbContext)
             WellKnownIntegrationProviders.IServiceProviderId, isEnabled: false);
         dbContext.Integrations.Add(integration);
 
+        // RF-020.2/ADR-015: a contagem do prazo do Trial parte do instante de
+        // confirmação de e-mail do usuário, não da criação do tenant, para não
+        // reiniciar o prazo quando o tenant é criado depois da confirmação.
+        var startsAt = emailConfirmedAt.ToUniversalTime();
+        var expiresAt = trialPlan.DurationDays is null
+            ? (DateTimeOffset?)null
+            : new DateTimeOffset(startsAt.UtcDateTime.Date.AddDays(trialPlan.DurationDays.Value),
+                TimeSpan.Zero);
+        dbContext.TenantPlans.Add(new TenantPlan(Guid.CreateVersion7(), tenant.Id, trialPlan.Id, startsAt,
+            expiresAt));
+
         try
         {
-            trial.AssociateWithTenant(tenant.Id);
             await dbContext.SaveChangesAsync(cancellationToken);
             if (transaction is not null) await transaction.CommitAsync(cancellationToken);
         }
@@ -116,7 +131,8 @@ public enum ECreateTenantStatus
     InvalidCnpj,
     CnpjAlreadyRegistered,
     UserAlreadyHasTenant,
-    TrialNotFound
+    EmailNotConfirmed,
+    PlanCatalogInconsistent
 }
 
 public sealed record CreateTenantResult(ECreateTenantStatus Status, Guid? TenantId, Guid? IntegrationId = null)

@@ -8,20 +8,22 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Atua.Api.Tests;
 
-public class TenantOnboardingServiceTests
+public class AddTenantUseCaseTests
 {
+    private static Plan CreateTrialPlan() => new(WellKnownPlans.TrialPlanId, WellKnownPlans.TrialCode,
+        "Trial", isFree: true, value: 0m, durationDays: 7, maxIntegrations: 2, maxUsers: 5, isActive: true);
+
     [Fact]
-    public async Task CriaTenantMembershipOwnerEAssociaTrialEmTransacaoUnica()
+    public async Task CriaTenantMembershipOwnerEAssociaPlanoTrialEmTransacaoUnica()
     {
         await using var context = CreateContext();
+        context.Plans.Add(CreateTrialPlan());
         var user = new User(Guid.CreateVersion7(), null, "owner@atua.com", "hash");
+        user.ConfirmEmail(DateTimeOffset.UtcNow);
         context.Users.Add(user);
-        var trial = new TrialSubscription(Guid.CreateVersion7(), user.Id,
-            DateTimeOffset.UtcNow, DateTimeOffset.UtcNow.AddDays(7));
-        context.TrialSubscriptions.Add(trial);
         await context.SaveChangesAsync();
 
-        var result = await new TenantOnboardingService(context).ExecuteAsync(user.Id, "Atua Refrigeração",
+        var result = await new AddTenantUseCase(context).ExecuteAsync(user.Id, "Atua Refrigeração",
             "11122233000183", CancellationToken.None);
 
         Assert.Equal(ECreateTenantStatus.Success, result.Status);
@@ -32,8 +34,10 @@ public class TenantOnboardingServiceTests
         Assert.Equal(user.Id, membership.UserId);
         Assert.Equal(ETenantMembershipRole.Owner, membership.Role);
 
-        var persistedTrial = await context.TrialSubscriptions.SingleAsync();
-        Assert.Equal(result.TenantId, persistedTrial.TenantId);
+        var tenantPlan = await context.TenantPlans.SingleAsync();
+        Assert.Equal(result.TenantId, tenantPlan.TenantId);
+        Assert.Equal(WellKnownPlans.TrialPlanId, tenantPlan.PlanId);
+        Assert.Equal(EBillingStatus.Active, tenantPlan.Status);
     }
 
     [Fact]
@@ -44,13 +48,13 @@ public class TenantOnboardingServiceTests
         // não habilitada por padrão (RF-008/ativação do coletor fora de
         // escopo do MVP).
         await using var context = CreateContext();
+        context.Plans.Add(CreateTrialPlan());
         var user = new User(Guid.CreateVersion7(), null, "owner@atua.com", "hash");
+        user.ConfirmEmail(DateTimeOffset.UtcNow);
         context.Users.Add(user);
-        context.TrialSubscriptions.Add(new TrialSubscription(Guid.CreateVersion7(), user.Id,
-            DateTimeOffset.UtcNow, DateTimeOffset.UtcNow.AddDays(7)));
         await context.SaveChangesAsync();
 
-        var result = await new TenantOnboardingService(context).ExecuteAsync(user.Id, "Atua Refrigeração",
+        var result = await new AddTenantUseCase(context).ExecuteAsync(user.Id, "Atua Refrigeração",
             "11122233000183", CancellationToken.None);
 
         Assert.Equal(ECreateTenantStatus.Success, result.Status);
@@ -68,13 +72,13 @@ public class TenantOnboardingServiceTests
     public async Task RejeitaCnpjComFormatoInvalido()
     {
         await using var context = CreateContext();
+        context.Plans.Add(CreateTrialPlan());
         var user = new User(Guid.CreateVersion7(), null, "owner@atua.com", "hash");
+        user.ConfirmEmail(DateTimeOffset.UtcNow);
         context.Users.Add(user);
-        context.TrialSubscriptions.Add(new TrialSubscription(Guid.CreateVersion7(), user.Id,
-            DateTimeOffset.UtcNow, DateTimeOffset.UtcNow.AddDays(7)));
         await context.SaveChangesAsync();
 
-        var result = await new TenantOnboardingService(context).ExecuteAsync(user.Id, "Atua",
+        var result = await new AddTenantUseCase(context).ExecuteAsync(user.Id, "Atua",
             "123", CancellationToken.None);
 
         Assert.Equal(ECreateTenantStatus.InvalidCnpj, result.Status);
@@ -85,16 +89,16 @@ public class TenantOnboardingServiceTests
     public async Task RejeitaCnpjJaAssociadoAOutroTenant()
     {
         await using var context = CreateContext();
+        context.Plans.Add(CreateTrialPlan());
         var existingTenant = new Tenant(Guid.CreateVersion7(), "Outra Empresa", "11122233000183",
             "America/Sao_Paulo");
         context.Tenants.Add(existingTenant);
         var user = new User(Guid.CreateVersion7(), null, "owner@atua.com", "hash");
+        user.ConfirmEmail(DateTimeOffset.UtcNow);
         context.Users.Add(user);
-        context.TrialSubscriptions.Add(new TrialSubscription(Guid.CreateVersion7(), user.Id,
-            DateTimeOffset.UtcNow, DateTimeOffset.UtcNow.AddDays(7)));
         await context.SaveChangesAsync();
 
-        var result = await new TenantOnboardingService(context).ExecuteAsync(user.Id, "Minha Empresa",
+        var result = await new AddTenantUseCase(context).ExecuteAsync(user.Id, "Minha Empresa",
             "11122233000183", CancellationToken.None);
 
         Assert.Equal(ECreateTenantStatus.CnpjAlreadyRegistered, result.Status);
@@ -104,35 +108,36 @@ public class TenantOnboardingServiceTests
     public async Task RejeitaQuandoUsuarioJaEOwnerDeOutroTenant()
     {
         await using var context = CreateContext();
+        context.Plans.Add(CreateTrialPlan());
         var existingTenant = new Tenant(Guid.CreateVersion7(), "Empresa A", "11122233000183",
             "America/Sao_Paulo");
         context.Tenants.Add(existingTenant);
         var user = new User(Guid.CreateVersion7(), null, "owner@atua.com", "hash");
+        user.ConfirmEmail(DateTimeOffset.UtcNow);
         context.Users.Add(user);
         context.TenantMemberships.Add(new TenantMembership(existingTenant.Id, user.Id,
             ETenantMembershipRole.Owner));
-        context.TrialSubscriptions.Add(new TrialSubscription(Guid.CreateVersion7(), user.Id,
-            DateTimeOffset.UtcNow, DateTimeOffset.UtcNow.AddDays(7)));
         await context.SaveChangesAsync();
 
-        var result = await new TenantOnboardingService(context).ExecuteAsync(user.Id, "Empresa B",
+        var result = await new AddTenantUseCase(context).ExecuteAsync(user.Id, "Empresa B",
             "11122233000264", CancellationToken.None);
 
         Assert.Equal(ECreateTenantStatus.UserAlreadyHasTenant, result.Status);
     }
 
     [Fact]
-    public async Task RejeitaQuandoUsuarioNaoPossuiTrial()
+    public async Task RejeitaQuandoEmailNaoConfirmado()
     {
         await using var context = CreateContext();
+        context.Plans.Add(CreateTrialPlan());
         var user = new User(Guid.CreateVersion7(), null, "owner@atua.com", "hash");
         context.Users.Add(user);
         await context.SaveChangesAsync();
 
-        var result = await new TenantOnboardingService(context).ExecuteAsync(user.Id, "Atua",
+        var result = await new AddTenantUseCase(context).ExecuteAsync(user.Id, "Atua",
             "11122233000183", CancellationToken.None);
 
-        Assert.Equal(ECreateTenantStatus.TrialNotFound, result.Status);
+        Assert.Equal(ECreateTenantStatus.EmailNotConfirmed, result.Status);
     }
 
     private static AtuaDbContext CreateContext() => new(new DbContextOptionsBuilder<AtuaDbContext>()
