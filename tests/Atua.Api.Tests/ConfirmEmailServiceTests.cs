@@ -1,5 +1,4 @@
 using Atua.Api.Application.Identity;
-using Atua.Api.Application.Billing;
 using Atua.Api.Domain.Identity;
 using Atua.Api.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -117,8 +116,7 @@ public class ConfirmEmailServiceTests
         return new ConfirmEmailService(
             context,
             new FakeSecretHasher(),
-            timeProvider,
-            new CreateTrialService(context, timeProvider));
+            timeProvider);
     }
 
     private sealed class FakeSecretHasher : ISecretHasher

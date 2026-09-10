@@ -1,7 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
 using Atua.Api.Application.Identity;
-using Atua.Api.Application.Billing;
 using Atua.Api.Endpoints;
 using Atua.Api.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Builder;
@@ -81,7 +80,6 @@ public class AuthEndpointsTests
             FakeEmailConfirmationSender>();
         builder.Services.AddScoped<SignUpService>();
         builder.Services.AddScoped<ConfirmEmailService>();
-        builder.Services.AddScoped<CreateTrialService>();
         builder.Services.AddScoped<AuthService>();
 
         var app = builder.Build();

@@ -2,6 +2,7 @@ using Atua.Api.Application.Identity;
 using Atua.Api.Domain.Identity;
 using Atua.Api.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
 
 namespace Atua.Api.Tests;
@@ -132,7 +133,8 @@ public class SignUpServiceTests
         FakeEmailConfirmationSender sender, DateTimeOffset now)
     {
         return new SignUpService(context, new FakeSecretHasher(),
-            new FixedEmailConfirmationCodeGenerator(), sender, new FixedTimeProvider(now));
+            new FixedEmailConfirmationCodeGenerator(), sender, new FixedTimeProvider(now),
+            NullLogger<SignUpService>.Instance);
     }
 
     private sealed class FakeSecretHasher : ISecretHasher

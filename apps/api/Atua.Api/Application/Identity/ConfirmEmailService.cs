@@ -1,4 +1,3 @@
-using Atua.Api.Application.Billing;
 using Atua.Api.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
@@ -7,8 +6,7 @@ namespace Atua.Api.Application.Identity;
 public sealed class ConfirmEmailService(
     AtuaDbContext dbContext,
     ISecretHasher secretHasher,
-    TimeProvider timeProvider,
-    CreateTrialService createTrialService)
+    TimeProvider timeProvider)
 {
     public async Task<ConfirmEmailResult> ExecuteAsync(ConfirmEmailCommand command,
         CancellationToken cancellationToken)
@@ -51,9 +49,10 @@ public sealed class ConfirmEmailService(
 
         user.ConfirmEmail(now);
 
-        // A confirmação e a criação do Trial são persistidas por uma única chamada
-        // SaveChanges. Não suprimir falhas evita uma conta confirmada sem Trial.
-        await createTrialService.AddForConfirmedUserAsync(user, cancellationToken);
+        // ADR-024: EmailConfirmedAt do usuário passa a ser a única fonte de
+        // verdade para o início do prazo do plano trial (RF-020.2), atribuído
+        // somente na criação do tenant (AddTenantUseCase). Nenhuma entidade
+        // de Trial é criada aqui.
         await dbContext.SaveChangesAsync(cancellationToken);
 
         return new ConfirmEmailResult(EConfirmEmailStatus.Success);

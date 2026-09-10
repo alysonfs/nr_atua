@@ -36,6 +36,16 @@ public static class AuthEndpoints
         .Produces(StatusCodes.Status400BadRequest)
         .Produces(StatusCodes.Status409Conflict);
 
+        endpoints.MapPost("/auth/resend-confirmation", async (ResendConfirmationRequest request,
+            SignUpService service, CancellationToken cancellationToken) =>
+        {
+            await service.ResendConfirmationAsync(request.Email, cancellationToken);
+            // Sempre 200: não revela se o e-mail existe ou já foi confirmado.
+            return Results.Ok();
+        })
+        .WithName("ResendConfirmation")
+        .Produces(StatusCodes.Status200OK);
+
         endpoints.MapPost("/auth/confirm-email", async (ConfirmEmailRequest request,
             ConfirmEmailService service, CancellationToken cancellationToken) =>
         {
@@ -142,6 +152,8 @@ public static class AuthEndpoints
 }
 
 public sealed record SignUpRequest(string Email, string Password, string PasswordConfirmation);
+
+public sealed record ResendConfirmationRequest(string Email);
 
 public sealed record ConfirmEmailRequest(string Email, string Code);
 public sealed record SignInRequest(string Email, string Password);
