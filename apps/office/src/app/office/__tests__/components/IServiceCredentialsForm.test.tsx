@@ -10,6 +10,12 @@ vi.mock('../../hooks/useIServiceIntegration', () => ({
     setCredentials: setCredentialsMock,
     isSubmitting: false,
   }),
+  useIServiceCredentials: () => ({
+    status: { hasCredentials: false, validationStatus: 'NotValidated' },
+    isLoading: false,
+    isError: false,
+    refetch: vi.fn(),
+  }),
 }))
 
 describe('IServiceCredentialsForm', () => {
@@ -44,7 +50,7 @@ describe('IServiceCredentialsForm', () => {
     })
   })
 
-  it('limpa os campos e nunca reexibe o segredo após salvar com sucesso', async () => {
+  it('mantém os campos preenchidos e desabilitados após salvar, trocando o botão para "Editar credenciais"', async () => {
     setCredentialsMock.mockResolvedValueOnce({ status: 'success' })
     const onSaved = vi.fn()
     const user = userEvent.setup()
@@ -63,9 +69,18 @@ describe('IServiceCredentialsForm', () => {
       expect(onSaved).toHaveBeenCalled()
     })
 
-    expect(usernameInput.value).toBe('')
-    expect(passwordInput.value).toBe('')
-    expect(screen.queryByDisplayValue('senha-secreta')).not.toBeInTheDocument()
+    expect(usernameInput.value).toBe('usuario.iservice')
+    expect(passwordInput.value).toBe('senha-secreta')
+    expect(usernameInput).toBeDisabled()
+    expect(passwordInput).toBeDisabled()
+
+    const editButton = screen.getByRole('button', { name: 'Editar credenciais' })
+    await user.click(editButton)
+
+    expect(usernameInput).not.toBeDisabled()
+    expect(passwordInput).not.toBeDisabled()
+    expect(usernameInput.value).toBe('usuario.iservice')
+    expect(screen.getByRole('button', { name: 'Salvar credenciais' })).toBeInTheDocument()
   })
 
   it('envia o payload correto ao backend, incluindo baseUrl opcional', async () => {
