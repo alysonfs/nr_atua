@@ -7,7 +7,9 @@ import { PublicOnlyRoute } from './app/auth/PublicOnlyRoute'
 import { SignInPage } from './app/auth/pages/SignInPage'
 import { SignUpPage } from './app/auth/pages/SignUpPage'
 import { ConfirmEmailPage } from './app/auth/pages/ConfirmEmailPage'
-import App from './App'
+import { AppLayout } from './app/office/components/Layout'
+import { DashboardPage } from './app/dashboard/pages/DashboardPage'
+import { SettingsPage } from './app/office/pages/SettingsPage'
 
 export function AppRouter() {
   return (
@@ -24,13 +26,20 @@ export function AppRouter() {
 
           {/* Rotas protegidas */}
           <Route element={<ProtectedRoute />}>
-            <Route path="/" element={<App />} />
+            <Route element={<AppLayout />}>
+              <Route path="/home" element={<DashboardPage />} />
+              <Route path="/settings" element={<SettingsPage />} />
+            </Route>
           </Route>
 
+          {/* Home pós-login é o dashboard */}
+          <Route path="/" element={<Navigate to="/home" replace />} />
+
           {/* Fallback */}
-          <Route path="*" element={<Navigate to="/" replace />} />
+          <Route path="*" element={<Navigate to="/home" replace />} />
         </Routes>
       </AuthProvider>
     </BrowserRouter>
   )
 }
+

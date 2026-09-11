@@ -426,10 +426,20 @@ describe('ProtectedRoute', () => {
 })
 
 // ──────────────────────────────────────────────────────────────────────────────
-// Logout — botão Sair no dashboard (App.tsx)
+// Logout — botão Sair no header (AppLayout)
 // ──────────────────────────────────────────────────────────────────────────────
 
-describe('Logout (botão Sair no dashboard)', () => {
+vi.mock('../../office/hooks/useUserTrial', () => ({
+  useUserTrial: () => ({
+    trial: null,
+    summary: null,
+    isLoading: false,
+    isError: false,
+    refetch: vi.fn(),
+  }),
+}))
+
+describe('Logout (botão Sair no header)', () => {
   beforeEach(() => {
     vi.resetAllMocks()
     mockAuthState.isAuthenticated = true
@@ -438,11 +448,15 @@ describe('Logout (botão Sair no dashboard)', () => {
 
   it('chama signOut quando o botão Sair é clicado', async () => {
     mockSignOut.mockResolvedValueOnce(undefined)
-    const { default: App } = await import('../../../App')
+    const { AppLayout } = await import('../../office/components/Layout')
 
     render(
-      <MemoryRouter>
-        <App />
+      <MemoryRouter initialEntries={['/home']}>
+        <Routes>
+          <Route element={<AppLayout />}>
+            <Route path="/home" element={<div>Dashboard</div>} />
+          </Route>
+        </Routes>
       </MemoryRouter>,
     )
 
