@@ -1,64 +1,87 @@
-/**
- * RF-017: status de OS é uma string livre definida pelo provedor (sem enum
- * fixo). Os nomes abaixo são exemplos plausíveis de status "crus" usados
- * para popular o dashboard enquanto a integração com o endpoint real de
- * agregação mensal não é implementada (etapa futura).
- *
- * Este hook gera dados MOCKADOS de forma determinística (sem Math.random),
- * agrupando a contagem de OS por status, por dia, para o mês corrente.
- * Quando a API de sumário mensal existir, este hook deve ser substituído
- * por uma integração real, mantendo o mesmo formato de retorno.
- */
+import { useEffect, useState } from 'react'
+import { apiClient } from '../../../shared/lib/apiClient'
 
+/**
+ * RF-017: status de OS é uma string livre (sem enum fixo).
+ *
+ * GET /api/tenants/{tenantId}/work-orders/summary?month=YYYY-MM
+ *
+ * Ver docs/architecture/dashboard-work-order-queries.md (Endpoint 1) para o
+ * contrato completo. O parsing abaixo extrai apenas `statuses` da resposta
+ * (`{ month, timeZoneId, statuses: [...] }`), mantendo o mesmo shape que os
+ * componentes de UI (StatusSummaryCard/SummaryMonth) já consumiam quando o
+ * hook era mockado.
+ */
 export interface StatusMonthSummary {
   /** Nome cru do status, conforme informado pelo provedor. */
   status: string
-  /** Total de OS no status ao longo do mês corrente. */
+  /** Total de OS no status ao longo do mês consultado. */
   total: number
   /** Quantidade de OS no status, por dia do mês (index 0 = dia 1). */
   dailyCounts: number[]
 }
 
-const TRACKED_STATUSES = ['Designado', 'Em Processamento', 'Concluído', 'Cancelado'] as const
-
-/**
- * Gera um valor determinístico e plausível para a contagem de um status em
- * um dado dia do mês, sem depender de números aleatórios reais.
- *
- * A fórmula combina uma onda senoidal (para simular variação natural ao
- * longo do mês) com um deslocamento por status, garantindo resultados
- * estáveis entre execuções e testes.
- */
-function computeDailyCount(statusIndex: number, dayOfMonth: number): number {
-  const base = 4 + statusIndex * 2
-  const wave = Math.sin((dayOfMonth + statusIndex * 3) / 2.5)
-  const amplitude = 3 + statusIndex
-  const value = base + wave * amplitude
-  return Math.max(0, Math.round(value))
+interface WorkOrderMonthlySummaryResponse {
+  month: string
+  timeZoneId: string
+  statuses: StatusMonthSummary[]
 }
 
-function getDaysInMonth(year: number, monthIndex: number): number {
-  return new Date(year, monthIndex + 1, 0).getDate()
-}
-
-/**
- * Retorna o sumário mensal (mês corrente) de OS agrupadas por status, com
- * série diária para o mini-gráfico (sparkline) de cada card.
- */
-export function useServiceOrderMonthSummary(referenceDate: Date = new Date()): StatusMonthSummary[] {
+function formatMonth(referenceDate: Date): string {
   const year = referenceDate.getFullYear()
-  const monthIndex = referenceDate.getMonth()
-  const daysInMonth = getDaysInMonth(year, monthIndex)
+  const month = String(referenceDate.getMonth() + 1).padStart(2, '0')
+  return `${year}-${month}`
+}
 
-  return TRACKED_STATUSES.map((status, statusIndex) => {
-    const dailyCounts: number[] = []
+/**
+ * Busca o sumário mensal (mês corrente, por padrão) de OS agrupadas por
+ * status, com série diária para o mini-gráfico (sparkline) de cada card.
+ *
+ * `tenantId` deve vir do tenant ativo do usuário (ver useMyTenants(), no
+ * padrão já usado por SettingsPage.tsx). Enquanto `tenantId` for `null`
+ * (tenant ainda não resolvido), nenhuma requisição é disparada.
+ */
+export function useServiceOrderMonthSummary(tenantId: string | null, referenceDate: Date = new Date()) {
+  const [summary, setSummary] = useState<StatusMonthSummary[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+  const [isError, setIsError] = useState(false)
 
-    for (let day = 1; day <= daysInMonth; day += 1) {
-      dailyCounts.push(computeDailyCount(statusIndex, day))
+  const month = formatMonth(referenceDate)
+
+  useEffect(() => {
+    let isCancelled = false
+
+    void Promise.resolve().then(async () => {
+      if (isCancelled) return
+
+      if (!tenantId) {
+        setIsLoading(false)
+        setSummary([])
+        return
+      }
+
+      setIsLoading(true)
+      setIsError(false)
+
+      try {
+        const response = await apiClient.get<WorkOrderMonthlySummaryResponse>(
+          `/api/tenants/${tenantId}/work-orders/summary?month=${month}`,
+        )
+        if (isCancelled) return
+        setSummary(response?.statuses ?? [])
+      } catch {
+        if (isCancelled) return
+        setIsError(true)
+        setSummary([])
+      } finally {
+        if (!isCancelled) setIsLoading(false)
+      }
+    })
+
+    return () => {
+      isCancelled = true
     }
+  }, [tenantId, month])
 
-    const total = dailyCounts.reduce((sum, count) => sum + count, 0)
-
-    return { status, total, dailyCounts }
-  })
+  return { summary, isLoading, isError }
 }

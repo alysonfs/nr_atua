@@ -14,16 +14,21 @@ const STATUS_ACCENT_COLOR: Record<string, string> = {
 
 const DEFAULT_ACCENT_COLOR = '#334155' // slate-700
 
+interface SummaryMonthProps {
+  /** Tenant ativo do usuário (ver useMyTenants().defaultTenantId). */
+  tenantId: string | null
+}
+
 /**
  * Seção "summary month" do Dashboard: mostra, para o mês corrente, a
  * contagem de OS agrupada por status (string livre, RF-017), cada uma em
  * um card com mini-gráfico (sparkline) da evolução diária.
  *
- * Os dados exibidos são mockados (ver useServiceOrderMonthSummary); a
- * integração com o endpoint real de agregação mensal é uma etapa futura.
+ * Integra com GET /api/tenants/{tenantId}/work-orders/summary (ver
+ * useServiceOrderMonthSummary).
  */
-export function SummaryMonth() {
-  const summary = useServiceOrderMonthSummary()
+export function SummaryMonth({ tenantId }: SummaryMonthProps) {
+  const { summary, isLoading, isError } = useServiceOrderMonthSummary(tenantId)
 
   return (
     <section aria-labelledby="summary-month-heading" className="space-y-3">
@@ -31,17 +36,31 @@ export function SummaryMonth() {
         Resumo do mês
       </h2>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {summary.map(({ status, total, dailyCounts }) => (
-          <StatusSummaryCard
-            key={status}
-            status={status}
-            total={total}
-            dailyCounts={dailyCounts}
-            accentColor={STATUS_ACCENT_COLOR[status] ?? DEFAULT_ACCENT_COLOR}
-          />
-        ))}
-      </div>
+      {isLoading && (
+        <p className="rounded-md border border-slate-200 bg-white px-4 py-3 text-sm text-slate-500">
+          Carregando resumo do mês...
+        </p>
+      )}
+
+      {!isLoading && isError && (
+        <p role="alert" className="rounded-md border-l-4 border-red-500 bg-white p-4 text-sm text-red-800 shadow-sm">
+          Não foi possível carregar o resumo do mês. Tente novamente mais tarde.
+        </p>
+      )}
+
+      {!isLoading && !isError && (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {summary.map(({ status, total, dailyCounts }) => (
+            <StatusSummaryCard
+              key={status}
+              status={status}
+              total={total}
+              dailyCounts={dailyCounts}
+              accentColor={STATUS_ACCENT_COLOR[status] ?? DEFAULT_ACCENT_COLOR}
+            />
+          ))}
+        </div>
+      )}
     </section>
   )
 }

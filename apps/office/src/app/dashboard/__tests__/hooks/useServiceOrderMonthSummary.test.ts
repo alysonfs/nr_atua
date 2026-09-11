@@ -1,52 +1,80 @@
 /**
- * Test suite for useServiceOrderMonthSummary (mock data hook).
+ * Test suite for useServiceOrderMonthSummary.
  *
- * Garante que a geração de dados é determinística (mesma entrada produz
- * a mesma saída, sem uso de Math.random), o que é essencial para os
- * testes de snapshot/comportamento dos componentes que consomem o hook.
+ * Cobre:
+ * - Chamada ao endpoint correto (tenant + mês formatado).
+ * - Parsing do shape real da API (`{ month, timeZoneId, statuses }`).
+ * - Estado de erro em caso de falha de rede.
+ * - Nenhuma requisição é disparada enquanto tenantId for null.
  */
 
-import { describe, it, expect } from 'vitest'
+import { renderHook, waitFor } from '@testing-library/react'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { useServiceOrderMonthSummary } from '../../hooks/useServiceOrderMonthSummary'
+
+const getMock = vi.fn()
+
+vi.mock('../../../../shared/lib/apiClient', async () => {
+  const actual =
+    await vi.importActual<typeof import('../../../../shared/lib/apiClient')>(
+      '../../../../shared/lib/apiClient',
+    )
+  return {
+    ...actual,
+    apiClient: {
+      get: (...args: unknown[]) => getMock(...args),
+      post: vi.fn(),
+      put: vi.fn(),
+    },
+  }
+})
 
 describe('useServiceOrderMonthSummary', () => {
   const referenceDate = new Date(2026, 8, 10) // 10/09/2026
 
-  it('is deterministic for the same reference date', () => {
-    const first = useServiceOrderMonthSummary(referenceDate)
-    const second = useServiceOrderMonthSummary(referenceDate)
-
-    expect(first).toEqual(second)
+  beforeEach(() => {
+    getMock.mockReset()
   })
 
-  it('returns one entry per tracked status', () => {
-    const summary = useServiceOrderMonthSummary(referenceDate)
+  it('requests the summary endpoint with tenant id and formatted month', async () => {
+    getMock.mockResolvedValueOnce({ month: '2026-09', timeZoneId: 'America/Sao_Paulo', statuses: [] })
 
-    expect(summary.map((entry) => entry.status)).toEqual([
-      'Designado',
-      'Em Processamento',
-      'Concluído',
-      'Cancelado',
-    ])
+    const { result } = renderHook(() => useServiceOrderMonthSummary('tenant-1', referenceDate))
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false))
+
+    expect(getMock).toHaveBeenCalledWith('/api/tenants/tenant-1/work-orders/summary?month=2026-09')
   })
 
-  it('returns a daily count entry for each day of the reference month', () => {
-    const summary = useServiceOrderMonthSummary(referenceDate)
-    const daysInSeptember2026 = 30
+  it('returns the statuses array from the API response', async () => {
+    const statuses = [{ status: 'Designado', total: 5, dailyCounts: [1, 2, 3] }]
+    getMock.mockResolvedValueOnce({ month: '2026-09', timeZoneId: 'America/Sao_Paulo', statuses })
 
-    summary.forEach((entry) => {
-      expect(entry.dailyCounts).toHaveLength(daysInSeptember2026)
-      expect(entry.total).toBe(entry.dailyCounts.reduce((sum, value) => sum + value, 0))
-    })
+    const { result } = renderHook(() => useServiceOrderMonthSummary('tenant-1', referenceDate))
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false))
+
+    expect(result.current.summary).toEqual(statuses)
+    expect(result.current.isError).toBe(false)
   })
 
-  it('never returns negative counts', () => {
-    const summary = useServiceOrderMonthSummary(referenceDate)
+  it('sets isError and empties summary on request failure', async () => {
+    getMock.mockRejectedValueOnce(new Error('network error'))
 
-    summary.forEach((entry) => {
-      entry.dailyCounts.forEach((count) => {
-        expect(count).toBeGreaterThanOrEqual(0)
-      })
-    })
+    const { result } = renderHook(() => useServiceOrderMonthSummary('tenant-1', referenceDate))
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false))
+
+    expect(result.current.isError).toBe(true)
+    expect(result.current.summary).toEqual([])
+  })
+
+  it('does not request anything while tenantId is null', async () => {
+    const { result } = renderHook(() => useServiceOrderMonthSummary(null, referenceDate))
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false))
+
+    expect(getMock).not.toHaveBeenCalled()
+    expect(result.current.summary).toEqual([])
   })
 })

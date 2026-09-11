@@ -3,74 +3,103 @@
  *
  * Cobre:
  * - Renderização dos cabeçalhos de coluna esperados.
- * - Renderização de uma linha por OS mockada, com contagem correta.
+ * - Renderização de uma linha por OS retornada pela API, com contagem correta.
  * - Renderização do heading da seção.
  * - Estado vazio (sem itens), garantindo que a tabela não quebra.
+ * - Estados de carregamento e erro.
  */
 
-import { describe, it, expect, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { render, screen, waitFor } from '@testing-library/react'
 import { DesignatedOrdersTable } from '../../components/DesignatedOrdersTable'
-import { useDesignatedServiceOrders } from '../../hooks/useDesignatedServiceOrders'
 
-vi.mock('../../hooks/useDesignatedServiceOrders', async () => {
-  const actual = await vi.importActual<typeof import('../../hooks/useDesignatedServiceOrders')>(
-    '../../hooks/useDesignatedServiceOrders',
-  )
+const getMock = vi.fn()
+
+vi.mock('../../../../shared/lib/apiClient', async () => {
+  const actual =
+    await vi.importActual<typeof import('../../../../shared/lib/apiClient')>(
+      '../../../../shared/lib/apiClient',
+    )
   return {
     ...actual,
-    useDesignatedServiceOrders: vi.fn(actual.useDesignatedServiceOrders),
+    apiClient: {
+      get: (...args: unknown[]) => getMock(...args),
+      post: vi.fn(),
+      put: vi.fn(),
+    },
   }
 })
 
+const TENANT_ID = 'tenant-1'
+
+const mockedOrders = [
+  { id: 'os-1', providerId: 'EXT-1001', status: 'Designado', createdAt: '2026-09-01T10:00:00Z', updatedAt: '2026-09-02T10:00:00Z' },
+  { id: 'os-2', providerId: 'EXT-1002', status: 'Designado', createdAt: '2026-09-03T10:00:00Z', updatedAt: '2026-09-04T10:00:00Z' },
+]
+
 describe('DesignatedOrdersTable', () => {
-  it('renders the section heading', () => {
-    render(<DesignatedOrdersTable />)
+  beforeEach(() => {
+    getMock.mockReset()
+  })
+
+  it('renders the section heading', async () => {
+    getMock.mockResolvedValueOnce({ status: 'Designado', page: 1, pageSize: 100, totalCount: 0, items: [] })
+
+    render(<DesignatedOrdersTable tenantId={TENANT_ID} />)
 
     expect(screen.getByRole('heading', { name: /ordens de serviço designadas/i })).toBeInTheDocument()
   })
 
-  it('renders the expected column headers', () => {
-    render(<DesignatedOrdersTable />)
+  it('renders the expected column headers', async () => {
+    getMock.mockResolvedValueOnce({ status: 'Designado', page: 1, pageSize: 100, totalCount: mockedOrders.length, items: mockedOrders })
 
-    expect(screen.getByRole('columnheader', { name: /^os$/i })).toBeInTheDocument()
-    expect(screen.getByRole('columnheader', { name: /provedor/i })).toBeInTheDocument()
+    render(<DesignatedOrdersTable tenantId={TENANT_ID} />)
+
+    await waitFor(() => expect(screen.getByRole('columnheader', { name: /^os$/i })).toBeInTheDocument())
+    expect(screen.getByRole('columnheader', { name: /nº da os no provedor/i })).toBeInTheDocument()
     expect(screen.getByRole('columnheader', { name: /^status$/i })).toBeInTheDocument()
     expect(screen.getByRole('columnheader', { name: /criada em/i })).toBeInTheDocument()
     expect(screen.getByRole('columnheader', { name: /atualizada em/i })).toBeInTheDocument()
   })
 
-  it('renders one row per mocked designated service order', () => {
-    render(<DesignatedOrdersTable />)
+  it('renders one row per designated service order returned by the API', async () => {
+    getMock.mockResolvedValueOnce({ status: 'Designado', page: 1, pageSize: 100, totalCount: mockedOrders.length, items: mockedOrders })
 
-    const expectedOrders = useDesignatedServiceOrders()
+    render(<DesignatedOrdersTable tenantId={TENANT_ID} />)
 
-    expectedOrders.forEach((order) => {
+    await waitFor(() => expect(screen.getByText('os-1')).toBeInTheDocument())
+
+    mockedOrders.forEach((order) => {
       expect(screen.getByText(order.id)).toBeInTheDocument()
-      // um mesmo provedor pode ter mais de uma OS designada, então usamos
-      // getAllByText para não quebrar quando o nome se repete.
-      expect(screen.getAllByText(order.providerName).length).toBeGreaterThan(0)
+      expect(screen.getAllByText(order.providerId).length).toBeGreaterThan(0)
     })
 
     const rows = screen.getAllByRole('row')
-    // uma linha de cabeçalho + uma por OS mockada
-    expect(rows).toHaveLength(expectedOrders.length + 1)
+    // uma linha de cabeçalho + uma por OS retornada
+    expect(rows).toHaveLength(mockedOrders.length + 1)
   })
 
-  it('renders every row with the "Designado" status', () => {
-    render(<DesignatedOrdersTable />)
+  it('renders every row with the "Designado" status', async () => {
+    getMock.mockResolvedValueOnce({ status: 'Designado', page: 1, pageSize: 100, totalCount: mockedOrders.length, items: mockedOrders })
 
-    const expectedOrders = useDesignatedServiceOrders()
-    const statusCells = screen.getAllByText('Designado')
+    render(<DesignatedOrdersTable tenantId={TENANT_ID} />)
 
-    expect(statusCells).toHaveLength(expectedOrders.length)
+    await waitFor(() => expect(screen.getAllByText('Designado')).toHaveLength(mockedOrders.length))
   })
 
-  it('renders an empty state message when there are no designated orders', () => {
-    vi.mocked(useDesignatedServiceOrders).mockReturnValueOnce([])
+  it('renders an empty state message when there are no designated orders', async () => {
+    getMock.mockResolvedValueOnce({ status: 'Designado', page: 1, pageSize: 100, totalCount: 0, items: [] })
 
-    render(<DesignatedOrdersTable />)
+    render(<DesignatedOrdersTable tenantId={TENANT_ID} />)
 
-    expect(screen.getByText(/nenhuma ordem de serviço designada/i)).toBeInTheDocument()
+    await waitFor(() => expect(screen.getByText(/nenhuma ordem de serviço designada/i)).toBeInTheDocument())
+  })
+
+  it('renders an error message when the request fails', async () => {
+    getMock.mockRejectedValueOnce(new Error('network error'))
+
+    render(<DesignatedOrdersTable tenantId={TENANT_ID} />)
+
+    await waitFor(() => expect(screen.getByRole('alert')).toBeInTheDocument())
   })
 })

@@ -24,8 +24,8 @@ export const designatedOrdersColumns: ColumnDef<DesignatedServiceOrder>[] = [
     header: 'OS',
   },
   {
-    accessorKey: 'providerName',
-    header: 'Provedor',
+    accessorKey: 'providerId',
+    header: 'Nº da OS no provedor',
   },
   {
     accessorKey: 'status',

@@ -2,18 +2,23 @@ import { flexRender, getCoreRowModel, useReactTable } from '@tanstack/react-tabl
 import { useDesignatedServiceOrders } from '../../hooks/useDesignatedServiceOrders'
 import { designatedOrdersColumns } from './columns'
 
+interface DesignatedOrdersTableProps {
+  /** Tenant ativo do usuário (ver useMyTenants().defaultTenantId). */
+  tenantId: string | null
+}
+
 /**
  * Seção "OS designadas" do Dashboard: lista, em formato de tabela, as
  * ordens de serviço atualmente com status "Designado".
  *
- * Os dados exibidos são mockados (ver useDesignatedServiceOrders); a
- * integração com o endpoint real de listagem de OS é uma etapa futura.
+ * Integra com GET /api/tenants/{tenantId}/work-orders?status=Designado
+ * (ver useDesignatedServiceOrders).
  */
-export function DesignatedOrdersTable() {
-  const data = useDesignatedServiceOrders()
+export function DesignatedOrdersTable({ tenantId }: DesignatedOrdersTableProps) {
+  const { orders, isLoading, isError } = useDesignatedServiceOrders(tenantId)
 
   const table = useReactTable({
-    data,
+    data: orders,
     columns: designatedOrdersColumns,
     getCoreRowModel: getCoreRowModel(),
   })
@@ -24,6 +29,19 @@ export function DesignatedOrdersTable() {
         Ordens de serviço designadas
       </h2>
 
+      {isLoading && (
+        <p className="rounded-md border border-slate-200 bg-white px-4 py-3 text-sm text-slate-500">
+          Carregando ordens de serviço designadas...
+        </p>
+      )}
+
+      {!isLoading && isError && (
+        <p role="alert" className="rounded-md border-l-4 border-red-500 bg-white p-4 text-sm text-red-800 shadow-sm">
+          Não foi possível carregar as ordens de serviço designadas. Tente novamente mais tarde.
+        </p>
+      )}
+
+      {!isLoading && !isError && (
       <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm">
         <table className="min-w-full divide-y divide-slate-200 text-sm">
           <thead className="bg-slate-50">
@@ -63,6 +81,7 @@ export function DesignatedOrdersTable() {
           </tbody>
         </table>
       </div>
+      )}
     </section>
   )
 }
