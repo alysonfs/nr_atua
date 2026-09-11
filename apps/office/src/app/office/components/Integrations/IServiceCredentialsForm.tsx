@@ -1,8 +1,7 @@
 import { type FormEvent, useEffect, useState } from 'react'
+import { PreviewOpen, PreviewClose } from '@icon-park/react'
 import { useIServiceCredentials, useSetIServiceCredentials } from '../../hooks/useIServiceIntegration'
 import type { SetCredentialsErrorCode } from '../../../../shared/types/integration'
-import iconEye from '../../../../../../../assets/icon/icon-eye.svg'
-import iconEyeOff from '../../../../../../../assets/icon/icon-eye-off.svg'
 
 interface IServiceCredentialsFormProps {
   tenantId: string
@@ -192,12 +191,11 @@ export function IServiceCredentialsForm({
                 aria-pressed={isPasswordVisible}
                 className="absolute inset-y-0 right-0 flex items-center px-3 text-slate-500 hover:text-slate-700"
               >
-                <img
-                  src={isPasswordVisible ? iconEyeOff : iconEye}
-                  alt=""
-                  aria-hidden="true"
-                  className="size-5"
-                />
+                {isPasswordVisible ? (
+                  <PreviewClose theme="outline" size={20} aria-hidden="true" />
+                ) : (
+                  <PreviewOpen theme="outline" size={20} aria-hidden="true" />
+                )}
               </button>
             )}
           </div>

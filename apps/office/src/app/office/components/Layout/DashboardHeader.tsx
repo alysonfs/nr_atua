@@ -1,7 +1,6 @@
 import { Link } from 'react-router-dom'
+import { Setting, Remind } from '@icon-park/react'
 import logoBgLight from '../../../../../../../assets/logo_bg_light.svg'
-import iconSettings from '../../../../../../../assets/icon/icon-settings.svg'
-import iconAlert from '../../../../../../../assets/icon/icon-alert.svg'
 import type { ReactNode } from 'react'
 
 /**
@@ -27,14 +26,14 @@ function ClientBrandPlaceholder() {
  * Ícone puramente decorativo, sem ação. Usado para demarcar área de
  * alertas no Dashboard mínimo, antes de definirmos o menu real.
  */
-function DecorativeIcon({ src, label }: { src: string; label: string }) {
+function DecorativeIcon({ icon, label }: { icon: ReactNode; label: string }) {
   return (
     <span
       role="img"
       aria-label={label}
       className="flex h-9 w-9 items-center justify-center rounded-md border border-white/10 bg-white/8 text-slate-200"
     >
-      <img src={src} alt="" aria-hidden="true" className="h-5 w-5 invert" />
+      {icon}
     </span>
   )
 }
@@ -65,13 +64,16 @@ export function DashboardHeader({ actions }: DashboardHeaderProps) {
         </div>
 
         <div className="flex items-center gap-2 sm:gap-3">
-          <DecorativeIcon src={iconAlert} label="Alertas (área reservada)" />
+          <DecorativeIcon
+            icon={<Remind theme="outline" size={20} fill="#e2e8f0" />}
+            label="Alertas (área reservada)"
+          />
           <Link
             to="/settings"
             aria-label="Configurações"
             className="flex h-9 w-9 items-center justify-center rounded-md border border-white/10 bg-white/8 text-slate-200 transition hover:bg-white/14 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-400"
           >
-            <img src={iconSettings} alt="" aria-hidden="true" className="h-5 w-5 invert" />
+            <Setting theme="outline" size={20} fill="#e2e8f0" />
           </Link>
           {actions}
         </div>
