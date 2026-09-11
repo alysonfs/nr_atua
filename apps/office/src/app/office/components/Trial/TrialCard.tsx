@@ -131,7 +131,7 @@ export function TrialCard({ className = '', showCTA = false, onUpgradeClick }: T
           <div className="rounded-lg border-l-4 border-amber-500 bg-amber-50 p-3">
             <p className="text-sm text-amber-800">
               {isUrgent
-                ? 'Seu plano Trial expira em poucas horas. Configure uma integração ou atualize para continuar usando o ATUA.'
+                ? 'Seu plano Trial expira em poucas horas. Configure uma integração ou atualize para continuar usando o Atyno.'
                 : 'Seu plano Trial expira em breve. Configure uma integração ou considere fazer upgrade.'}
             </p>
           </div>
@@ -140,7 +140,7 @@ export function TrialCard({ className = '', showCTA = false, onUpgradeClick }: T
         {isExpired && (
           <div className="rounded-lg border-l-4 border-red-500 bg-red-50 p-3">
             <p className="text-sm text-red-800">
-              Seu período de teste acabou. Entre em contato conosco para continuar usando o ATUA.
+              Seu período de teste acabou. Entre em contato conosco para continuar usando o Atyno.
             </p>
           </div>
         )}

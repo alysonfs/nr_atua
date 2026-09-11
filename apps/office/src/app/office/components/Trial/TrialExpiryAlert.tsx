@@ -75,7 +75,7 @@ export function TrialExpiryAlert({
                 Seu Trial expira em {summary.daysRemaining} {summary.daysRemaining === 1 ? 'dia' : 'dias'}.
               </h3>
               <p className="text-sm opacity-90">
-                Configure suas integrações agora ou faça upgrade para continuar usando o ATUA.
+                Configure suas integrações agora ou faça upgrade para continuar usando o Atyno.
               </p>
             </>
           )}

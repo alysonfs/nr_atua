@@ -46,7 +46,7 @@ export function SignInPage() {
     <main className="flex min-h-screen w-full bg-[#f8fafc]">
       {/* Coluna institucional (oculta em telas pequenas) */}
       <div className="hidden flex-1 flex-col justify-between bg-[#0f172a] p-20 lg:flex">
-        <img src={logoBgDark} alt="ATUA" className="h-[70px] w-[240px]" />
+        <img src={logoBgDark} alt="Atyno" className="h-[70px] w-[240px]" />
 
         <div className="flex flex-col gap-6">
           <p className="text-4xl leading-tight font-bold text-white">
@@ -84,13 +84,13 @@ export function SignInPage() {
       <div className="flex flex-1 items-center justify-center p-6 lg:p-10">
         <div className="w-full max-w-[480px] rounded-2xl bg-white p-8 shadow-[0px_8px_12px_rgba(0,0,0,0.05)] sm:p-12">
           {/* Logo visível apenas no mobile, quando a coluna institucional some */}
-          <img src={logoBgLight} alt="ATUA" className="mb-8 h-10 w-auto lg:hidden" />
+          <img src={logoBgLight} alt="Atyno" className="mb-8 h-10 w-auto lg:hidden" />
 
           <div className="mb-8">
             <h1 className="text-[32px] leading-tight font-bold text-[#0e1a30]">
               Entrar na sua conta
             </h1>
-            <p className="mt-2 text-base text-[#64748b]">Acesse sua operação no ATUA.</p>
+            <p className="mt-2 text-base text-[#64748b]">Acesse sua operação no Atyno.</p>
           </div>
 
           <form onSubmit={(e) => void handleSubmit(onSubmit)(e)} noValidate>
@@ -165,7 +165,7 @@ export function SignInPage() {
           <hr className="my-8 border-[#e2e8f0]" />
 
           <p className="text-center text-xs text-[#64748b]">
-            ATUA — Plataforma operacional para empresas de serviços técnicos.
+            Atyno — Plataforma operacional para empresas de serviços técnicos.
           </p>
         </div>
       </div>
