@@ -39,6 +39,10 @@ pnpm-debug.log*
 .yarn/
 .pnp.*
 
+# Log de diagnóstico local do Collector (iService) — nunca deve ser versionado,
+# pode conter payloads brutos de OS.
+apps/collector/Atua.Collector/logs/
+
 # Environment files
 .env
 .env.*
