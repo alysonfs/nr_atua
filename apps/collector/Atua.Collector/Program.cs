@@ -2,6 +2,7 @@ using Atua.Collector;
 using Atua.Collector.Api;
 using Atua.Collector.Configuration;
 using Atua.Collector.Consumer;
+using Atua.Collector.Diagnostics;
 using Atua.Collector.IService;
 using Atua.Collector.Persistence;
 using Microsoft.Extensions.Options;
@@ -34,6 +35,11 @@ builder.Services.AddSingleton<IMongoDatabase>(sp =>
 });
 
 builder.Services.AddSingleton<IWorkOrderRepository, WorkOrderRepository>();
+
+// Log de diagnóstico local do ciclo de coleta iService — sempre registrado, mas
+// totalmente no-op quando CollectorWorkerOptions.EnableLocalDebugLog = false (padrão
+// em produção/AWS). Ver Configuration/CollectorWorkerOptions.cs.
+builder.Services.AddSingleton<IIServiceDebugLogger, IServiceDebugLogger>();
 
 // HttpClient tipado para a API Atua
 builder.Services

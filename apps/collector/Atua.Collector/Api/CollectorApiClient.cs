@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using Atua.Collector.Configuration;
 using Atua.Collector.Contracts;
+using Atua.Collector.Diagnostics;
 using Microsoft.Extensions.Options;
 
 namespace Atua.Collector.Api;
@@ -13,7 +14,8 @@ namespace Atua.Collector.Api;
 public sealed class CollectorApiClient(
     HttpClient httpClient,
     IOptions<CollectorWorkerOptions> options,
-    ILogger<CollectorApiClient> logger)
+    ILogger<CollectorApiClient> logger,
+    IIServiceDebugLogger debugLogger)
     : ICollectorApiClient
 {
     private readonly CollectorWorkerOptions _options = options.Value;
@@ -57,6 +59,18 @@ public sealed class CollectorApiClient(
             result.CommandId,
             result.IntegrationId,
             result.Credential.Username);
+
+        // Inicia o ciclo de log de diagnóstico local (no-op quando desabilitado) — a
+        // partir daqui, Worker/IServiceCollectorService escrevem no mesmo arquivo.
+        debugLogger.BeginCycle(result.CommandId, result.TenantId, result.Credential.Username);
+        debugLogger.LogApiCall(
+            "ClaimAsync",
+            "POST",
+            "/api/internal/collector/commands/claim",
+            (int)response.StatusCode,
+            requestBody: null,
+            // Password/BaseUrl são mascarados por SensitiveDataRedactor antes da escrita.
+            responseBody: result);
 
         return result;
     }
@@ -141,6 +155,18 @@ public sealed class CollectorApiClient(
             commandId,
             outcome,
             result.Status);
+
+        debugLogger.LogApiCall(
+            "CompleteAsync",
+            "POST",
+            $"/api/internal/collector/commands/{commandId}/complete",
+            (int)response.StatusCode,
+            requestBody: body,
+            responseBody: result);
+
+        // Encerra o ciclo de log de diagnóstico local iniciado em ClaimAsync (no-op
+        // quando desabilitado).
+        debugLogger.EndCycle();
 
         return result;
     }

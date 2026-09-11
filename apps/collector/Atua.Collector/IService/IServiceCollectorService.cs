@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Atua.Collector.Configuration;
+using Atua.Collector.Diagnostics;
 using Microsoft.Extensions.Options;
 using Microsoft.Playwright;
 
@@ -22,7 +23,8 @@ namespace Atua.Collector.IService;
 /// </summary>
 public sealed class IServiceCollectorService(
     IOptions<CollectorWorkerOptions> options,
-    ILogger<IServiceCollectorService> logger)
+    ILogger<IServiceCollectorService> logger,
+    IIServiceDebugLogger debugLogger)
     : IIServiceCollector
 {
     private const string LoginUrl = "https://signin.midea.com/login?service=https://ics-amer.midea.com/";
@@ -85,6 +87,15 @@ public sealed class IServiceCollectorService(
         // Guard somente-leitura: bloqueia POSTs de escrita no iService
         await SetupReadOnlyGuardAsync(page);
 
+        // Log de diagnóstico local (no-op quando desabilitado): observa passivamente,
+        // via evento de rede do Playwright, todas as respostas de queryWorkOrder/
+        // queryOneWorkOrder — sem alterar em nada a lógica de negócio dos fetch()
+        // disparados via page.EvaluateAsync.
+        if (debugLogger.Enabled)
+        {
+            page.Response += (_, response) => _ = LogIServiceResponseSafeAsync(response);
+        }
+
         try
         {
             await DoLoginAsync(page, username, password, cancellationToken);
@@ -96,6 +107,7 @@ public sealed class IServiceCollectorService(
             cancellationToken.ThrowIfCancellationRequested();
 
             var requestTemplate = await OpenWorkOrderStatusViewAsync(page);
+            debugLogger.LogTemplateCaptured(requestTemplate.Url, requestTemplate.Headers, requestTemplate.Body);
 
             logger.LogInformation("[COLETOR] Template da API capturado. Iniciando coleta por status...");
             cancellationToken.ThrowIfCancellationRequested();
@@ -125,10 +137,17 @@ public sealed class IServiceCollectorService(
                 statusCounts["closed"],
                 statusCounts["cancelled"]);
 
+            debugLogger.LogCollectResult(statusCounts, success: true, exceptionType: null, exceptionMessage: null);
+
             return new CollectionResult(
                 DateTimeOffset.UtcNow,
                 statusCounts,
                 ordersByStatus);
+        }
+        catch (Exception ex)
+        {
+            debugLogger.LogCollectResult(null, success: false, ex.GetType().Name, ex.Message);
+            throw;
         }
         finally
         {
@@ -235,6 +254,7 @@ public sealed class IServiceCollectorService(
     {
         // NUNCA logar password
         logger.LogInformation("[LOGIN] Iniciando fluxo de login CAS para usuário={Username}.", username);
+        debugLogger.LogLoginStep("goto-login-page", LoginUrl, "iniciado");
 
         try
         {
@@ -246,10 +266,12 @@ public sealed class IServiceCollectorService(
         }
         catch (TimeoutException ex)
         {
+            debugLogger.LogLoginStep("goto-login-page", LoginUrl, "timeout", ex.Message);
             await CaptureDebugArtifactsAsync(page, "login-goto-timeout");
             throw new IServiceUnavailableEx("Timeout ao carregar página de login CAS.", ex);
         }
 
+        debugLogger.LogLoginStep("goto-login-page", LoginUrl, "sucesso");
         cancellationToken.ThrowIfCancellationRequested();
 
         const string usernameSelector = "input[placeholder='Conta']";
@@ -261,6 +283,7 @@ public sealed class IServiceCollectorService(
         }
         catch (TimeoutException ex)
         {
+            debugLogger.LogLoginStep("wait-username-field", page.Url, "timeout", ex.Message);
             await CaptureDebugArtifactsAsync(page, "login-username-timeout");
             throw new IServiceUnavailableEx("Timeout aguardando campo de usuário na página de login CAS.", ex);
         }
@@ -272,6 +295,7 @@ public sealed class IServiceCollectorService(
         await page.FillAsync(passwordSelector, password);
 
         logger.LogInformation("[LOGIN] Submetendo formulário...");
+        debugLogger.LogLoginStep("submit-form", page.Url, "submetido", $"Username={username}");
         await page.ClickAsync("button");
 
         cancellationToken.ThrowIfCancellationRequested();
@@ -291,13 +315,16 @@ public sealed class IServiceCollectorService(
             if (currentUrl.Contains(SigninHost))
             {
                 logger.LogWarning("[LOGIN] Credencial rejeitada para usuário={Username}.", username);
+                debugLogger.LogLoginStep("wait-redirect", currentUrl, "falha", "Credencial rejeitada (ainda em signin)");
                 throw new CredentialRejectedEx($"Login CAS rejeitado para o usuário '{username}'.");
             }
 
+            debugLogger.LogLoginStep("wait-redirect", currentUrl, "timeout");
             throw new IServiceUnavailableEx("Timeout aguardando redirecionamento pós-login para o iService.");
         }
 
         logger.LogInformation("[LOGIN] Autenticado com sucesso no iService. URL={Url}", page.Url);
+        debugLogger.LogLoginStep("wait-redirect", page.Url, "sucesso", $"URL final={page.Url}");
     }
 
     /// <summary>
@@ -322,6 +349,74 @@ public sealed class IServiceCollectorService(
         {
             logger.LogWarning(ex, "[DEBUG] Falha ao capturar artefatos de diagnóstico.");
         }
+    }
+
+    // -------------------------------------------------------------------------
+    // Log de diagnóstico local — captura passiva de respostas de rede
+    // -------------------------------------------------------------------------
+
+    /// <summary>
+    /// Observa (via evento de rede do Playwright, sem interferir na lógica de negócio
+    /// dos fetch() executados dentro de <c>page.EvaluateAsync</c>) as respostas de
+    /// <c>queryWorkOrder</c>/<c>queryOneWorkOrder</c> e as escreve no log de diagnóstico
+    /// local. Nunca deve lançar exceção — qualquer falha é apenas registrada via
+    /// <see cref="ILogger"/> como warning e descartada.
+    /// </summary>
+    private async Task LogIServiceResponseSafeAsync(IResponse response)
+    {
+        try
+        {
+            var url = response.Url;
+            var isWorkOrderList = url.Contains("queryWorkOrder", StringComparison.OrdinalIgnoreCase);
+            var isWorkOrderDetail = url.Contains("queryOneWorkOrder", StringComparison.OrdinalIgnoreCase);
+            if (!isWorkOrderList && !isWorkOrderDetail) return;
+
+            int? statusCode = null;
+            try { statusCode = response.Status; } catch { /* resposta pode já ter sido descartada */ }
+
+            string? responseBody = null;
+            try { responseBody = await response.TextAsync(); }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "[DEBUGLOG] Falha ao ler corpo da resposta de {Url} para diagnóstico.", url);
+            }
+
+            var requestBody = response.Request.PostData;
+
+            if (isWorkOrderDetail)
+            {
+                var workOrderId = TryExtractWorkOrderId(requestBody);
+                debugLogger.LogEnrichmentExchange(url, workOrderId, statusCode, responseBody);
+            }
+            else
+            {
+                debugLogger.LogWorkOrderExchange(url, statusCode, requestBody, responseBody);
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "[DEBUGLOG] Falha inesperada ao capturar resposta de diagnóstico do iService.");
+        }
+    }
+
+    private static string? TryExtractWorkOrderId(string? requestBodyJson)
+    {
+        if (string.IsNullOrWhiteSpace(requestBodyJson)) return null;
+
+        try
+        {
+            using var doc = JsonDocument.Parse(requestBodyJson);
+            if (doc.RootElement.TryGetProperty("workOrderId", out var value))
+            {
+                return value.ValueKind == JsonValueKind.String ? value.GetString() : value.ToString();
+            }
+        }
+        catch (JsonException)
+        {
+            // corpo não é JSON válido — ignora, não é crítico para o log de diagnóstico.
+        }
+
+        return null;
     }
 
     // -------------------------------------------------------------------------
