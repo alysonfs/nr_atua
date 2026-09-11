@@ -13,9 +13,11 @@
   "dependencies": {
     "@hookform/resolvers": "^5.9.1",
     "@tailwindcss/vite": "^4.3.3",
+    "apexcharts": "^7.1.0",
     "daisyui": "^5.7.22",
     "i18next": "^26.4.0",
     "react": "^19.2.8",
+    "react-apexcharts": "^2.1.1",
     "react-dom": "^19.2.8",
     "react-hook-form": "^7.87.0",
     "react-i18next": "^17.0.12",
