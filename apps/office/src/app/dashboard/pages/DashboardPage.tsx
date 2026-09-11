@@ -1,9 +1,9 @@
+import { DesignatedOrdersTable } from '../components/DesignatedOrdersTable'
 import { SummaryMonth } from '../components/SummaryMonth'
 
 /**
- * Dashboard: home pós-login do Office. A tabela de ordens de serviço
- * ("Designado") e a integração com a API real de sumário mensal serão
- * adicionadas em etapas futuras.
+ * Dashboard: home pós-login do Office. A integração com a API real de
+ * sumário mensal e de listagem de OS será adicionada em etapa futura.
  */
 export function DashboardPage() {
   return (
@@ -17,6 +17,8 @@ export function DashboardPage() {
       </div>
 
       <SummaryMonth />
+
+      <DesignatedOrdersTable />
     </div>
   )
 }

@@ -13,6 +13,7 @@
   "dependencies": {
     "@hookform/resolvers": "^5.9.1",
     "@tailwindcss/vite": "^4.3.3",
+    "@tanstack/react-table": "^8.21.3",
     "apexcharts": "^7.1.0",
     "daisyui": "^5.7.22",
     "i18next": "^26.4.0",
