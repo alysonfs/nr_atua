@@ -73,6 +73,15 @@ Quando houver divergência entre documentos, reporte o conflito ao
 
 ---
 
+## 3.1 Disciplina de exploração e leitura (janelas pequenas)
+
+Nunca leia um diretório inteiro ou a raiz do repositório de uma vez.
+Leia apenas os arquivos específicos listados acima ou encontrados por
+busca direcionada, em lotes pequenos. Se restar incerteza após explorar
+o suficiente, reporte o conflito em vez de continuar explorando.
+
+---
+
 ## 4. Skill obrigatória
 
 Para responder perguntas de custo AWS, use a skill:

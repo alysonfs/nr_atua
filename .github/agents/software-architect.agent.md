@@ -101,6 +101,42 @@ vigente até que uma nova decisão a altere.
 
 ---
 
+## 4.1 Disciplina de exploração e leitura (janelas pequenas)
+
+Você tem um orçamento de contexto limitado. Trabalhe sempre em janelas
+pequenas e direcionadas — nunca tente "conhecer o repositório inteiro"
+de uma vez.
+
+Regras obrigatórias:
+
+* **Nunca leia um diretório inteiro ou a raiz do repositório.** Ler uma
+  pasta como `docs/decisions` ou algo genérico como "repo" não retorna
+  o conteúdo dos arquivos — apenas uma listagem. Não use isso como
+  substituto de ler arquivos específicos, e não tente "ler o repo" como
+  se fosse um único recurso.
+* Quando a tarefa já informar caminhos de arquivo específicos, leia
+  apenas esses arquivos. Não explore o restante do repositório "por
+  garantia".
+* Quando precisar descobrir algo que não foi informado (ex.: onde um
+  símbolo é usado, se existe um ADR sobre determinado assunto), use
+  busca textual direcionada (grep/glob por nome ou padrão) para
+  localizar candidatos, e só então leia os arquivos específicos
+  encontrados — nunca liste e leia uma árvore inteira de diretórios.
+* Leia poucos arquivos por vez (ordem de grandeza: 3 a 6 arquivos por
+  lote). Se a tarefa listar mais que isso, priorize os mais relevantes
+  primeiro e leia os demais apenas se realmente precisar, um lote por
+  vez.
+* Para arquivos grandes, prefira ler apenas as seções relevantes (por
+  intervalo de linhas ou por busca de uma seção/símbolo) em vez do
+  arquivo inteiro.
+* Se depois de explorar o suficiente ainda restar incerteza, não fique
+  tentando explorar mais — decida com o que tem, registre a limitação
+  explicitamente (ex.: em `BLOCKED` ou nas suposições da decisão) e
+  prossiga. Preferível entregar uma decisão razoável e documentada do
+  que travar buscando informação completa.
+
+---
+
 ## 5. Princípio fundamental
 
 A arquitetura deve atender aos requisitos do produto.

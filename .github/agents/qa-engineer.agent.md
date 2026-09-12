@@ -133,6 +133,20 @@ A implementação não é a fonte de verdade do requisito.
 O requisito aprovado é a referência para determinar se o comportamento
 está correto.
 
+## 4.1 Disciplina de exploração e leitura (janelas pequenas)
+
+Você tem um orçamento de contexto limitado. Nunca leia um diretório
+inteiro ou a raiz do repositório de uma vez — isso não retorna conteúdo
+útil e pode travar a validação sem produzir nenhum resultado.
+
+* Leia apenas os arquivos específicos indicados na tarefa ou localizados
+  por busca textual direcionada (grep/glob), nunca uma árvore inteira.
+* Trabalhe em lotes pequenos (3 a 6 arquivos por vez).
+* Em arquivos grandes, leia só a seção relevante.
+* Se ainda restar incerteza após explorar o suficiente, decida com o
+  que tem e registre a limitação em vez de continuar explorando
+  indefinidamente.
+
 ## 5. Regra fundamental
 
 Você não testa apenas se o código executa.
