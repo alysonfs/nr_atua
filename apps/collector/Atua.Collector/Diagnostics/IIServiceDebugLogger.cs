@@ -12,6 +12,14 @@ namespace Atua.Collector.Diagnostics;
 /// Nenhum método desta interface deve lançar exceção que interrompa o fluxo real de
 /// coleta — falhas de I/O devem ser tratadas internamente e reportadas via
 /// <c>ILogger</c> como warning.
+///
+/// Todo método (exceto <see cref="Enabled"/>) recebe <c>commandId</c> explicitamente —
+/// não há estado ambiente implícito (ex.: <c>AsyncLocal</c>) entre <c>BeginCycle</c> e
+/// os demais métodos. Isso é deliberado: o ciclo atravessa múltiplas classes
+/// (<c>CollectorApiClient</c>, <c>IServiceCollectorService</c>) e inclui um handler de
+/// evento de rede do Playwright (<c>page.Response</c>), cujo contexto de execução não é
+/// garantidamente o mesmo do restante do ciclo — depender de contexto implícito ali
+/// causou perda silenciosa de entradas em produção (nenhuma exceção, nenhum warning).
 /// </summary>
 public interface IIServiceDebugLogger
 {
@@ -25,11 +33,15 @@ public interface IIServiceDebugLogger
     /// </summary>
     void BeginCycle(Guid commandId, Guid? tenantId, string username);
 
-    /// <summary>Encerra o ciclo de coleta corrente, registrando o encerramento no log.</summary>
-    void EndCycle();
+    /// <summary>
+    /// Encerra o ciclo de coleta identificado por <paramref name="commandId"/>,
+    /// registrando o encerramento no log.
+    /// </summary>
+    void EndCycle(Guid commandId);
 
     /// <summary>Loga uma chamada feita à nossa própria API Atua (ClaimAsync/CompleteAsync).</summary>
     void LogApiCall(
+        Guid commandId,
         string operation,
         string method,
         string url,
@@ -38,19 +50,20 @@ public interface IIServiceDebugLogger
         object? responseBody);
 
     /// <summary>Loga uma etapa do fluxo de login CAS.</summary>
-    void LogLoginStep(string step, string? url, string result, string? detail = null);
+    void LogLoginStep(Guid commandId, string step, string? url, string result, string? detail = null);
 
     /// <summary>Loga o template de request (queryWorkOrder) capturado durante a navegação.</summary>
-    void LogTemplateCaptured(string url, IReadOnlyDictionary<string, string> headers, object? body);
+    void LogTemplateCaptured(Guid commandId, string url, IReadOnlyDictionary<string, string> headers, object? body);
 
     /// <summary>Loga uma troca (request/response) de queryWorkOrder por status/página.</summary>
-    void LogWorkOrderExchange(string url, int? statusCode, string? requestBody, string? responseBody);
+    void LogWorkOrderExchange(Guid commandId, string url, int? statusCode, string? requestBody, string? responseBody);
 
     /// <summary>Loga uma troca (request/response) de enriquecimento (queryOneWorkOrder) por OS.</summary>
-    void LogEnrichmentExchange(string url, string? workOrderId, int? statusCode, string? responseBody);
+    void LogEnrichmentExchange(Guid commandId, string url, string? workOrderId, int? statusCode, string? responseBody);
 
     /// <summary>Loga o resultado final do ciclo de coleta (contagens e sucesso/falha).</summary>
     void LogCollectResult(
+        Guid commandId,
         IReadOnlyDictionary<string, int>? statusCounts,
         bool success,
         string? exceptionType,

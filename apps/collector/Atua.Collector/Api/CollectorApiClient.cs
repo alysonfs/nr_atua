@@ -64,6 +64,7 @@ public sealed class CollectorApiClient(
         // partir daqui, Worker/IServiceCollectorService escrevem no mesmo arquivo.
         debugLogger.BeginCycle(result.CommandId, result.TenantId, result.Credential.Username);
         debugLogger.LogApiCall(
+            result.CommandId,
             "ClaimAsync",
             "POST",
             "/api/internal/collector/commands/claim",
@@ -157,6 +158,7 @@ public sealed class CollectorApiClient(
             result.Status);
 
         debugLogger.LogApiCall(
+            commandId,
             "CompleteAsync",
             "POST",
             $"/api/internal/collector/commands/{commandId}/complete",
@@ -166,7 +168,7 @@ public sealed class CollectorApiClient(
 
         // Encerra o ciclo de log de diagnóstico local iniciado em ClaimAsync (no-op
         // quando desabilitado).
-        debugLogger.EndCycle();
+        debugLogger.EndCycle(commandId);
 
         return result;
     }

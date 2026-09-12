@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using Atua.Collector.Configuration;
 using Microsoft.Extensions.Options;
 
@@ -9,11 +10,15 @@ namespace Atua.Collector.Diagnostics;
 /// <see cref="CollectorWorkerOptions.EnableLocalDebugLog"/> está desabilitado (padrão
 /// em produção/AWS) — nenhuma escrita em disco ocorre nesse caso.
 ///
-/// O contexto do ciclo corrente (caminho do arquivo) é mantido em <see cref="AsyncLocal{T}"/>
-/// para que tanto <c>CollectorApiClient</c> (ClaimAsync/CompleteAsync) quanto
-/// <c>IServiceCollectorService</c> (login/coleta) escrevam no mesmo arquivo sem precisar
-/// repassar o <c>CommandId</c> explicitamente por toda a cadeia de chamadas — ambos são
-/// executados na mesma cadeia assíncrona (<c>Worker.RunCycleAsync</c>).
+/// O caminho do arquivo de cada ciclo é indexado por <c>CommandId</c> num
+/// <see cref="ConcurrentDictionary{TKey,TValue}"/> — deliberadamente sem
+/// <c>AsyncLocal</c>/estado ambiente implícito. Uma implementação anterior usava
+/// <c>AsyncLocal&lt;CycleContext&gt;</c>, setado em <c>BeginCycle</c> e lido por
+/// <c>WriteLine</c>; na prática, isso perdia o contexto silenciosamente assim que a
+/// escrita partia de um ponto fora da cadeia awaited original (ex.: o handler de evento
+/// <c>page.Response</c> do Playwright) — nenhuma linha além de <c>CYCLE_START</c> e o
+/// próprio <c>ClaimAsync</c> chegava a ser escrita. Passar o <c>CommandId</c>
+/// explicitamente elimina essa classe de bug por completo.
 ///
 /// Falhas de I/O nunca são propagadas — são reportadas via <see cref="ILogger"/> como
 /// warning, e a escrita da entrada corrente é simplesmente descartada.
@@ -22,7 +27,7 @@ public sealed class IServiceDebugLogger : IIServiceDebugLogger
 {
     private const int MaxEntryLength = 200_000; // ~200KB por entrada de log
 
-    private static readonly AsyncLocal<CycleContext?> CurrentCycle = new();
+    private readonly ConcurrentDictionary<Guid, string> _cyclePaths = new();
 
     private readonly CollectorWorkerOptions _options;
     private readonly ILogger<IServiceDebugLogger> _logger;
@@ -57,23 +62,24 @@ public sealed class IServiceDebugLogger : IIServiceDebugLogger
 
         var fileName = $"iservice-collect-{DateTimeOffset.UtcNow:yyyyMMddHHmmss}-{commandId}.txt";
         var path = Path.Combine(_options.LocalDebugLogDirectory, fileName);
-        CurrentCycle.Value = new CycleContext(path);
+        _cyclePaths[commandId] = path;
 
-        WriteLine("CYCLE_START",
+        WriteLine(commandId, "CYCLE_START",
             $"CommandId={commandId} TenantId={tenantId} Username={username}");
     }
 
     /// <inheritdoc/>
-    public void EndCycle()
+    public void EndCycle(Guid commandId)
     {
         if (!Enabled) return;
 
-        WriteLine("CYCLE_END", "Ciclo de coleta encerrado.");
-        CurrentCycle.Value = null;
+        WriteLine(commandId, "CYCLE_END", "Ciclo de coleta encerrado.");
+        _cyclePaths.TryRemove(commandId, out _);
     }
 
     /// <inheritdoc/>
     public void LogApiCall(
+        Guid commandId,
         string operation,
         string method,
         string url,
@@ -86,23 +92,23 @@ public sealed class IServiceDebugLogger : IIServiceDebugLogger
         var requestJson = SensitiveDataRedactor.RedactAndSerialize(requestBody);
         var responseJson = SensitiveDataRedactor.RedactAndSerialize(responseBody);
 
-        WriteLine($"API_CALL:{operation}",
+        WriteLine(commandId, $"API_CALL:{operation}",
             $"{method} {url} StatusCode={ToDisplay(statusCode)}\n" +
             $"  Request: {SensitiveDataRedactor.Truncate(requestJson, MaxEntryLength)}\n" +
             $"  Response: {SensitiveDataRedactor.Truncate(responseJson, MaxEntryLength)}");
     }
 
     /// <inheritdoc/>
-    public void LogLoginStep(string step, string? url, string result, string? detail = null)
+    public void LogLoginStep(Guid commandId, string step, string? url, string result, string? detail = null)
     {
         if (!Enabled) return;
 
-        WriteLine($"LOGIN:{step}",
+        WriteLine(commandId, $"LOGIN:{step}",
             $"Url={url} Resultado={result}" + (detail is null ? string.Empty : $" Detalhe={detail}"));
     }
 
     /// <inheritdoc/>
-    public void LogTemplateCaptured(string url, IReadOnlyDictionary<string, string> headers, object? body)
+    public void LogTemplateCaptured(Guid commandId, string url, IReadOnlyDictionary<string, string> headers, object? body)
     {
         if (!Enabled) return;
 
@@ -110,40 +116,41 @@ public sealed class IServiceDebugLogger : IIServiceDebugLogger
         var headersJson = SensitiveDataRedactor.RedactAndSerialize(redactedHeaders);
         var bodyJson = SensitiveDataRedactor.RedactAndSerialize(body);
 
-        WriteLine("TEMPLATE_CAPTURED",
+        WriteLine(commandId, "TEMPLATE_CAPTURED",
             $"Url={url}\n" +
             $"  Headers: {headersJson}\n" +
             $"  Body: {bodyJson}");
     }
 
     /// <inheritdoc/>
-    public void LogWorkOrderExchange(string url, int? statusCode, string? requestBody, string? responseBody)
+    public void LogWorkOrderExchange(Guid commandId, string url, int? statusCode, string? requestBody, string? responseBody)
     {
         if (!Enabled) return;
 
         var requestJson = SensitiveDataRedactor.RedactJson(requestBody);
         var responseJson = SensitiveDataRedactor.RedactJson(responseBody);
 
-        WriteLine("QUERY_WORK_ORDER",
+        WriteLine(commandId, "QUERY_WORK_ORDER",
             $"Url={url} StatusCode={ToDisplay(statusCode)}\n" +
             $"  Request: {SensitiveDataRedactor.Truncate(requestJson, MaxEntryLength)}\n" +
             $"  Response: {SensitiveDataRedactor.Truncate(responseJson, MaxEntryLength)}");
     }
 
     /// <inheritdoc/>
-    public void LogEnrichmentExchange(string url, string? workOrderId, int? statusCode, string? responseBody)
+    public void LogEnrichmentExchange(Guid commandId, string url, string? workOrderId, int? statusCode, string? responseBody)
     {
         if (!Enabled) return;
 
         var responseJson = SensitiveDataRedactor.RedactJson(responseBody);
 
-        WriteLine("QUERY_ONE_WORK_ORDER",
+        WriteLine(commandId, "QUERY_ONE_WORK_ORDER",
             $"Url={url} WorkOrderId={workOrderId} StatusCode={ToDisplay(statusCode)}\n" +
             $"  Response: {SensitiveDataRedactor.Truncate(responseJson, MaxEntryLength)}");
     }
 
     /// <inheritdoc/>
     public void LogCollectResult(
+        Guid commandId,
         IReadOnlyDictionary<string, int>? statusCounts,
         bool success,
         string? exceptionType,
@@ -159,18 +166,22 @@ public sealed class IServiceDebugLogger : IIServiceDebugLogger
             ? $"Sucesso. Contagens: {countsDisplay}"
             : $"Falha. ExceptionType={exceptionType} Message={exceptionMessage}";
 
-        WriteLine("COLLECT_RESULT", detail);
+        WriteLine(commandId, "COLLECT_RESULT", detail);
     }
 
     private static string ToDisplay(int? value) => value?.ToString() ?? "(desconhecido)";
 
-    private void WriteLine(string eventType, string detail)
+    private void WriteLine(Guid commandId, string eventType, string detail)
     {
-        var cycle = CurrentCycle.Value;
-        if (cycle is null)
+        if (!_cyclePaths.TryGetValue(commandId, out var path))
         {
-            // Nenhum ciclo em andamento (ex.: ClaimAsync retornou 204, ou chamada fora
-            // de um ciclo de coleta) — não há arquivo para escrever.
+            // Diferente da implementação anterior (baseada em AsyncLocal), a ausência de
+            // um ciclo registrado aqui é sempre um sinal de bug real — commandId é
+            // sempre conhecido explicitamente por quem chama. Reportamos como warning
+            // visível em vez de descartar silenciosamente.
+            _logger.LogWarning(
+                "[DEBUGLOG] Tentativa de escrever {EventType} para CommandId={CommandId} sem ciclo registrado (BeginCycle não foi chamado ou já encerrou).",
+                eventType, commandId);
             return;
         }
 
@@ -180,16 +191,14 @@ public sealed class IServiceDebugLogger : IIServiceDebugLogger
         {
             lock (_fileLock)
             {
-                File.AppendAllText(cycle.FilePath, line);
+                File.AppendAllText(path, line);
             }
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex,
                 "[DEBUGLOG] Falha ao escrever log de diagnóstico em {Path}.",
-                cycle.FilePath);
+                path);
         }
     }
-
-    private sealed record CycleContext(string FilePath);
 }
