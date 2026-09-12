@@ -60,4 +60,12 @@ public sealed class CollectorWorkerOptions
     /// não existir.
     /// </summary>
     public string LocalDebugLogDirectory { get; set; } = "./logs/iservice-debug";
+
+    /// <summary>
+    /// TTL (horas) aplicado a <c>expires_at</c> de <c>provider_sessions</c> a cada login CAS
+    /// bem-sucedido (RF-023.3/DP-023.1). Valor conservador inicial sem dado empírico da
+    /// duração real de uma sessão CAS aceita pela Midea — ajustar por observação em
+    /// produção; não é decisão arquitetural, apenas parametrização operacional.
+    /// </summary>
+    public int SessionTtlHours { get; set; } = 4;
 }

@@ -26,7 +26,8 @@ public sealed class IServiceCollectorService(
     IOptions<CollectorWorkerOptions> options,
     ILogger<IServiceCollectorService> logger,
     IIServiceDebugLogger debugLogger,
-    IProviderInteractionRepository providerInteractionRepository)
+    IProviderInteractionRepository providerInteractionRepository,
+    IProviderSessionRepository providerSessionRepository)
     : IIServiceCollector
 {
     private const string LoginUrl = "https://signin.midea.com/login?service=https://ics-amer.midea.com/";
@@ -74,7 +75,48 @@ public sealed class IServiceCollectorService(
             Args = ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"],
         });
 
-        var page = await browser.NewPageAsync(new BrowserNewPageOptions
+        try
+        {
+            return await ExecuteCollectionCycleAsync(
+                browser, tenantId, commandId, username, password, forceLogin: false, cancellationToken);
+        }
+        catch (ProviderSessionInvalidException ex)
+        {
+            // RF-023.4/RN-023.4: sessão inválida detectada em pleno ciclo (HTTP 401 em
+            // list_query/detail_query). Refaz login CAS uma única vez dentro do mesmo
+            // ciclo antes de desistir e propagar a falha do comando (critério de aceite 4).
+            logger.LogWarning(
+                "[SESSAO] Sessão invalidada em pleno ciclo ({Reason}). Refazendo login (tentativa única).",
+                ex.Message);
+            return await ExecuteCollectionCycleAsync(
+                browser, tenantId, commandId, username, password, forceLogin: true, cancellationToken);
+        }
+    }
+
+    /// <summary>
+    /// Executa um ciclo completo de coleta em um <see cref="IBrowserContext"/> novo.
+    /// Quando <paramref name="forceLogin"/> é falso, tenta reaproveitar a sessão salva em
+    /// <c>provider_sessions</c> (RF-023.1/RF-023.2) hidratando o contexto via
+    /// <c>storage_state</c> e validando com uma navegação barata; se não houver sessão
+    /// válida, faz login CAS completo e persiste a nova sessão (RF-023.3). Uma
+    /// <see cref="ProviderSessionInvalidException"/> lançada por qualquer chamada ao
+    /// provedor durante o ciclo (401 em pleno voo) propaga para <see cref="CollectAsync"/>
+    /// acionar o retry único com <c>forceLogin: true</c>.
+    /// </summary>
+    private async Task<CollectionResult> ExecuteCollectionCycleAsync(
+        IBrowser browser,
+        Guid tenantId,
+        Guid commandId,
+        string username,
+        string password,
+        bool forceLogin,
+        CancellationToken cancellationToken)
+    {
+        var savedStorageState = forceLogin
+            ? null
+            : await GetValidSessionSafeAsync(tenantId, cancellationToken);
+
+        var contextOptions = new BrowserNewContextOptions
         {
             // O portal iService detecta idioma via Accept-Language/navigator.language
             // e mostra o formulário de login em inglês por padrão em ambientes sem
@@ -87,7 +129,14 @@ public sealed class IServiceCollectorService(
             {
                 ["Accept-Language"] = "pt-BR,pt;q=0.9",
             },
-        });
+        };
+        if (savedStorageState is not null)
+        {
+            contextOptions.StorageState = savedStorageState;
+        }
+
+        await using var context = await browser.NewContextAsync(contextOptions);
+        var page = await context.NewPageAsync();
 
         // Guard somente-leitura: bloqueia POSTs de escrita no iService
         await SetupReadOnlyGuardAsync(page);
@@ -103,11 +152,31 @@ public sealed class IServiceCollectorService(
 
         try
         {
-            await ExecuteLoginWithInteractionLogAsync(tenantId, commandId, page, username, password, cancellationToken);
+            var usedSavedSession = false;
 
-            logger.LogInformation("[COLETOR] Abrindo visão por status de OS...");
-            await page.GotoAsync($"https://{IServiceHost}/",
-                new PageGotoOptions { WaitUntil = WaitUntilState.DOMContentLoaded, Timeout = PageTimeout });
+            if (savedStorageState is not null)
+            {
+                usedSavedSession = await TryHydrateSavedSessionAsync(page, cancellationToken);
+                if (!usedSavedSession)
+                {
+                    await InvalidateSessionSafeAsync(tenantId, cancellationToken);
+                }
+            }
+
+            if (usedSavedSession)
+            {
+                logger.LogInformation("[SESSAO] Sessão reaproveitada — login CAS não executado neste ciclo.");
+            }
+            else
+            {
+                await ExecuteLoginWithInteractionLogAsync(tenantId, commandId, page, username, password, cancellationToken);
+
+                logger.LogInformation("[COLETOR] Abrindo visão por status de OS...");
+                await page.GotoAsync($"https://{IServiceHost}/",
+                    new PageGotoOptions { WaitUntil = WaitUntilState.DOMContentLoaded, Timeout = PageTimeout });
+
+                await PersistSessionSafeAsync(tenantId, context, cancellationToken);
+            }
 
             cancellationToken.ThrowIfCancellationRequested();
 
@@ -149,6 +218,14 @@ public sealed class IServiceCollectorService(
                 statusCounts,
                 ordersByStatus);
         }
+        catch (ProviderSessionInvalidException)
+        {
+            // A sessão pode ter sido reaproveitada (usedSavedSession) ou obtida por login
+            // normal neste mesmo ciclo — de qualquer forma, uma vez rejeitada em pleno voo
+            // ela não deve mais ser oferecida ao próximo ciclo/retry.
+            await InvalidateSessionSafeAsync(tenantId, cancellationToken);
+            throw;
+        }
         catch (Exception ex)
         {
             debugLogger.LogCollectResult(commandId, null, success: false, ex.GetType().Name, ex.Message);
@@ -159,6 +236,108 @@ public sealed class IServiceCollectorService(
             await page.CloseAsync();
         }
     }
+
+    // -------------------------------------------------------------------------
+    // Persistência de sessão (RF-023)
+    // -------------------------------------------------------------------------
+
+    /// <summary>
+    /// Busca <c>storage_state</c> salvo e ainda válido (RF-023.1). Absorve qualquer
+    /// exceção de infraestrutura (Mongo indisponível etc.) — falha aqui degrada
+    /// graciosamente para login CAS normal, nunca derruba o ciclo de coleta.
+    /// </summary>
+    private async Task<string?> GetValidSessionSafeAsync(Guid tenantId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await providerSessionRepository.GetValidStorageStateAsync(tenantId, ProviderTypeName, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "[SESSAO] Falha ao buscar sessão salva. Prosseguindo com login CAS normal.");
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Validação barata (RF-023.2/RN-023.2) de uma sessão hidratada a partir de
+    /// <c>storage_state</c> salvo: navega para a home do iService e confirma que não houve
+    /// redirect para a tela de login CAS (<see cref="SigninHost"/>). Nunca lança em caso de
+    /// sessão inválida — apenas retorna <c>false</c>, deixando o chamador decidir (login CAS
+    /// normal). ATENÇÃO (RF-023.6): não deve logar <c>storage_state</c> em nenhuma hipótese.
+    /// </summary>
+    private async Task<bool> TryHydrateSavedSessionAsync(IPage page, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await page.GotoAsync($"https://{IServiceHost}/",
+                new PageGotoOptions { WaitUntil = WaitUntilState.DOMContentLoaded, Timeout = PageTimeout });
+
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var currentHost = new Uri(page.Url).Host;
+            if (string.Equals(currentHost, SigninHost, StringComparison.OrdinalIgnoreCase))
+            {
+                logger.LogInformation("[SESSAO] Sessão salva rejeitada pelo provedor (redirect para login). Refazendo login.");
+                return false;
+            }
+
+            return true;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "[SESSAO] Falha ao validar sessão salva. Tratando como inválida e refazendo login.");
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Persiste <c>storage_state</c> do contexto atual logo após um login CAS bem-sucedido
+    /// (RF-023.3), com TTL configurável (<see cref="CollectorWorkerOptions.SessionTtlHours"/>,
+    /// DP-023.1). Absorve qualquer exceção — falha ao persistir apenas significa que o
+    /// próximo ciclo fará login novamente, não é falha da coleta atual.
+    /// </summary>
+    private async Task PersistSessionSafeAsync(Guid tenantId, IBrowserContext context, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var storageState = await context.StorageStateAsync();
+            await providerSessionRepository.SaveValidSessionAsync(
+                tenantId, ProviderTypeName, storageState, TimeSpan.FromHours(_options.SessionTtlHours), cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "[SESSAO] Falha ao persistir sessão após login bem-sucedido. Próximo ciclo fará login novamente.");
+        }
+    }
+
+    /// <summary>
+    /// Marca a sessão salva como inválida (RF-023.4). Absorve qualquer exceção — mesma
+    /// postura defensiva das demais operações de sessão.
+    /// </summary>
+    private async Task InvalidateSessionSafeAsync(Guid tenantId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await providerSessionRepository.InvalidateSessionAsync(tenantId, ProviderTypeName, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "[SESSAO] Falha ao invalidar sessão.");
+        }
+    }
+
+    /// <summary>
+    /// Sinaliza que a sessão do provedor foi rejeitada (HTTP 401) durante uma chamada
+    /// autenticada em pleno ciclo de coleta (RF-023.4/RN-023.4, critério de aceite 4).
+    /// Capturada por <see cref="ExecuteCollectionCycleAsync"/>/<see cref="CollectAsync"/>
+    /// para acionar invalidação da sessão + login CAS único antes de desistir.
+    /// </summary>
+    private sealed class ProviderSessionInvalidException(string reason) : Exception(reason);
 
     // -------------------------------------------------------------------------
     // Guard somente-leitura
@@ -637,39 +816,53 @@ public sealed class IServiceCollectorService(
         var headersJson = JsonSerializer.Serialize(template.Headers);
         var bodyJson = JsonSerializer.Serialize(template.Body);
 
-        var result = await page.EvaluateAsync<JsonElement>(
-            @"async ({ templateUrl, headersJson, bodyJson, statusCode, pageNumber, pageSize }) => {
-                const headers = JSON.parse(headersJson);
-                headers['content-type'] = 'application/json; charset=UTF-8';
-                delete headers['content-length'];
-                delete headers['host'];
+        JsonElement result;
+        try
+        {
+            result = await page.EvaluateAsync<JsonElement>(
+                @"async ({ templateUrl, headersJson, bodyJson, statusCode, pageNumber, pageSize }) => {
+                    const headers = JSON.parse(headersJson);
+                    headers['content-type'] = 'application/json; charset=UTF-8';
+                    delete headers['content-length'];
+                    delete headers['host'];
 
-                const body = JSON.parse(bodyJson);
-                body.woStatus = statusCode;
-                body.__page = pageNumber;
-                body.__pagesize = pageSize;
+                    const body = JSON.parse(bodyJson);
+                    body.woStatus = statusCode;
+                    body.__page = pageNumber;
+                    body.__pagesize = pageSize;
 
-                const response = await fetch(templateUrl, {
-                    method: 'POST',
-                    credentials: 'include',
-                    headers,
-                    body: JSON.stringify(body),
+                    const response = await fetch(templateUrl, {
+                        method: 'POST',
+                        credentials: 'include',
+                        headers,
+                        body: JSON.stringify(body),
+                    });
+                    if (response.status === 401) {
+                        throw new Error('SESSION_EXPIRED_401');
+                    }
+                    const payload = await response.json();
+                    if (!response.ok || payload.resultCode !== 'ISC-000') {
+                        throw new Error('API retornou: ' + (payload.resultCode || response.status) + ' - ' + (payload.resultMsg || ''));
+                    }
+                    return Array.isArray(payload.data) ? payload.data : [];
+                }",
+                new
+                {
+                    templateUrl = template.Url,
+                    headersJson,
+                    bodyJson,
+                    statusCode,
+                    pageNumber,
+                    pageSize = StatusPageSize,
                 });
-                const payload = await response.json();
-                if (!response.ok || payload.resultCode !== 'ISC-000') {
-                    throw new Error('API retornou: ' + (payload.resultCode || response.status) + ' - ' + (payload.resultMsg || ''));
-                }
-                return Array.isArray(payload.data) ? payload.data : [];
-            }",
-            new
-            {
-                templateUrl = template.Url,
-                headersJson,
-                bodyJson,
-                statusCode,
-                pageNumber,
-                pageSize = StatusPageSize,
-            });
+        }
+        catch (Exception ex) when (
+            ex is not OperationCanceledException
+            && ex.Message.Contains("SESSION_EXPIRED_401", StringComparison.Ordinal))
+        {
+            // RF-023.4: sessão rejeitada (401) em pleno voo durante list_query.
+            throw new ProviderSessionInvalidException("HTTP 401 em list_query.");
+        }
 
         if (result.ValueKind == JsonValueKind.Array)
         {
@@ -772,6 +965,9 @@ public sealed class IServiceCollectorService(
                             headers,
                             body: JSON.stringify({ workOrderId }),
                         });
+                        if (response.status === 401) {
+                            return { __sessionExpired: true };
+                        }
                         const payload = await response.json();
                         if (!response.ok || payload.resultCode !== 'ISC-000') {
                             return order; // falha silenciosa no detalhe, retorna OS sem detalhe
@@ -781,10 +977,26 @@ public sealed class IServiceCollectorService(
                     new { headersJson, orderJson, detailUrl = WoDetailUrl });
 
                 var converted = ConvertJsonElement(result)!;
+
+                if (converted is IDictionary<string, object?> convertedDict
+                    && convertedDict.TryGetValue("__sessionExpired", out var sessionExpiredFlag)
+                    && sessionExpiredFlag is true)
+                {
+                    // RF-023.4: sessão rejeitada (401) em pleno voo durante detail_query.
+                    await LogProviderInteractionSafeAsync(
+                        tenantId, commandId, "detail_query", request, orders: null,
+                        success: false, "HTTP 401 (sessão expirada)", cancellationToken);
+                    throw new ProviderSessionInvalidException("HTTP 401 em detail_query.");
+                }
+
                 enriched.Add(converted);
                 await LogProviderInteractionSafeAsync(
                     tenantId, commandId, "detail_query", request, [converted],
                     success: true, errorMessage: null, cancellationToken);
+            }
+            catch (ProviderSessionInvalidException)
+            {
+                throw;
             }
             catch (Exception ex)
             {

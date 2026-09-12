@@ -36,6 +36,7 @@ builder.Services.AddSingleton<IMongoDatabase>(sp =>
 
 builder.Services.AddSingleton<IWorkOrderRepository, WorkOrderRepository>();
 builder.Services.AddSingleton<IProviderInteractionRepository, ProviderInteractionRepository>();
+builder.Services.AddSingleton<IProviderSessionRepository, ProviderSessionRepository>();
 
 // Log de diagnóstico local do ciclo de coleta iService — sempre registrado, mas
 // totalmente no-op quando CollectorWorkerOptions.EnableLocalDebugLog = false (padrão
@@ -82,6 +83,9 @@ if (repo is WorkOrderRepository concreteRepo)
 
 var providerInteractionRepo = host.Services.GetRequiredService<IProviderInteractionRepository>();
 await providerInteractionRepo.EnsureIndexesAsync();
+
+var providerSessionRepo = host.Services.GetRequiredService<IProviderSessionRepository>();
+await providerSessionRepo.EnsureIndexesAsync();
 
 host.Run();
 

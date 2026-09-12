@@ -4,7 +4,21 @@
 
 `FASE_0_CONCLUIDA` — ADR-028 escrita e aprovada pelo usuário em
 2026-09-12 (`docs/decisions/ADR-028-registro-bruto-de-interacao-com-provedor-e-sessao-persistida.md`),
-junto com RF-022 e RF-023. Fase 1 acionada para `backend-engineer`.
+junto com RF-022 e RF-023.
+
+`FASE_1_CONCLUIDA` — `provider_interactions` aditivo implementado e
+commitado (`f860e60`).
+
+`FASE_2_CONCLUIDA` — `provider_sessions` implementado: repositório com
+índice único `(tenant_id, provider_type)`, `CollectAsync` reestruturado
+em `ExecuteCollectionCycleAsync` para reaproveitar `storage_state` salvo
+via `BrowserContext` explícito, checagem barata de validade (redirect
+para `signin.midea.com`), persistência da sessão após login CAS bem-sucedido,
+e detecção de HTTP 401 em pleno ciclo (`list_query`/`detail_query`) via
+`ProviderSessionInvalidException` com invalidação + retry único de login
+dentro do mesmo comando. TTL configurável via
+`CollectorWorkerOptions.SessionTtlHours` (default 4h, DP-023.1 — ajustar
+por observação real). Build limpo, ainda sem commit.
 
 ## Objetivo
 
