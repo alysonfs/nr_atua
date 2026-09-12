@@ -2,7 +2,17 @@
 
 ## Status
 
-Accepted
+Accepted (parcialmente superseded — ver ADR-028)
+
+> **Nota de atualização (2026-09-12):** o **ADR-028** substitui a coleção
+> de origem `work_order_snapshots` (1 documento por OS) por
+> `provider_interactions` (1 documento por interação, podendo conter N OS).
+> O mecanismo descrito nesta ADR — Change Stream + `SnapshotConsumerWorker`
+> + seleção de `ISnapshotAdapter` por `provider_type` + resume token em
+> `consumer_states` — **permanece válido como arquitetura**; apenas a
+> coleção observada, a assinatura do adapter (`ExtractStatus` → 1 OS vira
+> `ExtractOrders` → N OS) e o índice de idempotência mudam. O conteúdo
+> abaixo é preservado para contexto histórico do desenho original.
 
 ## Contexto
 

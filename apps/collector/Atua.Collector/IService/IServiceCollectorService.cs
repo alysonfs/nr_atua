@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Atua.Collector.Configuration;
 using Atua.Collector.Diagnostics;
+using Atua.Collector.Persistence;
 using Microsoft.Extensions.Options;
 using Microsoft.Playwright;
 
@@ -24,7 +25,8 @@ namespace Atua.Collector.IService;
 public sealed class IServiceCollectorService(
     IOptions<CollectorWorkerOptions> options,
     ILogger<IServiceCollectorService> logger,
-    IIServiceDebugLogger debugLogger)
+    IIServiceDebugLogger debugLogger,
+    IProviderInteractionRepository providerInteractionRepository)
     : IIServiceCollector
 {
     private const string LoginUrl = "https://signin.midea.com/login?service=https://ics-amer.midea.com/";
@@ -33,6 +35,7 @@ public sealed class IServiceCollectorService(
     private const string WoListUrl = "https://ics-amer.midea.com/web/iservice-wom/workOrder/queryWorkOrder";
     private const string WoDetailUrl = "https://ics-amer.midea.com/web/iservice-wom/workOrder/queryOneWorkOrder";
     private const int StatusPageSize = 200;
+    private const string ProviderTypeName = "iservice";
 
     private static readonly (string Key, string Code, string TabLabel)[] StatusConfigs =
     [
@@ -53,6 +56,8 @@ public sealed class IServiceCollectorService(
 
     /// <inheritdoc/>
     public async Task<CollectionResult> CollectAsync(
+        Guid tenantId,
+        Guid commandId,
         string username,
         string password,
         string? baseUrl,
@@ -93,12 +98,12 @@ public sealed class IServiceCollectorService(
         // disparados via page.EvaluateAsync.
         if (debugLogger.Enabled)
         {
-            page.Response += (_, response) => _ = LogIServiceResponseSafeAsync(response);
+            page.Response += (_, response) => _ = LogIServiceResponseSafeAsync(commandId, response);
         }
 
         try
         {
-            await DoLoginAsync(page, username, password, cancellationToken);
+            await ExecuteLoginWithInteractionLogAsync(tenantId, commandId, page, username, password, cancellationToken);
 
             logger.LogInformation("[COLETOR] Abrindo visão por status de OS...");
             await page.GotoAsync($"https://{IServiceHost}/",
@@ -107,7 +112,7 @@ public sealed class IServiceCollectorService(
             cancellationToken.ThrowIfCancellationRequested();
 
             var requestTemplate = await OpenWorkOrderStatusViewAsync(page);
-            debugLogger.LogTemplateCaptured(requestTemplate.Url, requestTemplate.Headers, requestTemplate.Body);
+            debugLogger.LogTemplateCaptured(commandId, requestTemplate.Url, requestTemplate.Headers, requestTemplate.Body);
 
             logger.LogInformation("[COLETOR] Template da API capturado. Iniciando coleta por status...");
             cancellationToken.ThrowIfCancellationRequested();
@@ -118,14 +123,14 @@ public sealed class IServiceCollectorService(
             foreach (var (key, code, tabLabel) in StatusConfigs)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                var orders = await FetchWorkOrdersForStatusAsync(page, requestTemplate, code, tabLabel);
+                var orders = await FetchWorkOrdersForStatusAsync(tenantId, commandId, page, requestTemplate, code, tabLabel, cancellationToken);
                 ordersByStatus[key] = orders;
                 statusCounts[key] = orders.Count;
                 logger.LogInformation("[COLETA] {Count} OS '{TabLabel}' coletadas.", orders.Count, tabLabel);
             }
 
             // Enriquecimento: apenas OS "assigned" recebem detalhe
-            var assignedOrders = await EnrichAssignedOrdersAsync(page, requestTemplate, ordersByStatus["assigned"]);
+            var assignedOrders = await EnrichAssignedOrdersAsync(tenantId, commandId, page, requestTemplate, ordersByStatus["assigned"], cancellationToken);
             ordersByStatus["assigned"] = assignedOrders;
 
             logger.LogInformation(
@@ -137,7 +142,7 @@ public sealed class IServiceCollectorService(
                 statusCounts["closed"],
                 statusCounts["cancelled"]);
 
-            debugLogger.LogCollectResult(statusCounts, success: true, exceptionType: null, exceptionMessage: null);
+            debugLogger.LogCollectResult(commandId, statusCounts, success: true, exceptionType: null, exceptionMessage: null);
 
             return new CollectionResult(
                 DateTimeOffset.UtcNow,
@@ -146,7 +151,7 @@ public sealed class IServiceCollectorService(
         }
         catch (Exception ex)
         {
-            debugLogger.LogCollectResult(null, success: false, ex.GetType().Name, ex.Message);
+            debugLogger.LogCollectResult(commandId, null, success: false, ex.GetType().Name, ex.Message);
             throw;
         }
         finally
@@ -250,11 +255,68 @@ public sealed class IServiceCollectorService(
     // Login CAS
     // -------------------------------------------------------------------------
 
-    private async Task DoLoginAsync(IPage page, string username, string password, CancellationToken cancellationToken)
+    /// <summary>
+    /// Executa o login CAS e registra exatamente um documento em <c>provider_interactions</c>
+    /// (RF-022.1/RN-022.1, critério de aceite 4) — sucesso ou falha, nunca as duas coisas.
+    /// Credenciais nunca entram no documento (RF-022.7/RN-022.7): apenas o username, que já
+    /// é logado em texto claro pelo Worker em outros pontos.
+    /// </summary>
+    private async Task ExecuteLoginWithInteractionLogAsync(
+        Guid tenantId, Guid commandId, IPage page, string username, string password, CancellationToken cancellationToken)
+    {
+        var request = new Dictionary<string, object?>
+        {
+            ["username"] = username,
+            ["login_url"] = LoginUrl,
+        };
+
+        try
+        {
+            await DoLoginAsync(commandId, page, username, password, cancellationToken);
+            await LogProviderInteractionSafeAsync(
+                tenantId, commandId, "login", request, orders: null, success: true, errorMessage: null, cancellationToken);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            await LogProviderInteractionSafeAsync(
+                tenantId, commandId, "login", request, orders: null, success: false, ex.Message, cancellationToken);
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Registra uma interação em <c>provider_interactions</c> absorvendo qualquer exceção —
+    /// falha ao auditar não pode se tornar uma nova causa de falha do ciclo de coleta
+    /// (mesma postura defensiva do log de diagnóstico local).
+    /// </summary>
+    private async Task LogProviderInteractionSafeAsync(
+        Guid tenantId,
+        Guid commandId,
+        string interactionType,
+        IReadOnlyDictionary<string, object?> request,
+        IReadOnlyList<object?>? orders,
+        bool success,
+        string? errorMessage,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await providerInteractionRepository.InsertInteractionAsync(
+                tenantId, commandId, ProviderTypeName, interactionType, request, orders, success, errorMessage, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex,
+                "[COLETOR] Falha ao registrar provider_interactions '{InteractionType}'. CommandId={CommandId}.",
+                interactionType, commandId);
+        }
+    }
+
+    private async Task DoLoginAsync(Guid commandId, IPage page, string username, string password, CancellationToken cancellationToken)
     {
         // NUNCA logar password
         logger.LogInformation("[LOGIN] Iniciando fluxo de login CAS para usuário={Username}.", username);
-        debugLogger.LogLoginStep("goto-login-page", LoginUrl, "iniciado");
+        debugLogger.LogLoginStep(commandId, "goto-login-page", LoginUrl, "iniciado");
 
         try
         {
@@ -266,12 +328,12 @@ public sealed class IServiceCollectorService(
         }
         catch (TimeoutException ex)
         {
-            debugLogger.LogLoginStep("goto-login-page", LoginUrl, "timeout", ex.Message);
+            debugLogger.LogLoginStep(commandId, "goto-login-page", LoginUrl, "timeout", ex.Message);
             await CaptureDebugArtifactsAsync(page, "login-goto-timeout");
             throw new IServiceUnavailableEx("Timeout ao carregar página de login CAS.", ex);
         }
 
-        debugLogger.LogLoginStep("goto-login-page", LoginUrl, "sucesso");
+        debugLogger.LogLoginStep(commandId, "goto-login-page", LoginUrl, "sucesso");
         cancellationToken.ThrowIfCancellationRequested();
 
         const string usernameSelector = "input[placeholder='Conta']";
@@ -283,7 +345,7 @@ public sealed class IServiceCollectorService(
         }
         catch (TimeoutException ex)
         {
-            debugLogger.LogLoginStep("wait-username-field", page.Url, "timeout", ex.Message);
+            debugLogger.LogLoginStep(commandId, "wait-username-field", page.Url, "timeout", ex.Message);
             await CaptureDebugArtifactsAsync(page, "login-username-timeout");
             throw new IServiceUnavailableEx("Timeout aguardando campo de usuário na página de login CAS.", ex);
         }
@@ -295,7 +357,7 @@ public sealed class IServiceCollectorService(
         await page.FillAsync(passwordSelector, password);
 
         logger.LogInformation("[LOGIN] Submetendo formulário...");
-        debugLogger.LogLoginStep("submit-form", page.Url, "submetido", $"Username={username}");
+        debugLogger.LogLoginStep(commandId, "submit-form", page.Url, "submetido", $"Username={username}");
         await page.ClickAsync("button");
 
         cancellationToken.ThrowIfCancellationRequested();
@@ -315,16 +377,16 @@ public sealed class IServiceCollectorService(
             if (currentUrl.Contains(SigninHost))
             {
                 logger.LogWarning("[LOGIN] Credencial rejeitada para usuário={Username}.", username);
-                debugLogger.LogLoginStep("wait-redirect", currentUrl, "falha", "Credencial rejeitada (ainda em signin)");
+                debugLogger.LogLoginStep(commandId, "wait-redirect", currentUrl, "falha", "Credencial rejeitada (ainda em signin)");
                 throw new CredentialRejectedEx($"Login CAS rejeitado para o usuário '{username}'.");
             }
 
-            debugLogger.LogLoginStep("wait-redirect", currentUrl, "timeout");
+            debugLogger.LogLoginStep(commandId, "wait-redirect", currentUrl, "timeout");
             throw new IServiceUnavailableEx("Timeout aguardando redirecionamento pós-login para o iService.");
         }
 
         logger.LogInformation("[LOGIN] Autenticado com sucesso no iService. URL={Url}", page.Url);
-        debugLogger.LogLoginStep("wait-redirect", page.Url, "sucesso", $"URL final={page.Url}");
+        debugLogger.LogLoginStep(commandId, "wait-redirect", page.Url, "sucesso", $"URL final={page.Url}");
     }
 
     /// <summary>
@@ -362,7 +424,7 @@ public sealed class IServiceCollectorService(
     /// local. Nunca deve lançar exceção — qualquer falha é apenas registrada via
     /// <see cref="ILogger"/> como warning e descartada.
     /// </summary>
-    private async Task LogIServiceResponseSafeAsync(IResponse response)
+    private async Task LogIServiceResponseSafeAsync(Guid commandId, IResponse response)
     {
         try
         {
@@ -386,11 +448,11 @@ public sealed class IServiceCollectorService(
             if (isWorkOrderDetail)
             {
                 var workOrderId = TryExtractWorkOrderId(requestBody);
-                debugLogger.LogEnrichmentExchange(url, workOrderId, statusCode, responseBody);
+                debugLogger.LogEnrichmentExchange(commandId, url, workOrderId, statusCode, responseBody);
             }
             else
             {
-                debugLogger.LogWorkOrderExchange(url, statusCode, requestBody, responseBody);
+                debugLogger.LogWorkOrderExchange(commandId, url, statusCode, requestBody, responseBody);
             }
         }
         catch (Exception ex)
@@ -506,22 +568,64 @@ public sealed class IServiceCollectorService(
     // -------------------------------------------------------------------------
 
     private async Task<IReadOnlyList<object>> FetchWorkOrdersForStatusAsync(
+        Guid tenantId,
+        Guid commandId,
         IPage page,
         RequestTemplate template,
         string statusCode,
-        string tabLabel)
+        string tabLabel,
+        CancellationToken cancellationToken)
     {
         var orders = new List<object>();
         const int maxPages = 50;
 
         for (var pageNumber = 1; pageNumber <= maxPages; pageNumber++)
         {
-            var chunk = await FetchWorkOrdersPageAsync(page, template, statusCode, pageNumber);
+            var chunk = await FetchWorkOrdersPageWithInteractionLogAsync(
+                tenantId, commandId, page, template, statusCode, pageNumber, cancellationToken);
             orders.AddRange(chunk);
             if (chunk.Count < StatusPageSize) break;
         }
 
         return orders;
+    }
+
+    /// <summary>
+    /// Envolve <see cref="FetchWorkOrdersPageAsync"/> registrando exatamente um documento em
+    /// <c>provider_interactions</c> por chamada de página (RF-022.1/RN-022.1, critérios de
+    /// aceite 1 e 3) — sucesso com o payload bruto em <c>orders</c>, ou falha com
+    /// <c>success=false</c> e <c>error_message</c>.
+    /// </summary>
+    private async Task<IReadOnlyList<object>> FetchWorkOrdersPageWithInteractionLogAsync(
+        Guid tenantId,
+        Guid commandId,
+        IPage page,
+        RequestTemplate template,
+        string statusCode,
+        int pageNumber,
+        CancellationToken cancellationToken)
+    {
+        var request = new Dictionary<string, object?>
+        {
+            ["url"] = template.Url,
+            ["status"] = statusCode,
+            ["page"] = pageNumber,
+            ["page_size"] = StatusPageSize,
+        };
+
+        try
+        {
+            var orders = await FetchWorkOrdersPageAsync(page, template, statusCode, pageNumber);
+            await LogProviderInteractionSafeAsync(
+                tenantId, commandId, "list_query", request, orders, success: true, errorMessage: null, cancellationToken);
+            return orders;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            await LogProviderInteractionSafeAsync(
+                tenantId, commandId, "list_query", request, orders: null, success: false, ex.Message, cancellationToken);
+            throw;
+        }
     }
 
     private async Task<IReadOnlyList<object>> FetchWorkOrdersPageAsync(
@@ -627,9 +731,12 @@ public sealed class IServiceCollectorService(
     // -------------------------------------------------------------------------
 
     private async Task<IReadOnlyList<object>> EnrichAssignedOrdersAsync(
+        Guid tenantId,
+        Guid commandId,
         IPage page,
         RequestTemplate template,
-        IReadOnlyList<object> assignedOrders)
+        IReadOnlyList<object> assignedOrders,
+        CancellationToken cancellationToken)
     {
         if (assignedOrders.Count == 0) return assignedOrders;
 
@@ -639,6 +746,12 @@ public sealed class IServiceCollectorService(
         foreach (var order in assignedOrders)
         {
             var orderJson = JsonSerializer.Serialize(order);
+            var workOrderId = TryExtractWorkOrderIdFromOrder(order);
+            var request = new Dictionary<string, object?>
+            {
+                ["url"] = WoDetailUrl,
+                ["work_order_id"] = workOrderId,
+            };
 
             try
             {
@@ -667,17 +780,37 @@ public sealed class IServiceCollectorService(
                     }",
                     new { headersJson, orderJson, detailUrl = WoDetailUrl });
 
-                enriched.Add(ConvertJsonElement(result)!);
+                var converted = ConvertJsonElement(result)!;
+                enriched.Add(converted);
+                await LogProviderInteractionSafeAsync(
+                    tenantId, commandId, "detail_query", request, [converted],
+                    success: true, errorMessage: null, cancellationToken);
             }
             catch (Exception ex)
             {
                 logger.LogWarning(ex, "[DETALHE] Falha ao buscar detalhe de uma OS. Continuando sem detalhe.");
                 enriched.Add(order);
+                await LogProviderInteractionSafeAsync(
+                    tenantId, commandId, "detail_query", request, orders: null,
+                    success: false, ex.Message, cancellationToken);
             }
         }
 
         logger.LogInformation("[DETALHE] {Count} OS designadas com tentativa de enriquecimento.", enriched.Count);
         return enriched;
+    }
+
+    /// <summary>
+    /// Extrai <c>workOrderId</c>/<c>id</c> de uma OS convertida (<see cref="ConvertJsonElement"/>)
+    /// apenas para popular o campo <c>request</c> do documento de auditoria — mesma lógica
+    /// de fallback usada no lado JS de <see cref="EnrichAssignedOrdersAsync"/>. Não deve ser
+    /// usado para nenhuma decisão de negócio (RF-022.6 delega isso ao consumer).
+    /// </summary>
+    private static object? TryExtractWorkOrderIdFromOrder(object order)
+    {
+        if (order is not IDictionary<string, object?> dict) return null;
+        if (dict.TryGetValue("workOrderId", out var workOrderId) && workOrderId is not null) return workOrderId;
+        return dict.TryGetValue("id", out var id) ? id : null;
     }
 
     // -------------------------------------------------------------------------

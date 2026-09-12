@@ -106,6 +106,8 @@ public sealed class Worker(
         try
         {
             var result = await iServiceCollector.CollectAsync(
+                command.TenantId,
+                command.CommandId,
                 command.Credential.Username,
                 command.Credential.Password,
                 command.Credential.BaseUrl,

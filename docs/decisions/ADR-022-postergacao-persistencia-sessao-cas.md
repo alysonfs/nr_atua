@@ -2,7 +2,20 @@
 
 ## Status
 
-Accepted
+Superseded (ver ADR-028)
+
+> **Nota de atualização (2026-09-12):** a premissa central desta ADR — que
+> o baixo volume de tenants no MVP justifica adiar a persistência de
+> sessão — deixou de valer: o product owner identificou risco real de
+> login CAS repetido/simultâneo à medida que mais tenants forem
+> adicionados, e definiu persistência de sessão como requisito do MVP, não
+> melhoria futura. O **ADR-028** decide persistir a sessão em uma nova
+> coleção MongoDB (`provider_sessions`), escrita diretamente pelo Worker —
+> **não** segue o desenho reservado abaixo (endpoints internos cifrados via
+> API/KMS). Esse desenho permanece registrado aqui como referência para uma
+> eventual revisão futura que exija cifra centralizada, mas não é mais o
+> caminho adotado. O conteúdo original desta ADR é preservado abaixo para
+> memória técnica.
 
 ## Contexto
 

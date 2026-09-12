@@ -1,9 +1,17 @@
 # RF-016 - Persistência de Snapshots Brutos de OS
 
-Status: `Implementado`
+Status: `Superseded` (ver RF-022 e ADR-028)
 
 **Data:** 2026-08-31 (especificado) · **2026-09-02** (confirmado implementado e
-validado em produção)
+validado em produção) · **2026-09-12** (substituído por RF-022)
+
+> **Nota de substituição (2026-09-12):** a coleção `work_order_snapshots`
+> (1 documento por OS individual) descrita neste requisito deixa de ser
+> escrita pelo Worker Coletor. O **ADR-028** decide substituí-la por
+> `provider_interactions` (1 documento por interação com o provedor,
+> podendo conter N OS), formalizada em **RF-022**. Este documento é
+> preservado para memória técnica e para servir de referência histórica
+> do modelo anterior, já validado em produção.
 
 ## Contexto e motivação
 

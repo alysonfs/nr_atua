@@ -1,9 +1,21 @@
 # RF-017 - Modelo Agnóstico de OS: work_order e work_order_history
 
-Status: `Implementado`
+Status: `Implementado` (origem do dado alterada — ver nota)
 
 **Data:** 2026-08-31 (especificado) · **2026-09-02** (confirmado implementado e
-validado em produção)
+validado em produção) · **2026-09-12** (nota de atualização — ver ADR-028)
+
+> **Nota de atualização (2026-09-12):** as entidades `work_order` e
+> `work_order_history` e suas regras (upsert por mudança de status,
+> string crua sem enum, histórico só em mudança) **permanecem válidas
+> integralmente**. O que muda, por decisão do **ADR-028**: a fonte bruta
+> deixa de ser `work_order_snapshots` (RF-016, superseded) e passa a ser
+> `provider_interactions` (RF-022) — um documento pode conter N OS, não
+> apenas 1. Consequentemente, `ISnapshotAdapter.ExtractStatus` (1 OS por
+> chamada) é substituído por `ExtractOrders` (N OS por chamada), e a regra
+> de descarte por `provider_id` inválido (antes aplicada pelo Worker em
+> RF-016.5) passa a ser aplicada aqui, pelo consumer, no momento da
+> extração — nenhuma outra regra de RF-017 muda.
 
 ## Contexto e motivação
 
