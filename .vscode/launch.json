@@ -25,9 +25,12 @@
       "console": "integratedTerminal",
       "justMyCode": true,
       "env": {
-        "CollectorWorker__ClaimServiceToken": "ThskIWrhWwqhi5V94b67ecMjJGsx3xV2hSyAb7srItg5qiwgm6VjvhykzKVcX+Wg",
-        "CollectorWorker__CompleteServiceToken": "DfLbJOzEFZqWlP7/TGF/Uvo2OmJqbApnUeE6lXeIrLVYmjNJsDJ5IgouqK0R8tyx",
-        "CollectorWorker__EligibilityServiceToken": "CcbOFcYLPbwy70osq326BkuPWpKT0o77aYDpVN8HL/xOgyMYXXcV5kRZbTFNJ/ec"
+        "DOTNET_ENVIRONMENT": "Development",
+        
+        "CollectorWorker__ApiBaseUrl": "https://api.atyno.com.br",
+        "CollectorWorker__ClaimServiceToken": "mQEHENqtxBMQRgwwPd3ci+brqIy0w1P7A9wMUMMnN1D45It1RsubeN1Xvf4lwV6I",
+        "CollectorWorker__CompleteServiceToken": "1FWFMje1LD0B1VsQLewfryhACpfB3O/U1XmMk0jhQ6ViRaup7Y9FNcyfZvh7hhPV",
+        "CollectorWorker__EligibilityServiceToken": "w4ah/EkEssElnDOE537TmBfRDP87HLlqnRS3wj8cQzEuE7mb7DiiBlV65JwRrTRo"
       }
     },
     {

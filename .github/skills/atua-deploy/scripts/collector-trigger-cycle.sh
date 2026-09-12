@@ -25,10 +25,10 @@ DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=./common.sh
 source "$DIR/common.sh"
 
-ATUA_TEST_EMAIL="${ATUA_TEST_EMAIL:-teste.mvp@atua-mvp.local}"
-ATUA_TEST_PASSWORD="${ATUA_TEST_PASSWORD:-SenhaForte@123}"
-ATUA_TENANT_ID="${ATUA_TENANT_ID:-01a05f21-92c6-7188-b785-1ebda5c839ba}"
-ATUA_INTEGRATION_ID="${ATUA_INTEGRATION_ID:-01a05f21-92ef-7fe6-af0d-428c112fa402}"
+ATUA_TEST_EMAIL="${ATUA_TEST_EMAIL:-alysonforever@gmail.com}"
+ATUA_TEST_PASSWORD="${ATUA_TEST_PASSWORD:-asdqwe123}"
+ATUA_TENANT_ID="${ATUA_TENANT_ID:-01a0888b-acd8-773b-93b7-7362973d7ea8}"
+ATUA_INTEGRATION_ID="${ATUA_INTEGRATION_ID:-01a0888b-ad0d-760a-9327-bf7dfa5fd97d}"
 
 API_IP="$(aws cloudformation describe-stacks --stack-name AtuaComputeStack --region "$REGION" \
   --query "Stacks[0].Outputs[?OutputKey=='ApiPublicIp'].OutputValue" --output text)"
