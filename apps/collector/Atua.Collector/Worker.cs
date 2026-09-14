@@ -2,7 +2,6 @@ using Atua.Collector.Api;
 using Atua.Collector.Configuration;
 using Atua.Collector.Contracts;
 using Atua.Collector.IService;
-using Atua.Collector.Persistence;
 using Microsoft.Extensions.Options;
 
 namespace Atua.Collector;
@@ -19,7 +18,6 @@ namespace Atua.Collector;
 public sealed class Worker(
     ICollectorApiClient apiClient,
     IIServiceCollector iServiceCollector,
-    IWorkOrderRepository workOrderRepository,
     IOptions<CollectorWorkerOptions> options,
     ILogger<Worker> logger)
     : BackgroundService
@@ -114,9 +112,16 @@ public sealed class Worker(
                 command.HistoryWindowMonths,
                 cancellationToken);
 
-            // 4. Persiste no MongoDB — ANTES de chamar CompleteAsync (ADR-021).
-            // Falha na persistência é tratada como falha da coleta.
-            await PersistCollectionResultAsync(command, result, cancellationToken);
+            // 4. Registra o resumo da coleta — persistência agora é feita de forma
+            // incremental por IServiceCollectorService em provider_interactions
+            // (Fase 1/Fase 5 do refactor de persistência; work_order_snapshots
+            // e IWorkOrderRepository foram removidos no cutover).
+            logger.LogInformation(
+                "[WORKER] Coleta concluída. TenantId={TenantId} CommandId={CommandId} CapturedAt={CapturedAt} Counts={@StatusCounts}",
+                command.TenantId,
+                command.CommandId,
+                result.CapturedAtUtc,
+                result.StatusCounts);
 
             // 5. Registra sucesso
             await apiClient.CompleteAsync(
@@ -168,36 +173,6 @@ public sealed class Worker(
             logger.LogError(ex, "[WORKER] Erro inesperado durante coleta para CommandId={CommandId}.", command.CommandId);
             await SafeCompleteAsync(command.CommandId, "Failed", ECommandFailureReason.UnexpectedError);
         }
-    }
-
-    /// <summary>
-    /// Persiste o resultado da coleta no MongoDB — append-only (RF-016).
-    /// A persistência ocorre ANTES de CompleteAsync — falha aqui é falha da coleta (ADR-021).
-    /// Exceções de escrita no Mongo propagam para serem tratadas no caller (RunCycleAsync).
-    /// </summary>
-    private async Task PersistCollectionResultAsync(
-        Contracts.ClaimResponse command,
-        IService.CollectionResult result,
-        CancellationToken cancellationToken)
-    {
-        logger.LogInformation(
-            "[WORKER] Persistindo coleta no MongoDB. TenantId={TenantId} CommandId={CommandId} CapturedAt={CapturedAt} Counts={@StatusCounts}",
-            command.TenantId,
-            command.CommandId,
-            result.CapturedAtUtc,
-            result.StatusCounts);
-
-        await workOrderRepository.InsertSnapshotsAsync(
-            command.TenantId,
-            command.CommandId,
-            "iservice",
-            result,
-            cancellationToken);
-
-        logger.LogInformation(
-            "[WORKER] Persistência concluída. TenantId={TenantId} CommandId={CommandId}",
-            command.TenantId,
-            command.CommandId);
     }
 
     /// <summary>

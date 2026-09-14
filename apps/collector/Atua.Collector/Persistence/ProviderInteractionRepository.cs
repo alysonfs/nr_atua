@@ -10,7 +10,8 @@ namespace Atua.Collector.Persistence;
 ///
 /// Coleção: <c>provider_interactions</c> — append-only, um documento por chamada HTTP real
 /// ao provedor (login, listagem, detalhe). Sem índice único: re-execuções geram novas
-/// interações reais (diferente de <see cref="WorkOrderRepository"/>, que deduplicava por
+/// interações reais (diferente do antigo repositório de <c>work_order_snapshots</c>,
+/// removido no cutover da Fase 5, que deduplicava por
 /// OS/comando) — cada chamada HTTP é, por definição, uma nova interação auditável.
 /// </summary>
 public sealed class ProviderInteractionRepository(
@@ -87,8 +88,7 @@ public sealed class ProviderInteractionRepository(
 
     /// <summary>
     /// Converte um dicionário bruto em <see cref="BsonDocument"/> preservando integralmente
-    /// todos os campos (inclusive aninhados) — mesmo padrão de
-    /// <see cref="WorkOrderRepository.BuildRawDocument"/>.
+    /// todos os campos (inclusive aninhados).
     /// </summary>
     private static BsonDocument BuildBsonDocument(IReadOnlyDictionary<string, object?> dict)
     {

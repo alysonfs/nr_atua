@@ -7,8 +7,8 @@ namespace Atua.Collector.Persistence;
 /// Documento append-only da coleção <c>provider_interactions</c> (RF-022, ADR-028).
 /// Um documento por chamada HTTP real do Worker ao provedor — login, listagem
 /// (<c>list_query</c>) ou enriquecimento de detalhe (<c>detail_query</c>) — preservando
-/// request/response brutos como unidade auditável completa. Substitui
-/// <see cref="WorkOrderSnapshotDocument"/> (RF-016, superseded).
+/// request/response brutos como unidade auditável completa. Substitui o antigo documento
+/// <c>work_order_snapshots</c> (RF-016, removido no cutover da Fase 5).
 /// Nunca contém credenciais nem dados de sessão do provedor (RF-022.7) — sessão vive em
 /// <c>provider_sessions</c> (RF-023).
 /// </summary>

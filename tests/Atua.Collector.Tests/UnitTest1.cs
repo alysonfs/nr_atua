@@ -2,7 +2,6 @@
 using Atua.Collector.Configuration;
 using Atua.Collector.Contracts;
 using Atua.Collector.IService;
-using Atua.Collector.Persistence;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
@@ -20,16 +19,15 @@ public class WorkerEligibilityTests
     // Helpers
     // -----------------------------------------------------------------------
 
-    private static (ICollectorApiClient ApiClient, IIServiceCollector IService, IWorkOrderRepository Repo, Worker Worker)
+    private static (ICollectorApiClient ApiClient, IIServiceCollector IService, Worker Worker)
         BuildWorker()
     {
         var apiClient = Substitute.For<ICollectorApiClient>();
         var iService = Substitute.For<IIServiceCollector>();
-        var repo = Substitute.For<IWorkOrderRepository>();
         var options = Options.Create(new CollectorWorkerOptions { PollingIntervalSeconds = 1 });
         var logger = NullLogger<Worker>.Instance;
-        var worker = new Worker(apiClient, iService, repo, options, logger);
-        return (apiClient, iService, repo, worker);
+        var worker = new Worker(apiClient, iService, options, logger);
+        return (apiClient, iService, worker);
     }
 
     private static ClaimResponse MakeCommand(Guid? commandId = null, Guid? tenantId = null) =>
@@ -58,7 +56,7 @@ public class WorkerEligibilityTests
     [Fact]
     public async Task QuandoElegibilidadeNegada_NaoChamaCollect_ECompletaComCancelled()
     {
-        var (apiClient, iService, repo, worker) = BuildWorker();
+        var (apiClient, iService, worker) = BuildWorker();
         var commandId = Guid.CreateVersion7();
         var command = MakeCommand(commandId: commandId);
 
@@ -90,10 +88,6 @@ public class WorkerEligibilityTests
             Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(),
             Arg.Any<int>(), Arg.Any<CancellationToken>());
 
-        // Nenhuma persistência no Mongo
-        await repo.DidNotReceive().InsertSnapshotsAsync(
-            Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<CollectionResult>(), Arg.Any<CancellationToken>());
-
         // CompleteAsync deve ter sido chamado com "Cancelled"
         await apiClient.Received(1).CompleteAsync(
             commandId,
@@ -110,7 +104,7 @@ public class WorkerEligibilityTests
     [Fact]
     public async Task QuandoElegibilidadeConcedida_ChamaCollect_ECompletaComSucceeded()
     {
-        var (apiClient, iService, repo, worker) = BuildWorker();
+        var (apiClient, iService, worker) = BuildWorker();
         var commandId = Guid.CreateVersion7();
         var command = MakeCommand(commandId: commandId);
         var result = MakeResult();
@@ -162,7 +156,7 @@ public class WorkerEligibilityTests
     [Fact]
     public async Task QuandoCheckEligibilityFalha_NaoChamaCollect_ECompletaComFailed()
     {
-        var (apiClient, iService, repo, worker) = BuildWorker();
+        var (apiClient, iService, worker) = BuildWorker();
         var commandId = Guid.CreateVersion7();
         var command = MakeCommand(commandId: commandId);
 
@@ -206,7 +200,7 @@ public class WorkerEligibilityTests
     [Fact]
     public async Task QuandoSemComando_NaoVerificaElegibilidade()
     {
-        var (apiClient, iService, repo, worker) = BuildWorker();
+        var (apiClient, iService, worker) = BuildWorker();
 
         var callCount = 0;
         using var cts = new CancellationTokenSource();

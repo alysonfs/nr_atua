@@ -20,7 +20,8 @@ namespace Atua.Collector.IService;
 /// OS coletadas são convertidas de <see cref="JsonElement"/> para um grafo de objetos
 /// nativo (<see cref="Dictionary{TKey,TValue}"/>/<see cref="List{T}"/>/primitivos) via
 /// <see cref="ConvertJsonElement"/> antes de retornar em <see cref="CollectionResult"/>,
-/// para que <c>Persistence.WorkOrderRepository</c> consiga reconhecê-las como dicionário.
+/// para que os adapters do consumer (<see cref="Atua.Collector.Consumer.IProviderInteractionOrderAdapter"/>)
+/// consigam reconhecê-las como dicionário.
 /// </summary>
 public sealed class IServiceCollectorService(
     IOptions<CollectorWorkerOptions> options,
@@ -387,8 +388,7 @@ public sealed class IServiceCollectorService(
     /// <summary>
     /// Classifica se uma requisição é de escrita no iService (RF-013). Extraído como
     /// método <c>public static</c> — sem dependência de Playwright — para permitir teste
-    /// unitário isolado (DP-013.2), seguindo o mesmo padrão de
-    /// <see cref="Atua.Collector.Persistence.WorkOrderRepository.BuildRawDocument"/>.
+    /// unitário isolado (DP-013.2).
     /// </summary>
     public static bool IsWriteRequestOnIService(string method, string url)
     {
@@ -1063,10 +1063,11 @@ public sealed class IServiceCollectorService(
     /// <summary>
     /// Converte um <see cref="JsonElement"/> em um grafo de objetos .NET nativo
     /// (<see cref="Dictionary{TKey,TValue}"/> para objetos, <see cref="List{T}"/> para
-    /// arrays, primitivos para os demais casos). Necessário porque
-    /// <c>Persistence.WorkOrderRepository</c> exige <c>IDictionary&lt;string, object?&gt;</c>
-    /// para reconhecer e persistir a OS — <see cref="JsonElement"/> nunca satisfaz esse
-    /// contrato, o que fazia todas as OS coletadas serem descartadas silenciosamente.
+    /// arrays, primitivos para os demais casos). Necessário porque os adapters do
+    /// consumer (<see cref="Atua.Collector.Consumer.IProviderInteractionOrderAdapter"/>)
+    /// exigem <c>IDictionary&lt;string, object?&gt;</c> para reconhecer e projetar a OS
+    /// — <see cref="JsonElement"/> nunca satisfaz esse contrato, o que fazia todas as OS
+    /// coletadas serem descartadas silenciosamente.
     /// </summary>
     /// <remarks>
     /// Objetos são montados com um laço manual (sobrescrevendo em vez de usar

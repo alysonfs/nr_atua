@@ -34,7 +34,6 @@ builder.Services.AddSingleton<IMongoDatabase>(sp =>
     return client.GetDatabase(opts.DatabaseName);
 });
 
-builder.Services.AddSingleton<IWorkOrderRepository, WorkOrderRepository>();
 builder.Services.AddSingleton<IProviderInteractionRepository, ProviderInteractionRepository>();
 builder.Services.AddSingleton<IProviderSessionRepository, ProviderSessionRepository>();
 
@@ -75,12 +74,6 @@ builder.Services.AddHostedService<ProviderInteractionConsumerWorker>();
 var host = builder.Build();
 
 // Garante índices no MongoDB na inicialização (idempotente)
-var repo = host.Services.GetRequiredService<IWorkOrderRepository>();
-if (repo is WorkOrderRepository concreteRepo)
-{
-    await concreteRepo.EnsureIndexesAsync();
-}
-
 var providerInteractionRepo = host.Services.GetRequiredService<IProviderInteractionRepository>();
 await providerInteractionRepo.EnsureIndexesAsync();
 

@@ -200,13 +200,20 @@ e revisada com o usuário.
 
 **Responsável:** `backend-engineer`
 
-- Só após a Fase 4 validada ponta a ponta (produção ou ambiente
-  equivalente) por um período de observação.
-- Remover `WorkOrderRepository`, `IWorkOrderRepository`,
-  `WorkOrderSnapshotDocument` e parar de escrever em
-  `work_order_snapshots`.
-- Decisão separada (produto, não arquitetural): apagar os documentos
-  antigos ou deixá-los como resíduo histórico morto.
+**Status: concluída (2026-09-14).** Removidos `WorkOrderRepository`,
+`IWorkOrderRepository`, `WorkOrderSnapshotDocument` e `WorkOrderMapper`
+(além dos testes `WorkOrderRepositoryTests`). `Worker` não recebe mais
+`IWorkOrderRepository` nem chama `InsertSnapshotsAsync` — apenas loga o
+resumo (`StatusCounts`) da coleta antes de `CompleteAsync`; a persistência
+passa a ser feita integralmente por `IServiceCollectorService` em
+`provider_interactions` (Fase 1) e projetada pelo
+`ProviderInteractionConsumerWorker` (Fase 4). `Program.cs` não registra
+mais o repositório antigo nem chama seu `EnsureIndexesAsync`. Build e
+suíte de testes do Collector passando (45/45 após remover os 3 testes do
+repositório removido). `work_order_snapshots` deixa de ser escrito a
+partir deste commit — decisão de apagar os documentos antigos ou
+deixá-los como resíduo histórico morto fica para decisão de produto
+separada (nenhum dado foi apagado do Mongo por esta fase).
 
 ### Fase 6 — Validação QA ponta a ponta
 
