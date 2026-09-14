@@ -58,6 +58,27 @@ cutover da Fase 5 — só deixou de ter consumer próprio nesta fase. Build
 limpo. Pendente: validação real contra o iService (novo consumer
 processando interações reais ponta a ponta) antes da Fase 5.
 
+**Validação com dado real (2026-09-14) — achado pendente de investigação:**
+Ciclo real (tenant `01a0888b-acd8-773b-93b7-7362973d7ea8`, comando
+`01a0a1f9-1bc6-7d4b-af4a-e4adc9f124a5`) gerou 9 interações em
+`provider_interactions` (1 `login` + 6 `list_query`, 1035 OS únicas + 2
+`detail_query`). Confirmado via consulta direta a Postgres/Mongo que o
+`ProviderInteractionConsumerWorker` processou corretamente apenas as 2
+primeiras páginas (400 de 1035 OS projetadas em `work_orders`/
+`work_order_histories`, com upsert e histórico condizentes) — as 4 páginas
+seguintes e as 2 consultas de detalhe não foram projetadas nesse ciclo.
+`consumer_states` mostra token atualizado logo após o fim do ciclo, então o
+consumer não travou incondicionalmente, mas parou de avançar antes do fim
+do stream desse ciclo especificamente. Causa raiz ainda não identificada —
+requer acesso aos logs reais do Worker (journalctl via `atua-deploy`) para
+confirmar se houve exceção/restart; investigação adiada a pedido do
+usuário. Mitigação aplicada enquanto isso: `HistoryWindowMonths` reduzido
+de 3 para 1 mês e `StatusPageSize` reduzido de 200 para 50 (commit
+`2cf8e05`), reduzindo o volume por ciclo. **Fase 4 segue não validada
+ponta a ponta — não prosseguir para a Fase 5 até a causa raiz ser
+identificada e um ciclo completo (todas as páginas) ser confirmado como
+projetado corretamente.**
+
 ## Objetivo
 
 Executar o redesenho da persistência Mongo do Collector em fases pequenas
