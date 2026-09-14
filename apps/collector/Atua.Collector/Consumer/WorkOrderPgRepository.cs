@@ -4,9 +4,11 @@ using Npgsql;
 namespace Atua.Collector.Consumer;
 
 /// <summary>
-/// Repositório PostgreSQL do consumer de snapshots (ADR-023).
+/// Repositório PostgreSQL do consumer de <c>provider_interactions</c> (Fase 4 do refactor de
+/// persistência — docs/implementation/PLANO-refactor-provider-interactions-collector.md).
 /// Gerencia upsert em work_orders, append em work_order_histories e
 /// persistência do resume token em consumer_states, na mesma transação.
+/// Substitui o consumer de <c>work_order_snapshots</c> (ADR-023, superseded).
 /// </summary>
 public sealed class WorkOrderPgRepository(
     string connectionString,
@@ -15,16 +17,19 @@ public sealed class WorkOrderPgRepository(
     private readonly string _connectionString = connectionString;
 
     /// <summary>
-    /// Processa um snapshot: upsert em work_orders, append condicional em
-    /// work_order_histories e atualização de consumer_states.
-    /// Tudo na mesma transação (ADR-023, seção 4.1).
+    /// Processa um documento inteiro de <c>provider_interactions</c> (Fase 4 do refactor de
+    /// persistência): N upserts em <c>work_orders</c> + N appends condicionais em
+    /// <c>work_order_histories</c> (um por OS presente em <paramref name="orders"/>) + 1
+    /// atualização de <c>consumer_states</c> — tudo na mesma transação. Diferente do consumer
+    /// antigo (1 OS por documento, modelo <c>work_order_snapshots</c>, superseded), aqui uma
+    /// única interação pode conter várias OS (ex.: uma página de <c>list_query</c>).
     /// </summary>
-    public async Task ProcessSnapshotAsync(
-        Guid snapshotId,
+    public async Task ProcessInteractionAsync(
+        Guid interactionId,
         Guid tenantId,
-        string providerId,
-        string status,
+        IReadOnlyList<(string ProviderId, string Status)> orders,
         string resumeToken,
+        string consumerId,
         CancellationToken cancellationToken = default)
     {
         await using var conn = new NpgsqlConnection(_connectionString);
@@ -34,25 +39,25 @@ public sealed class WorkOrderPgRepository(
 
         try
         {
-            // 1. Upsert em work_orders — retorna o id e o status anterior (RF-017.1)
-            var (workOrderId, previousStatus, isNew) =
-                await UpsertWorkOrderAsync(conn, tx, tenantId, providerId, status, cancellationToken);
-
-            // 2. Append em work_order_histories apenas se status mudou (RF-017.2)
-            if (isNew || !string.Equals(previousStatus, status, StringComparison.Ordinal))
+            foreach (var (providerId, status) in orders)
             {
-                await InsertWorkOrderHistoryAsync(conn, tx,
-                    workOrderId, snapshotId, tenantId, providerId, status, cancellationToken);
+                var (workOrderId, previousStatus, isNew) =
+                    await UpsertWorkOrderAsync(conn, tx, tenantId, providerId, status, cancellationToken);
+
+                if (isNew || !string.Equals(previousStatus, status, StringComparison.Ordinal))
+                {
+                    await InsertWorkOrderHistoryAsync(conn, tx,
+                        workOrderId, interactionId, tenantId, providerId, status, cancellationToken);
+                }
             }
 
-            // 3. Persiste resume token na mesma transação (ADR-023 seção 4.1)
-            await UpsertConsumerStateAsync(conn, tx, resumeToken, cancellationToken);
+            await UpsertConsumerStateAsync(conn, tx, consumerId, resumeToken, cancellationToken);
 
             await tx.CommitAsync(cancellationToken);
 
             logger.LogDebug(
-                "[CONSUMER] Transação commitada. SnapshotId={SnapshotId} TenantId={TenantId} ProviderId={ProviderId} Status={Status} IsNew={IsNew}",
-                snapshotId, tenantId, providerId, status, isNew);
+                "[CONSUMER] Interação processada. InteractionId={InteractionId} TenantId={TenantId} OrdersCount={OrdersCount}",
+                interactionId, tenantId, orders.Count);
         }
         catch
         {
@@ -66,6 +71,7 @@ public sealed class WorkOrderPgRepository(
     /// </summary>
     public async Task AdvanceResumeTokenAsync(
         string resumeToken,
+        string consumerId,
         CancellationToken cancellationToken = default)
     {
         await using var conn = new NpgsqlConnection(_connectionString);
@@ -74,7 +80,7 @@ public sealed class WorkOrderPgRepository(
 
         try
         {
-            await UpsertConsumerStateAsync(conn, tx, resumeToken, cancellationToken);
+            await UpsertConsumerStateAsync(conn, tx, consumerId, resumeToken, cancellationToken);
             await tx.CommitAsync(cancellationToken);
         }
         catch
@@ -85,9 +91,12 @@ public sealed class WorkOrderPgRepository(
     }
 
     /// <summary>
-    /// Lê o resume token persistido, ou null se não houver.
+    /// Lê o resume token persistido para <paramref name="consumerId"/>, ou null se não
+    /// houver.
     /// </summary>
-    public async Task<string?> GetResumeTokenAsync(CancellationToken cancellationToken = default)
+    public async Task<string?> GetResumeTokenAsync(
+        string consumerId,
+        CancellationToken cancellationToken = default)
     {
         await using var conn = new NpgsqlConnection(_connectionString);
         await conn.OpenAsync(cancellationToken);
@@ -97,17 +106,42 @@ public sealed class WorkOrderPgRepository(
         // forma (case-sensitive) mesmo com a tabela em snake_case (ver AtuaDbContext,
         // sem HasColumnName em nenhuma entidade — convenção do projeto inteiro).
         cmd.CommandText = "SELECT \"ResumeToken\" FROM consumer_states WHERE \"ConsumerId\" = @id";
-        cmd.Parameters.AddWithValue("@id", ConsumerId);
+        cmd.Parameters.AddWithValue("@id", consumerId);
 
         var result = await cmd.ExecuteScalarAsync(cancellationToken);
         return result as string;
     }
 
+    /// <summary>
+    /// Limpa (define como <c>NULL</c>) o resume token persistido de <paramref name="consumerId"/>.
+    /// Usado quando o token não pode mais ser retomado — o Mongo Atlas já reciclou o oplog
+    /// que cobriria aquele ponto (erro <c>ChangeStreamHistoryLost</c>/código 286) — forçando
+    /// o próximo <c>WatchAsync</c> a abrir o stream sem <c>ResumeAfter</c>, a partir do ponto
+    /// corrente. Não apaga nenhum dado de negócio, apenas o estado operacional do consumer.
+    /// </summary>
+    public async Task ClearResumeTokenAsync(
+        string consumerId,
+        CancellationToken cancellationToken = default)
+    {
+        await using var conn = new NpgsqlConnection(_connectionString);
+        await conn.OpenAsync(cancellationToken);
+
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText =
+            """
+            INSERT INTO consumer_states ("ConsumerId", "ResumeToken", "UpdatedAt")
+            VALUES (@id, NULL, @now)
+            ON CONFLICT ("ConsumerId") DO UPDATE
+            SET "ResumeToken" = NULL, "UpdatedAt" = EXCLUDED."UpdatedAt"
+            """;
+        cmd.Parameters.AddWithValue("@id", consumerId);
+        cmd.Parameters.AddWithValue("@now", DateTimeOffset.UtcNow);
+        await cmd.ExecuteNonQueryAsync(cancellationToken);
+    }
+
     // -------------------------------------------------------------------------
     // Internos
     // -------------------------------------------------------------------------
-
-    private const string ConsumerId = "snapshot-to-work-order";
 
     /// <summary>
     /// UPSERT em work_orders. Retorna (id, statusAnterior, isNew).
@@ -172,11 +206,17 @@ public sealed class WorkOrderPgRepository(
         return (newId, null, true);
     }
 
+    /// <summary>
+    /// <paramref name="interactionId"/> ocupa a coluna <c>WorkOrderSnapshotId</c> — mantida
+    /// sem renomear (referência de aplicação, sem FK de banco) — agora com o <c>_id</c> do
+    /// documento de <c>provider_interactions</c> que originou esta OS, não mais o de um
+    /// <c>work_order_snapshots</c> (superseded).
+    /// </summary>
     private static async Task InsertWorkOrderHistoryAsync(
         NpgsqlConnection conn,
         NpgsqlTransaction tx,
         Guid workOrderId,
-        Guid snapshotId,
+        Guid interactionId,
         Guid tenantId,
         string providerId,
         string status,
@@ -194,7 +234,7 @@ public sealed class WorkOrderPgRepository(
             """;
         cmd.Parameters.AddWithValue("@id", Guid.CreateVersion7());
         cmd.Parameters.AddWithValue("@woid", workOrderId);
-        cmd.Parameters.AddWithValue("@snid", snapshotId);
+        cmd.Parameters.AddWithValue("@snid", interactionId);
         cmd.Parameters.AddWithValue("@tid", tenantId);
         cmd.Parameters.AddWithValue("@pid", providerId);
         cmd.Parameters.AddWithValue("@status", status);
@@ -205,6 +245,7 @@ public sealed class WorkOrderPgRepository(
     private static async Task UpsertConsumerStateAsync(
         NpgsqlConnection conn,
         NpgsqlTransaction tx,
+        string consumerId,
         string resumeToken,
         CancellationToken cancellationToken)
     {
@@ -217,7 +258,7 @@ public sealed class WorkOrderPgRepository(
             ON CONFLICT ("ConsumerId") DO UPDATE
             SET "ResumeToken" = EXCLUDED."ResumeToken", "UpdatedAt" = EXCLUDED."UpdatedAt"
             """;
-        cmd.Parameters.AddWithValue("@id", ConsumerId);
+        cmd.Parameters.AddWithValue("@id", consumerId);
         cmd.Parameters.AddWithValue("@token", resumeToken);
         cmd.Parameters.AddWithValue("@now", DateTimeOffset.UtcNow);
         await cmd.ExecuteNonQueryAsync(cancellationToken);

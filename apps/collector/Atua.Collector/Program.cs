@@ -64,13 +64,13 @@ builder.Services.AddSingleton<WorkOrderPgRepository>(sp =>
     return new WorkOrderPgRepository(opts.ConnectionString, logger);
 });
 
-builder.Services.AddSingleton<IReadOnlyDictionary<string, ISnapshotAdapter>>(_ =>
-    new Dictionary<string, ISnapshotAdapter>(StringComparer.OrdinalIgnoreCase)
+builder.Services.AddSingleton<IReadOnlyDictionary<string, IProviderInteractionOrderAdapter>>(_ =>
+    new Dictionary<string, IProviderInteractionOrderAdapter>(StringComparer.OrdinalIgnoreCase)
     {
-        ["iservice"] = new IServiceSnapshotAdapter()
+        ["iservice"] = new IServiceProviderInteractionOrderAdapter()
     });
 
-builder.Services.AddHostedService<SnapshotConsumerWorker>();
+builder.Services.AddHostedService<ProviderInteractionConsumerWorker>();
 
 var host = builder.Build();
 
