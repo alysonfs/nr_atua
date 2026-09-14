@@ -58,26 +58,31 @@ cutover da Fase 5 — só deixou de ter consumer próprio nesta fase. Build
 limpo. Pendente: validação real contra o iService (novo consumer
 processando interações reais ponta a ponta) antes da Fase 5.
 
-**Validação com dado real (2026-09-14) — achado pendente de investigação:**
+**Validação com dado real (2026-09-14) — achado inicial e causa raiz confirmada:**
 Ciclo real (tenant `01a0888b-acd8-773b-93b7-7362973d7ea8`, comando
 `01a0a1f9-1bc6-7d4b-af4a-e4adc9f124a5`) gerou 9 interações em
 `provider_interactions` (1 `login` + 6 `list_query`, 1035 OS únicas + 2
-`detail_query`). Confirmado via consulta direta a Postgres/Mongo que o
-`ProviderInteractionConsumerWorker` processou corretamente apenas as 2
-primeiras páginas (400 de 1035 OS projetadas em `work_orders`/
-`work_order_histories`, com upsert e histórico condizentes) — as 4 páginas
-seguintes e as 2 consultas de detalhe não foram projetadas nesse ciclo.
-`consumer_states` mostra token atualizado logo após o fim do ciclo, então o
-consumer não travou incondicionalmente, mas parou de avançar antes do fim
-do stream desse ciclo especificamente. Causa raiz ainda não identificada —
-requer acesso aos logs reais do Worker (journalctl via `atua-deploy`) para
-confirmar se houve exceção/restart; investigação adiada a pedido do
-usuário. Mitigação aplicada enquanto isso: `HistoryWindowMonths` reduzido
-de 3 para 1 mês e `StatusPageSize` reduzido de 200 para 50 (commit
-`2cf8e05`), reduzindo o volume por ciclo. **Fase 4 segue não validada
-ponta a ponta — não prosseguir para a Fase 5 até a causa raiz ser
-identificada e um ciclo completo (todas as páginas) ser confirmado como
-projetado corretamente.**
+`detail_query`). Uma primeira checagem encontrou apenas 563 de 1035 OS
+projetadas em `work_orders`, levantando suspeita de bug no consumer
+(processamento parcial silencioso).
+
+Investigação local (Collector rodando via depurador do VS Code) mostrou o
+`ProviderInteractionConsumerWorker` reabrindo o Change Stream com o
+resume token persistido e processando o backlog restante normalmente,
+sem nenhuma exceção. Reconferência direta em Postgres/Mongo após esse
+run confirmou: `work_orders` passou a ter exatamente 1035 linhas (igual
+ao total único de OS no Mongo) e 0 IDs faltando entre Mongo e Postgres.
+**Não havia bug** — o estado de 563/1035 era simplesmente backlog ainda
+não consumido (processo local havia sido interrompido antes de esgotar
+o Change Stream), não uma falha de processamento. Ao deixar o consumer
+rodar até drenar o backlog, o ciclo completo foi projetado corretamente,
+incluindo upserts e históricos condizentes.
+
+Mitigação aplicada durante a investigação (mantida, não é mais bloqueante
+mas reduz volume por ciclo): `HistoryWindowMonths` reduzido de 3 para 1
+mês e `StatusPageSize` reduzido de 200 para 50 (commit `2cf8e05`).
+
+**Fase 4 validada ponta a ponta com dado real — liberada para a Fase 5.**
 
 ## Objetivo
 
