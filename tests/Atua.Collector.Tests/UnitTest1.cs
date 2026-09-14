@@ -87,7 +87,7 @@ public class WorkerEligibilityTests
 
         // CollectAsync NUNCA deve ter sido chamado
         await iService.DidNotReceive().CollectAsync(
-            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(),
+            Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(),
             Arg.Any<int>(), Arg.Any<CancellationToken>());
 
         // Nenhuma persistência no Mongo
@@ -126,7 +126,7 @@ public class WorkerEligibilityTests
         });
         apiClient.CheckEligibilityAsync(Arg.Any<CancellationToken>())
             .Returns(new EligibilityResponse(Eligible: true, DateTimeOffset.UtcNow));
-        iService.CollectAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(),
+        iService.CollectAsync(Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(),
             Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns(result);
         apiClient.CompleteAsync(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<ECommandFailureReason?>(),
             Arg.Any<DateTimeOffset?>(), Arg.Any<CancellationToken>())
@@ -138,6 +138,8 @@ public class WorkerEligibilityTests
 
         // CollectAsync DEVE ter sido chamado exatamente uma vez
         await iService.Received(1).CollectAsync(
+            command.TenantId,
+            command.CommandId,
             command.Credential.Username,
             command.Credential.Password,
             command.Credential.BaseUrl,
@@ -185,7 +187,7 @@ public class WorkerEligibilityTests
 
         // CollectAsync nunca deve ser chamado
         await iService.DidNotReceive().CollectAsync(
-            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(),
+            Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(),
             Arg.Any<int>(), Arg.Any<CancellationToken>());
 
         // CompleteAsync deve ter sido chamado com "Failed" e IServiceUnavailable
@@ -221,7 +223,7 @@ public class WorkerEligibilityTests
 
         await apiClient.DidNotReceive().CheckEligibilityAsync(Arg.Any<CancellationToken>());
         await iService.DidNotReceive().CollectAsync(
-            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(),
+            Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(),
             Arg.Any<int>(), Arg.Any<CancellationToken>());
     }
 }
