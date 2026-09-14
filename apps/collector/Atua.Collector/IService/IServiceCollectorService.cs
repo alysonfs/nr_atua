@@ -35,7 +35,11 @@ public sealed class IServiceCollectorService(
     private const string SigninHost = "signin.midea.com";
     private const string WoListUrl = "https://ics-amer.midea.com/web/iservice-wom/workOrder/queryWorkOrder";
     private const string WoDetailUrl = "https://ics-amer.midea.com/web/iservice-wom/workOrder/queryOneWorkOrder";
-    private const int StatusPageSize = 200;
+    // ADR-021 (D1+D6) sugeria 50 como valor inicial de WORKER_PAGE_SIZE; estava
+    // hardcoded em 200. Reduzido após ciclo real (3 meses, 200/página) ter
+    // devolvido 1035 OS em 6 páginas e o consumer da Fase 4 não ter conseguido
+    // processar todas as páginas do ciclo a tempo (ver validação de Fase 4).
+    private const int StatusPageSize = 50;
     private const string ProviderTypeName = "iservice";
 
     private static readonly (string Key, string Code, string TabLabel)[] StatusConfigs =

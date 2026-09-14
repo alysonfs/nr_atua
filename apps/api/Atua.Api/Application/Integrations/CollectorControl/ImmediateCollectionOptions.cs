@@ -16,9 +16,13 @@ public sealed class ImmediateCollectionOptions
 
     /// <summary>
     /// Janela temporal de histórico para a coleta inicial (meses).
-    /// ADR-021/D1+D6: limite de 3 meses. Configurável.
+    /// ADR-021/D1+D6: limite absoluto de 3 meses, mas configurável. Reduzido
+    /// para 1 mês (decisão operacional) após ciclo real com 3 meses/200-por-
+    /// página ter devolvido volume (1035 OS) que o consumer da Fase 4 não
+    /// conseguiu processar por completo no mesmo ciclo — ver validação de
+    /// Fase 4 em <c>PLANO-refactor-provider-interactions-collector.md</c>.
     /// </summary>
-    public int HistoryWindowMonths { get; init; } = 3;
+    public int HistoryWindowMonths { get; init; } = 1;
 
     /// <summary>
     /// Timeout do claim antes de o comando transitar para Failed/ClaimTimeout

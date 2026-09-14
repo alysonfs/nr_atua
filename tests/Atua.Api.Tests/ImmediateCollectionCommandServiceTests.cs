@@ -47,7 +47,7 @@ public class ImmediateCollectionCommandServiceTests
         Assert.Equal(tenant.Id, result.TenantId);
         Assert.NotEqual(default, result.ClaimedAtUtc);
         Assert.NotEqual(default, result.ClaimExpiresAtUtc);
-        Assert.Equal(3, result.HistoryWindowMonths); // default
+        Assert.Equal(3, result.HistoryWindowMonths); // default do helper de teste (CreateService), não da classe de opções
 
         // Verifica que o comando transitou para Claimed
         var claimed = await context.ImmediateCollectionCommands.SingleAsync();
