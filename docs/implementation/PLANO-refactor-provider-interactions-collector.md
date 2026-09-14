@@ -9,7 +9,8 @@ junto com RF-022 e RF-023.
 `FASE_1_CONCLUIDA` — `provider_interactions` aditivo implementado e
 commitado (`f860e60`).
 
-`FASE_2_CONCLUIDA` — `provider_sessions` implementado: repositório com
+`FASE_2_CONCLUIDA` — `provider_sessions` implementado e commitado
+(`f00cfb1`): repositório com
 índice único `(tenant_id, provider_type)`, `CollectAsync` reestruturado
 em `ExecuteCollectionCycleAsync` para reaproveitar `storage_state` salvo
 via `BrowserContext` explícito, checagem barata de validade (redirect
@@ -18,15 +19,53 @@ e detecção de HTTP 401 em pleno ciclo (`list_query`/`detail_query`) via
 `ProviderSessionInvalidException` com invalidação + retry único de login
 dentro do mesmo comando. TTL configurável via
 `CollectorWorkerOptions.SessionTtlHours` (default 4h, DP-023.1 — ajustar
-por observação real). Build limpo, ainda sem commit.
+por observação real).
+
+`FASE_3_CONCLUIDA` — busca de OS por data implementada e commitada
+(`3a137e7`): `FetchWorkOrdersByDateRangeAsync` substitui as 5 chamadas
+fixas por status por uma única sequência paginada a `queryWorkOrder` com
+`woStatus=""`/`woStatusCond="me"` e `creationDateFrom`/`creationDateTo`
+derivados de `HistoryWindowMonths`, agrupando o resultado por `woStatus`
+via `GroupOrdersByStatus`. Estratégia legada mantida atrás de
+`CollectorWorkerOptions.UseDateBasedWorkOrderQuery` (default `true`,
+rollback sem redeploy). Build limpo. Pendente: validação lado a lado
+contra o iService real (comparar OS retornadas pelas duas estratégias)
+antes de desligar a legada.
+
+`FASE_4_CONCLUIDA` — consumer decompõe array de N OS por documento e
+commitada (`f7c2dec`): `ProviderInteractionConsumerWorker` substitui
+`SnapshotConsumerWorker`, com Change Stream sobre `provider_interactions`
+em vez de `work_order_snapshots`; interações `login` e interações com
+`success=false` apenas avançam o resume token, sem escrita em
+`work_orders`/`work_order_histories`.
+`IProviderInteractionOrderAdapter`/`IServiceProviderInteractionOrderAdapter`
+substituem `ISnapshotAdapter`/`IServiceSnapshotAdapter`, decompondo o
+array `orders` em N pares `(providerId, status)` (chave `workOrderId`
+com fallback `id`; status em `woStatus`).
+`WorkOrderPgRepository.ProcessInteractionAsync` processa N upserts em
+`work_orders` + N appends condicionais em `work_order_histories` + 1
+upsert de `consumer_states`, tudo em uma única transação Postgres — um
+resume token por interação, não por OS. Novo consumer id
+`provider-interaction-to-work-order` (distinto de
+`snapshot-to-work-order`, cuja linha do tempo de resume tokens não é
+compatível com a nova fonte). Resume token expirado (código 286/
+`ChangeStreamHistoryLost`, quando o Atlas já reciclou o oplog) é
+detectado especificamente e tratado limpando apenas o token persistido
+(`ClearResumeTokenAsync`) — o stream reabre a partir do ponto corrente,
+sem apagar nenhum dado de negócio no RDS ou no Mongo. `work_order_snapshots`
+segue sendo escrito por `WorkOrderRepository` (Fase 1, em paralelo) até o
+cutover da Fase 5 — só deixou de ter consumer próprio nesta fase. Build
+limpo. Pendente: validação real contra o iService (novo consumer
+processando interações reais ponta a ponta) antes da Fase 5.
 
 ## Objetivo
 
 Executar o redesenho da persistência Mongo do Collector em fases pequenas
 e independentes, evitando um "big bang" de implementação. Cada fase é
 isolada, testável e não bloqueia o pipeline atual (`work_order_snapshots`
-→ Change Stream → `SnapshotConsumerWorker` → Postgres) até que a
-substituição esteja validada com dado real.
+→ Change Stream → `SnapshotConsumerWorker`, superseded por
+`provider_interactions` → Change Stream → `ProviderInteractionConsumerWorker`
+→ Postgres) até que a substituição esteja validada com dado real.
 
 Escopo geral da mudança (decisão do usuário, detalhada pela ADR em
 formalização):
