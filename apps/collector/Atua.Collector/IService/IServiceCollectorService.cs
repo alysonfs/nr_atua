@@ -78,7 +78,7 @@ public sealed class IServiceCollectorService(
         try
         {
             return await ExecuteCollectionCycleAsync(
-                browser, tenantId, commandId, username, password, forceLogin: false, cancellationToken);
+                browser, tenantId, commandId, username, password, historyWindowMonths, forceLogin: false, cancellationToken);
         }
         catch (ProviderSessionInvalidException ex)
         {
@@ -89,7 +89,7 @@ public sealed class IServiceCollectorService(
                 "[SESSAO] Sessão invalidada em pleno ciclo ({Reason}). Refazendo login (tentativa única).",
                 ex.Message);
             return await ExecuteCollectionCycleAsync(
-                browser, tenantId, commandId, username, password, forceLogin: true, cancellationToken);
+                browser, tenantId, commandId, username, password, historyWindowMonths, forceLogin: true, cancellationToken);
         }
     }
 
@@ -109,6 +109,7 @@ public sealed class IServiceCollectorService(
         Guid commandId,
         string username,
         string password,
+        int historyWindowMonths,
         bool forceLogin,
         CancellationToken cancellationToken)
     {
@@ -183,19 +184,38 @@ public sealed class IServiceCollectorService(
             var requestTemplate = await OpenWorkOrderStatusViewAsync(page);
             debugLogger.LogTemplateCaptured(commandId, requestTemplate.Url, requestTemplate.Headers, requestTemplate.Body);
 
-            logger.LogInformation("[COLETOR] Template da API capturado. Iniciando coleta por status...");
             cancellationToken.ThrowIfCancellationRequested();
 
-            var ordersByStatus = new Dictionary<string, IReadOnlyList<object>>();
-            var statusCounts = new Dictionary<string, int>();
+            Dictionary<string, IReadOnlyList<object>> ordersByStatus;
 
-            foreach (var (key, code, tabLabel) in StatusConfigs)
+            if (_options.UseDateBasedWorkOrderQuery)
             {
-                cancellationToken.ThrowIfCancellationRequested();
-                var orders = await FetchWorkOrdersForStatusAsync(tenantId, commandId, page, requestTemplate, code, tabLabel, cancellationToken);
-                ordersByStatus[key] = orders;
-                statusCounts[key] = orders.Count;
-                logger.LogInformation("[COLETA] {Count} OS '{TabLabel}' coletadas.", orders.Count, tabLabel);
+                // Fase 3 (RF-024): 1 chamada paginada cobrindo todo o período, em vez de
+                // 5 chamadas fixas (uma por status). O próprio iService devolve o status
+                // de cada OS no payload — agrupamos depois, não filtramos na origem.
+                var (creationDateFrom, creationDateTo) = ComputeCreationDateRange(historyWindowMonths, DateTime.UtcNow);
+                logger.LogInformation(
+                    "[COLETOR] Iniciando coleta por data (período {From} a {To}, todos os status em 1 fluxo paginado)...",
+                    creationDateFrom, creationDateTo);
+                ordersByStatus = await FetchWorkOrdersByDateRangeAsync(
+                    tenantId, commandId, page, requestTemplate, creationDateFrom, creationDateTo, cancellationToken);
+            }
+            else
+            {
+                logger.LogInformation("[COLETOR] Iniciando coleta por status (estratégia legada)...");
+                ordersByStatus = new Dictionary<string, IReadOnlyList<object>>();
+                foreach (var (key, code, tabLabel) in StatusConfigs)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    var orders = await FetchWorkOrdersForStatusAsync(tenantId, commandId, page, requestTemplate, code, tabLabel, cancellationToken);
+                    ordersByStatus[key] = orders;
+                }
+            }
+
+            var statusCounts = ordersByStatus.ToDictionary(kv => kv.Key, kv => kv.Value.Count);
+            foreach (var (key, _, tabLabel) in StatusConfigs)
+            {
+                logger.LogInformation("[COLETA] {Count} OS '{TabLabel}' coletadas.", statusCounts.GetValueOrDefault(key), tabLabel);
             }
 
             // Enriquecimento: apenas OS "assigned" recebem detalhe
@@ -743,7 +763,151 @@ public sealed class IServiceCollectorService(
     }
 
     // -------------------------------------------------------------------------
-    // Coleta de OS por status
+    // Coleta de OS por data (Fase 3, RF-024) — estratégia atual
+    // -------------------------------------------------------------------------
+
+    /// <summary>
+    /// Calcula o intervalo <c>creationDateFrom</c>/<c>creationDateTo</c> (formato aceito
+    /// pelo iService, <c>yyyy-MM-dd HH:mm:ss</c>) a partir de <c>historyWindowMonths</c>
+    /// (RF-009, default 3 meses). Extraído como método <c>public static</c> — sem
+    /// dependência de Playwright — para permitir teste unitário isolado (DP-013.2),
+    /// mesmo padrão de <see cref="IsWriteRequestOnIService"/>.
+    /// </summary>
+    public static (string CreationDateFrom, string CreationDateTo) ComputeCreationDateRange(
+        int historyWindowMonths, DateTime nowUtc)
+    {
+        var months = historyWindowMonths > 0 ? historyWindowMonths : 3;
+        var fromDate = nowUtc.Date.AddMonths(-months);
+        var toDate = nowUtc.Date;
+        return (
+            fromDate.ToString("yyyy-MM-dd") + " 00:00:00",
+            toDate.ToString("yyyy-MM-dd") + " 23:59:59");
+    }
+
+    /// <summary>
+    /// Busca todas as OS do período em uma única sequência paginada (RF-024), com
+    /// <c>woStatus=""</c>/<c>woStatusCond="me"</c> — substitui as 5 chamadas fixas por
+    /// status da estratégia legada (<see cref="FetchWorkOrdersForStatusAsync"/>). Agrupa o
+    /// resultado por <c>woStatus</c> (campo devolvido pelo próprio iService em cada OS).
+    /// </summary>
+    private async Task<Dictionary<string, IReadOnlyList<object>>> FetchWorkOrdersByDateRangeAsync(
+        Guid tenantId,
+        Guid commandId,
+        IPage page,
+        RequestTemplate template,
+        string creationDateFrom,
+        string creationDateTo,
+        CancellationToken cancellationToken)
+    {
+        var allOrders = new List<object>();
+        // Cobre até 200 * 200 = 40.000 OS no período — folga generosa sobre o volume
+        // observado em produção (~220 OS/mês no tenant de teste Natal Refrigeração).
+        const int maxPages = 200;
+
+        for (var pageNumber = 1; pageNumber <= maxPages; pageNumber++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var chunk = await FetchWorkOrdersDateRangePageWithInteractionLogAsync(
+                tenantId, commandId, page, template, creationDateFrom, creationDateTo, pageNumber, cancellationToken);
+            allOrders.AddRange(chunk);
+            if (chunk.Count < StatusPageSize) break;
+        }
+
+        return GroupOrdersByStatus(allOrders);
+    }
+
+    /// <summary>
+    /// Envolve a página de busca por data registrando exatamente um documento em
+    /// <c>provider_interactions</c> por chamada (RF-022.1/RN-022.1) — mesmo padrão de
+    /// <see cref="FetchWorkOrdersPageWithInteractionLogAsync"/>.
+    /// </summary>
+    private async Task<IReadOnlyList<object>> FetchWorkOrdersDateRangePageWithInteractionLogAsync(
+        Guid tenantId,
+        Guid commandId,
+        IPage page,
+        RequestTemplate template,
+        string creationDateFrom,
+        string creationDateTo,
+        int pageNumber,
+        CancellationToken cancellationToken)
+    {
+        var request = new Dictionary<string, object?>
+        {
+            ["url"] = template.Url,
+            ["status"] = "",
+            ["status_cond"] = "me",
+            ["creation_date_from"] = creationDateFrom,
+            ["creation_date_to"] = creationDateTo,
+            ["page"] = pageNumber,
+            ["page_size"] = StatusPageSize,
+        };
+
+        try
+        {
+            var orders = await FetchWorkOrdersPageAsync(
+                page, template, statusCode: "", woStatusCond: "me",
+                creationDateFrom: creationDateFrom, creationDateTo: creationDateTo, pageNumber: pageNumber);
+            await LogProviderInteractionSafeAsync(
+                tenantId, commandId, "list_query", request, orders, success: true, errorMessage: null, cancellationToken);
+            return orders;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            await LogProviderInteractionSafeAsync(
+                tenantId, commandId, "list_query", request, orders: null, success: false, ex.Message, cancellationToken);
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Agrupa OS já convertidas (<see cref="ConvertJsonElement"/>) por <c>woStatus</c>,
+    /// garantindo que todas as chaves de <see cref="StatusConfigs"/> apareçam no resultado
+    /// (mesmo com 0 OS), para manter o mesmo formato de <c>statusCounts</c>/
+    /// <c>ordersByStatus</c> que a estratégia legada produzia. OS com <c>woStatus</c>
+    /// desconhecido (fora de <see cref="StatusConfigs"/>) não são descartadas — apenas não
+    /// entram em <c>statusCounts</c>; ficam registradas normalmente no payload bruto de
+    /// <c>provider_interactions</c>, e um warning é emitido para investigação manual.
+    /// </summary>
+    private Dictionary<string, IReadOnlyList<object>> GroupOrdersByStatus(IReadOnlyList<object> orders)
+    {
+        var byStatus = new Dictionary<string, List<object>>(StringComparer.OrdinalIgnoreCase);
+        foreach (var order in orders)
+        {
+            var status = ExtractWoStatus(order) ?? "unknown";
+            if (!byStatus.TryGetValue(status, out var list))
+            {
+                list = [];
+                byStatus[status] = list;
+            }
+            list.Add(order);
+        }
+
+        var result = new Dictionary<string, IReadOnlyList<object>>();
+        foreach (var (key, code, _) in StatusConfigs)
+        {
+            result[key] = byStatus.Remove(code, out var known) ? known : [];
+        }
+
+        if (byStatus.Count > 0)
+        {
+            var unmappedTotal = byStatus.Values.Sum(list => list.Count);
+            logger.LogWarning(
+                "[COLETA] {Count} OS com woStatus não mapeado em StatusConfigs ({Statuses}). " +
+                "Não entram em statusCounts, mas seguem íntegras no payload bruto de provider_interactions.",
+                unmappedTotal, string.Join(", ", byStatus.Keys));
+        }
+
+        return result;
+    }
+
+    private static string? ExtractWoStatus(object order)
+        => order is IDictionary<string, object?> dict && dict.TryGetValue("woStatus", out var status)
+            ? status as string
+            : null;
+
+    // -------------------------------------------------------------------------
+    // Coleta de OS por status (estratégia legada, mantida atrás de
+    // CollectorWorkerOptions.UseDateBasedWorkOrderQuery para rollback rápido)
     // -------------------------------------------------------------------------
 
     private async Task<IReadOnlyList<object>> FetchWorkOrdersForStatusAsync(
@@ -794,7 +958,9 @@ public sealed class IServiceCollectorService(
 
         try
         {
-            var orders = await FetchWorkOrdersPageAsync(page, template, statusCode, pageNumber);
+            var orders = await FetchWorkOrdersPageAsync(
+                page, template, statusCode, woStatusCond: "eq",
+                creationDateFrom: null, creationDateTo: null, pageNumber: pageNumber);
             await LogProviderInteractionSafeAsync(
                 tenantId, commandId, "list_query", request, orders, success: true, errorMessage: null, cancellationToken);
             return orders;
@@ -807,10 +973,20 @@ public sealed class IServiceCollectorService(
         }
     }
 
+    /// <summary>
+    /// Executa 1 página de busca de OS via <c>fetch</c> no template capturado. Quando
+    /// <paramref name="creationDateFrom"/>/<paramref name="creationDateTo"/> são
+    /// informados (busca por data, Fase 3), sobrescrevem o intervalo padrão do template
+    /// (que reflete apenas os últimos ~30 dias, valor da SPA); quando nulos (estratégia
+    /// legada por status), o template mantém seu intervalo original.
+    /// </summary>
     private async Task<IReadOnlyList<object>> FetchWorkOrdersPageAsync(
         IPage page,
         RequestTemplate template,
         string statusCode,
+        string woStatusCond,
+        string? creationDateFrom,
+        string? creationDateTo,
         int pageNumber)
     {
         var headersJson = JsonSerializer.Serialize(template.Headers);
@@ -820,7 +996,7 @@ public sealed class IServiceCollectorService(
         try
         {
             result = await page.EvaluateAsync<JsonElement>(
-                @"async ({ templateUrl, headersJson, bodyJson, statusCode, pageNumber, pageSize }) => {
+                @"async ({ templateUrl, headersJson, bodyJson, statusCode, woStatusCond, creationDateFrom, creationDateTo, pageNumber, pageSize }) => {
                     const headers = JSON.parse(headersJson);
                     headers['content-type'] = 'application/json; charset=UTF-8';
                     delete headers['content-length'];
@@ -828,6 +1004,9 @@ public sealed class IServiceCollectorService(
 
                     const body = JSON.parse(bodyJson);
                     body.woStatus = statusCode;
+                    body.woStatusCond = woStatusCond;
+                    if (creationDateFrom) body.creationDateFrom = creationDateFrom;
+                    if (creationDateTo) body.creationDateTo = creationDateTo;
                     body.__page = pageNumber;
                     body.__pagesize = pageSize;
 
@@ -852,6 +1031,9 @@ public sealed class IServiceCollectorService(
                     headersJson,
                     bodyJson,
                     statusCode,
+                    woStatusCond,
+                    creationDateFrom,
+                    creationDateTo,
                     pageNumber,
                     pageSize = StatusPageSize,
                 });

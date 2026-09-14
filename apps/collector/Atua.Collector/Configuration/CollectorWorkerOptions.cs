@@ -68,4 +68,17 @@ public sealed class CollectorWorkerOptions
     /// produção; não é decisão arquitetural, apenas parametrização operacional.
     /// </summary>
     public int SessionTtlHours { get; set; } = 4;
+
+    /// <summary>
+    /// Estratégia de busca de OS no iService (RF-024/Fase 3 do refactor de
+    /// <c>provider_interactions</c>). Quando <c>true</c> (padrão), busca todas as OS do
+    /// período em uma única chamada paginada a <c>queryWorkOrder</c> com
+    /// <c>woStatus=""</c>/<c>woStatusCond="me"</c> e <c>creationDateFrom</c>/
+    /// <c>creationDateTo</c> derivados de <c>HistoryWindowMonths</c>, agrupando o
+    /// resultado por <c>woStatus</c>. Quando <c>false</c>, mantém a estratégia legada de
+    /// 1 chamada paginada por status (5 chamadas fixas). Flag de rollback rápido — sem
+    /// redeploy — caso a busca por data se comporte de forma inesperada contra o
+    /// iService real; remover assim que a Fase 3 estiver validada em produção.
+    /// </summary>
+    public bool UseDateBasedWorkOrderQuery { get; set; } = true;
 }
