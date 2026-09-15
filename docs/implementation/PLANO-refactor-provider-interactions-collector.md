@@ -217,15 +217,43 @@ separada (nenhum dado foi apagado do Mongo por esta fase).
 
 ### Fase 6 — Validação QA ponta a ponta
 
-**Responsável:** `qa-engineer`
+**Responsável:** validação manual guiada (ver
+[qa-manual-fase6-provider-interactions.md](/Users/alysonfs/workspace/Software/natal-refrigeracao/atua/docs/guides/qa-manual-fase6-provider-interactions.md)),
+sem acionamento do agente `qa-engineer` — resultados analisados
+diretamente na sessão para evitar custo/tempo de um agente QA completo.
 
 Validar com iService real:
 
-- Idempotência: reprocessar o mesmo `command_id` não duplica dado.
-- Reuso de sessão funciona e evita login repetido.
-- Busca por data retorna o mesmo conjunto de OS que a busca por status
-  trazia antes.
-- Resume token do Change Stream sobrevive a restart do Worker.
+- ✅ Idempotência: reprocessar o mesmo `command_id` não duplica dado
+  (`work_orders` estável, `work_order_histories` cresce só com mudanças
+  reais de status).
+- ⏳ Reuso de sessão funciona e evita login repetido — login CAS completo
+  observado em vez de reuso; provável apenas TTL de sessão expirado
+  (comportamento esperado), precisa de mais um ciclo para confirmar reuso
+  real.
+- ⚠️ Busca por data retorna o mesmo conjunto de OS que a busca por status
+  trazia antes — **divergência real encontrada**: nossa agregação por
+  `woStatus` (via `provider_interactions`) somou 150 OS, enquanto uma
+  busca manual no portal iService (tela "Pesquisa de Ordem de Serviço")
+  no mesmo período retornou 374. Explicação mais provável: as duas telas
+  do portal têm escopos diferentes — a tela "Visão por Status" (de onde
+  vem o template/sessão usado pelo Collector, com `woStatusCond: "me"`)
+  parece restringir ao escopo do usuário/credencial logada, enquanto
+  "Pesquisa de Ordem de Serviço" é uma busca mais ampla, sem essa
+  restrição. **Ainda não confirmado 1:1** — falta comparar o total da
+  própria tela "Visão por Status" (soma das 5 abas: Designado/Em
+  Processamento/Pendente/Concluído/Cancelado) contra os 150 que
+  coletamos, para isolar se a diferença é só de escopo de tela ou se há
+  perda real de OS na paginação por data. Enquanto não confirmado,
+  **risco em aberto**: se `woStatusCond: "me"` de fato limitar a coleta
+  às OS atribuídas à credencial de serviço (e não a todas as OS do
+  tenant/conta), isso é uma lacuna de completude real, não um artefato de
+  comparação — requer confirmação com o usuário/negócio sobre o que a
+  credencial de coleta deveria enxergar.
+- ✅ Resume token do Change Stream sobrevive a restart do Worker — log
+  confirma reabertura com `ResumeToken=sim`, processamento continua sem
+  duplicar (`work_orders`/`work_order_histories` estáveis entre o corte e
+  a retomada).
 
 ### Fase 7 — Documentação viva
 
@@ -246,6 +274,46 @@ Validar com iService real:
   Refrigeração.
 - `make logs-collector-follow` para confirmar comportamento em produção
   real.
+
+## Backlog / débitos técnicos identificados na Fase 6
+
+Itens encontrados durante a validação manual que **não bloqueiam** o
+encerramento desta refatoração, mas ficam registrados para não se
+perderem:
+
+### 1. Datas do iService não são persistidas (`work_orders`/`work_order_histories`)
+
+Hoje `IServiceProviderInteractionOrderAdapter.ExtractOrders` (ver
+[IServiceProviderInteractionOrderAdapter.cs](/Users/alysonfs/workspace/Software/natal-refrigeracao/atua/apps/collector/Atua.Collector/Consumer/IServiceProviderInteractionOrderAdapter.cs))
+só extrai `workOrderId`/`id` e `woStatus` de cada OS bruta em
+`provider_interactions.orders[]`. Nenhuma data de negócio do iService é
+extraída ou persistida — `work_orders.CreatedAt`/`UpdatedAt` refletem
+apenas o momento da nossa ingestão, não datas reais da OS na origem.
+
+O payload bruto do `list_query` (`orders[]`) confirmado em produção expõe,
+entre outros, os campos `creationDate` e `lastUpdateDate` (nomes exatos
+capturados via Compass em 2026-09-15). Proposta (a implementar em uma
+iteração futura, fora do escopo desta refatoração):
+
+- `creationDate` → novo campo `ProviderCreatedAt` em `work_orders`.
+- `lastUpdateDate` → novo campo `ProviderUpdatedAt` em `work_orders`.
+
+Os demais ~50 campos de data do payload (`requestDate`, `promisedDate`,
+`nextVisitDate`, `closeDate`, `visitDate`, `expectedDate`,
+`purchaseDate`, etc. — ver payload completo capturado) não têm uso
+identificado hoje e ficam fora deste backlog até surgir necessidade
+concreta (ex.: SLA de visita técnica).
+
+### 2. Escopo de `woStatusCond: "me"` na busca por data — precisa confirmação
+
+Ver nota na Fase 6 acima: a comparação com o portal indicou uma possível
+diferença de escopo (credencial/usuário logado vs. conta inteira do
+tenant) entre a tela usada pelo Collector ("Visão por Status") e a tela
+usada na validação manual ("Pesquisa de Ordem de Serviço"). Antes de
+considerar este item fechado, é preciso confirmar — comparando o total
+da própria tela "Visão por Status" (soma das 5 abas) contra os 150 OS
+coletados — se `woStatusCond: "me"` cobre todas as OS do tenant ou apenas
+as atribuídas à credencial de serviço usada na coleta.
 
 ## Dependências entre fases
 
