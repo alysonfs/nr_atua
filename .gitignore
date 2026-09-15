@@ -49,6 +49,11 @@ apps/collector/Atua.Collector/logs/
 !.env.example
 *.local
 
+# Resultados de testes manuais colados pelo usuário (podem conter usuário/
+# senha/URLs internas do provedor) — nunca versionar, o guia versionado
+# (docs/guides/*.md) fica como template limpo.
+docs/guides/*.resultados.local.md
+
 # AWS CLI / SAM / CDK
 .aws/
 .aws-sam/
