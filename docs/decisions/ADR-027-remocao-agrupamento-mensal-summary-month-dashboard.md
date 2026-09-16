@@ -43,3 +43,17 @@ histórico contínuo).
 - Não é uma reversão de código imediata — é um registro de que a
   funcionalidade "summary month" (mensal) não deve avançar/ser usada como
   está, para orientar o próximo passo do plano.
+
+## Atualização (recorte substituto implementado)
+
+O recorte substituto foi definido e implementado: contagem total de OS por
+**status atual** (tabela `WorkOrder`, sem recorte de mês nem série diária),
+via novo endpoint `GET /api/tenants/{tenantId}/work-orders/status-summary`
+(`IWorkOrderStatusSummaryQuery` / `WorkOrderStatusSummaryQueryHandler`).
+
+- A seção do Dashboard (`StatusSummary`, antigo `SummaryMonth`) passou a
+  consumir esse endpoint via `useWorkOrderStatusSummary`, exibindo apenas o
+  total atual por status (sem sparkline).
+- `GET /api/tenants/{tenantId}/work-orders/summary?month=` e
+  `WorkOrderMonthlySummaryQueryHandler` foram mantidos no backend (não
+  removidos), mas não são mais consumidos por nenhuma tela do Office.
