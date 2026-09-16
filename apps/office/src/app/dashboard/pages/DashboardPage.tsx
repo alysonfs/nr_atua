@@ -1,5 +1,5 @@
 import { DesignatedOrdersTable } from '../components/DesignatedOrdersTable'
-import { SummaryMonth } from '../components/SummaryMonth'
+import { StatusSummary } from '../components/StatusSummary'
 import { useMyTenants } from '../../office/hooks/useTenants'
 import { useTranslation } from 'react-i18next'
 
@@ -40,7 +40,7 @@ export function DashboardPage() {
 
       {!isLoading && !isError && (
         <>
-          <SummaryMonth tenantId={defaultTenantId} />
+          <StatusSummary tenantId={defaultTenantId} />
           <DesignatedOrdersTable tenantId={defaultTenantId} />
         </>
       )}

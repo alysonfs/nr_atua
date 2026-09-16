@@ -1,28 +1,27 @@
-import { useServiceOrderMonthSummary } from '../../hooks/useServiceOrderMonthSummary'
+import { useWorkOrderStatusSummary } from '../../hooks/useWorkOrderStatusSummary'
 import { StatusSummaryCard } from './StatusSummaryCard'
 import { useTranslation } from 'react-i18next'
 import { getProviderStatusAccentColor, translateProviderStatus } from '../../lib/providerStatus'
 
-interface SummaryMonthProps {
+interface StatusSummaryProps {
   /** Tenant ativo do usuário (ver useMyTenants().defaultTenantId). */
   tenantId: string | null
 }
 
 /**
- * Seção "summary month" do Dashboard: mostra, para o mês corrente, a
- * contagem de OS agrupada por status (string livre, RF-017), cada uma em
- * um card com mini-gráfico (sparkline) da evolução diária.
+ * Seção "resumo por status" do Dashboard: mostra a contagem de OS agrupada
+ * pelo status ATUAL (RF-017), sem recorte de mês/série diária (ADR-027).
  *
- * Integra com GET /api/tenants/{tenantId}/work-orders/summary (ver
- * useServiceOrderMonthSummary).
+ * Integra com GET /api/tenants/{tenantId}/work-orders/status-summary (ver
+ * useWorkOrderStatusSummary).
  */
-export function SummaryMonth({ tenantId }: SummaryMonthProps) {
+export function StatusSummary({ tenantId }: StatusSummaryProps) {
   const { t } = useTranslation()
-  const { summary, isLoading, isError } = useServiceOrderMonthSummary(tenantId)
+  const { summary, isLoading, isError } = useWorkOrderStatusSummary(tenantId)
 
   return (
-    <section aria-labelledby="summary-month-heading" className="space-y-3">
-      <h2 id="summary-month-heading" className="text-sm font-semibold text-slate-700">
+    <section aria-labelledby="status-summary-heading" className="space-y-3">
+      <h2 id="status-summary-heading" className="text-sm font-semibold text-slate-700">
         {t('dashboard.summaryTitle')}
       </h2>
 
@@ -40,12 +39,11 @@ export function SummaryMonth({ tenantId }: SummaryMonthProps) {
 
       {!isLoading && !isError && (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {summary.map(({ status, total, dailyCounts }) => (
+          {summary.map(({ status, total }) => (
             <StatusSummaryCard
               key={status}
               status={translateProviderStatus(status, t)}
               total={total}
-              dailyCounts={dailyCounts}
               accentColor={getProviderStatusAccentColor(status)}
             />
           ))}

@@ -145,6 +145,7 @@ builder.Services.AddScoped<ChangeTenantPlanUseCase>();
 builder.Services.AddScoped<ChangeTenantMembershipRoleUseCase>();
 builder.Services.AddScoped<IWorkOrderMonthlySummaryQuery, WorkOrderMonthlySummaryQueryHandler>();
 builder.Services.AddScoped<IWorkOrderListByStatusQuery, WorkOrderListByStatusQueryHandler>();
+builder.Services.AddScoped<IWorkOrderStatusSummaryQuery, WorkOrderStatusSummaryQueryHandler>();
 builder.Services.AddScoped<IServiceCredentialService>();
 builder.Services.AddScoped<IServiceCredentialValidationService>();
 builder.Services.AddScoped<ICollectorEligibilityEvaluator, CollectorEligibilityEvaluator>();

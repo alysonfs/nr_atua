@@ -1,16 +1,16 @@
 /**
- * Test suite for useServiceOrderMonthSummary.
+ * Test suite for useWorkOrderStatusSummary.
  *
  * Cobre:
- * - Chamada ao endpoint correto (tenant + mês formatado).
- * - Parsing do shape real da API (`{ month, timeZoneId, statuses }`).
+ * - Chamada ao endpoint correto (contagem por status atual, sem mês).
+ * - Parsing do shape real da API (`{ statuses }`).
  * - Estado de erro em caso de falha de rede.
  * - Nenhuma requisição é disparada enquanto tenantId for null.
  */
 
 import { renderHook, waitFor } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { useServiceOrderMonthSummary } from '../../hooks/useServiceOrderMonthSummary'
+import { useWorkOrderStatusSummary } from '../../hooks/useWorkOrderStatusSummary'
 
 const getMock = vi.fn()
 
@@ -29,28 +29,26 @@ vi.mock('../../../../shared/lib/apiClient', async () => {
   }
 })
 
-describe('useServiceOrderMonthSummary', () => {
-  const referenceDate = new Date(2026, 8, 10) // 10/09/2026
-
+describe('useWorkOrderStatusSummary', () => {
   beforeEach(() => {
     getMock.mockReset()
   })
 
-  it('requests the summary endpoint with tenant id and formatted month', async () => {
-    getMock.mockResolvedValueOnce({ month: '2026-09', timeZoneId: 'America/Sao_Paulo', statuses: [] })
+  it('requests the status-summary endpoint with tenant id', async () => {
+    getMock.mockResolvedValueOnce({ statuses: [] })
 
-    const { result } = renderHook(() => useServiceOrderMonthSummary('tenant-1', referenceDate))
+    const { result } = renderHook(() => useWorkOrderStatusSummary('tenant-1'))
 
     await waitFor(() => expect(result.current.isLoading).toBe(false))
 
-    expect(getMock).toHaveBeenCalledWith('/api/tenants/tenant-1/work-orders/summary?month=2026-09')
+    expect(getMock).toHaveBeenCalledWith('/api/tenants/tenant-1/work-orders/status-summary')
   })
 
   it('returns the statuses array from the API response', async () => {
-    const statuses = [{ status: 'Designado', total: 5, dailyCounts: [1, 2, 3] }]
-    getMock.mockResolvedValueOnce({ month: '2026-09', timeZoneId: 'America/Sao_Paulo', statuses })
+    const statuses = [{ status: 'pending', total: 119 }]
+    getMock.mockResolvedValueOnce({ statuses })
 
-    const { result } = renderHook(() => useServiceOrderMonthSummary('tenant-1', referenceDate))
+    const { result } = renderHook(() => useWorkOrderStatusSummary('tenant-1'))
 
     await waitFor(() => expect(result.current.isLoading).toBe(false))
 
@@ -61,7 +59,7 @@ describe('useServiceOrderMonthSummary', () => {
   it('sets isError and empties summary on request failure', async () => {
     getMock.mockRejectedValueOnce(new Error('network error'))
 
-    const { result } = renderHook(() => useServiceOrderMonthSummary('tenant-1', referenceDate))
+    const { result } = renderHook(() => useWorkOrderStatusSummary('tenant-1'))
 
     await waitFor(() => expect(result.current.isLoading).toBe(false))
 
@@ -70,7 +68,7 @@ describe('useServiceOrderMonthSummary', () => {
   })
 
   it('does not request anything while tenantId is null', async () => {
-    const { result } = renderHook(() => useServiceOrderMonthSummary(null, referenceDate))
+    const { result } = renderHook(() => useWorkOrderStatusSummary(null))
 
     await waitFor(() => expect(result.current.isLoading).toBe(false))
 

@@ -19,6 +19,9 @@ responsabilidade do `backend-engineer`.
 
 ## 1. Endpoint 1 — Sumário mensal de OS por status
 
+**Status: mantido no backend, não consumido pela UI — ver ADR-027.** O
+Dashboard passou a usar o Endpoint 3 (contagem por status atual) abaixo.
+
 ### Rota
 
 ```
@@ -198,7 +201,63 @@ Implementação: `Application/WorkOrders/WorkOrderListByStatusQueryHandler.cs`.
 
 ---
 
-## 3. Decisão sobre `providerName`
+## 3. Endpoint 3 — Contagem de OS por status atual (dashboard "resumo por status")
+
+### Rota
+
+```
+GET /api/tenants/{tenantId:guid}/work-orders/status-summary
+```
+
+- Substitui, na UI do Dashboard, o Endpoint 1 (ver ADR-027): sem parâmetro
+  de mês, sem série diária — apenas contagem total por status **atual**.
+
+### Origem dos dados
+
+Tabela `WorkOrder` (estado atual), agrupada por `TenantId` e `Status`,
+sem depender de `WorkOrderHistory`.
+
+### Response (200)
+
+```json
+{
+  "statuses": [
+    { "status": "pending", "total": 119 },
+    { "status": "Payment Approved", "total": 157 }
+  ]
+}
+```
+
+DTO:
+
+```csharp
+public sealed record WorkOrderStatusSummaryResponse(IReadOnlyList<WorkOrderStatusCount> Statuses);
+
+public sealed record WorkOrderStatusCount(string Status, int Total);
+```
+
+### Contrato de interface
+
+```
+Application/WorkOrders/Contracts/IWorkOrderStatusSummaryQuery.cs
+```
+
+```csharp
+namespace Atua.Api.Application.WorkOrders.Contracts;
+
+public interface IWorkOrderStatusSummaryQuery
+{
+    Task<WorkOrderStatusSummaryResult> ExecuteAsync(Guid tenantId, CancellationToken cancellationToken);
+}
+```
+
+Implementação: `Application/WorkOrders/WorkOrderStatusSummaryQueryHandler.cs`.
+
+Autorização e tenant scoping seguem o mesmo padrão da seção 5 abaixo.
+
+---
+
+## 4. Decisão sobre `providerName`
 
 **`providerName` NÃO existe na resposta. Não é uma lacuna a preencher — é
 uma incompatibilidade conceitual do mock que deve ser corrigida no front.**
@@ -227,7 +286,7 @@ levantado como RF novo, não resolvido silenciosamente aqui.
 
 ---
 
-## 4. Autorização e tenant scoping
+## 5. Autorização e tenant scoping
 
 Seguir o padrão já estabelecido em `TenantEndpoints`:
 
@@ -249,7 +308,7 @@ Seguir o padrão já estabelecido em `TenantEndpoints`:
 
 ---
 
-## 5. Resumo de componentes novos
+## 6. Resumo de componentes novos
 
 | Componente | Tipo | Caminho |
 |---|---|---|
@@ -257,6 +316,8 @@ Seguir o padrão já estabelecido em `TenantEndpoints`:
 | `WorkOrderMonthlySummaryQueryHandler` | Implementação | `Application/WorkOrders/` |
 | `IWorkOrderListByStatusQuery` | Interface (contrato) | `Application/WorkOrders/Contracts/` |
 | `WorkOrderListByStatusQueryHandler` | Implementação | `Application/WorkOrders/` |
+| `IWorkOrderStatusSummaryQuery` | Interface (contrato) | `Application/WorkOrders/Contracts/` |
+| `WorkOrderStatusSummaryQueryHandler` | Implementação | `Application/WorkOrders/` |
 | `WorkOrderEndpoints` | Minimal API endpoints | `Endpoints/WorkOrderEndpoints.cs` |
 
 Nenhuma nova entidade de domínio, nenhuma migration, nenhuma tabela nova.

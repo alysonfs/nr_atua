@@ -138,6 +138,45 @@ public class WorkOrderEndpointsTests
         Assert.Equal("OS-1", body.Items[1].ProviderId);
     }
 
+    [Fact]
+    public async Task GetStatusSummaryRetorna403QuandoUsuarioNaoEMembroDoTenant()
+    {
+        var (app, databaseName) = await CreateApplicationAsync();
+        await using var appDisposable = app;
+        var tenantId = await SeedTenantAsync(databaseName);
+        var client = CreateAuthenticatedClient(app, Guid.CreateVersion7());
+
+        var response = await client.GetAsync($"/api/tenants/{tenantId}/work-orders/status-summary");
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task GetStatusSummaryContaOSPorStatusAtualSemRecorteDeMes()
+    {
+        var (app, databaseName) = await CreateApplicationAsync();
+        await using var appDisposable = app;
+        var userId = Guid.CreateVersion7();
+        var tenantId = await SeedTenantWithMembershipAsync(databaseName, userId);
+
+        await using (var context = CreateContext(databaseName))
+        {
+            context.WorkOrders.AddRange(
+                new WorkOrder(Guid.CreateVersion7(), tenantId, "OS-1", "pending", DateTimeOffset.UtcNow.AddMonths(-3)),
+                new WorkOrder(Guid.CreateVersion7(), tenantId, "OS-2", "pending", DateTimeOffset.UtcNow.AddMonths(-2)),
+                new WorkOrder(Guid.CreateVersion7(), tenantId, "OS-3", "closed", DateTimeOffset.UtcNow.AddMonths(-1)));
+            await context.SaveChangesAsync();
+        }
+
+        var client = CreateAuthenticatedClient(app, userId);
+        var response = await client.GetAsync($"/api/tenants/{tenantId}/work-orders/status-summary");
+        var body = await response.Content.ReadFromJsonAsync<WorkOrderStatusSummaryResponse>();
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(2, body!.Statuses.Single(status => status.Status == "pending").Total);
+        Assert.Equal(1, body.Statuses.Single(status => status.Status == "closed").Total);
+    }
+
     private static async Task<Guid> SeedTenantAsync(string databaseName)
     {
         var tenantId = Guid.CreateVersion7();
@@ -170,6 +209,7 @@ public class WorkOrderEndpointsTests
             options.UseInMemoryDatabase(capturedDatabaseName));
         builder.Services.AddScoped<IWorkOrderMonthlySummaryQuery, WorkOrderMonthlySummaryQueryHandler>();
         builder.Services.AddScoped<IWorkOrderListByStatusQuery, WorkOrderListByStatusQueryHandler>();
+        builder.Services.AddScoped<IWorkOrderStatusSummaryQuery, WorkOrderStatusSummaryQueryHandler>();
         builder.Services.AddAuthorization(options =>
         {
             options.AddPolicy("BrowserSession", policy =>

@@ -19,6 +19,9 @@ public static class WorkOrderEndpoints
 
         endpoints.MapGet("/api/tenants/{tenantId:guid}/work-orders", GetListByStatus)
             .RequireAuthorization("BrowserSession");
+
+        endpoints.MapGet("/api/tenants/{tenantId:guid}/work-orders/status-summary", GetStatusSummary)
+            .RequireAuthorization("BrowserSession");
     }
 
     private static async Task<IResult> GetMonthlySummary(Guid tenantId, string? month, ClaimsPrincipal user,
@@ -83,6 +86,25 @@ public static class WorkOrderEndpoints
         return Results.Ok(response);
     }
 
+    private static async Task<IResult> GetStatusSummary(Guid tenantId, ClaimsPrincipal user, AtuaDbContext db,
+        IWorkOrderStatusSummaryQuery query, CancellationToken cancellationToken)
+    {
+        var userId = GetGuidClaim(user, "sub");
+        if (userId is null) return Results.Unauthorized();
+
+        var isMember = await db.TenantMemberships.AsNoTracking().AnyAsync(
+            membership => membership.UserId == userId.Value && membership.TenantId == tenantId,
+            cancellationToken);
+        if (!isMember) return Results.Forbid();
+
+        var result = await query.ExecuteAsync(tenantId, cancellationToken);
+
+        var response = new WorkOrderStatusSummaryResponse(
+            result.Statuses.Select(status => new WorkOrderStatusCount(status.Status, status.Total)).ToArray());
+
+        return Results.Ok(response);
+    }
+
     private static async Task<Domain.Tenants.Tenant?> GetTenantIfMemberAsync(AtuaDbContext db, Guid tenantId,
         Guid userId, CancellationToken cancellationToken)
     {
@@ -117,3 +139,7 @@ public sealed record WorkOrderListResponse(string Status, int Page, int PageSize
 
 public sealed record WorkOrderListItem(Guid Id, string ProviderId, string Status,
     DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt);
+
+public sealed record WorkOrderStatusSummaryResponse(IReadOnlyList<WorkOrderStatusCount> Statuses);
+
+public sealed record WorkOrderStatusCount(string Status, int Total);
