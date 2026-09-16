@@ -17,3 +17,13 @@ const OFFICE_ORIGIN = import.meta.env.DEV ? 'http://localhost:5175' : 'https://o
 export const OFFICE_SIGNUP_URL = `${OFFICE_ORIGIN}/cadastro`
 export const OFFICE_SIGNIN_URL = `${OFFICE_ORIGIN}/login`
 export const SUPPORT_EMAIL = 'suporte@atua.com.br'
+
+export function addLocaleToUrl(url: string, locale?: string): string {
+  if (!locale) {
+    return url
+  }
+
+  const localizedUrl = new URL(url)
+  localizedUrl.searchParams.set('locale', locale)
+  return localizedUrl.toString()
+}

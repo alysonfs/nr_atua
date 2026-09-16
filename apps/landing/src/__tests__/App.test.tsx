@@ -1,9 +1,28 @@
 import { render, screen, within } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import userEvent from '@testing-library/user-event'
+import { beforeEach, describe, expect, it } from 'vitest'
 import App from '../App'
-import { OFFICE_SIGNIN_URL, OFFICE_SIGNUP_URL, SUPPORT_EMAIL } from '../constants'
+import {
+  addLocaleToUrl,
+  OFFICE_SIGNIN_URL,
+  OFFICE_SIGNUP_URL,
+  SUPPORT_EMAIL,
+} from '../constants'
+import i18n, {
+  EXPLICIT_LOCALE_STORAGE_KEY,
+  LOCALE_STORAGE_KEY,
+  normalizeLocale,
+  persistLocale,
+  resolveInitialLocale,
+} from '../i18n'
 
 describe('Landing page', () => {
+  beforeEach(async () => {
+    localStorage.clear()
+    persistLocale('pt-BR', false)
+    await i18n.changeLanguage('pt-BR')
+  })
+
   it('renders the hero headline, subheadline and primary action buttons', () => {
     render(<App />)
 
@@ -129,5 +148,137 @@ describe('Landing page', () => {
     expect(screen.queryByText(/Nunca interfere/)).not.toBeInTheDocument()
     expect(screen.queryByText(/intervalos regulares/)).not.toBeInTheDocument()
     expect(screen.queryByText(/tempo real/)).not.toBeInTheDocument()
+  })
+
+  it('changes every section to English without reloading', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+
+    await user.click(
+      screen.getByRole('button', {
+        name: 'Mudar idioma para English (United States)',
+      }),
+    )
+
+    expect(
+      await screen.findByRole('heading', {
+        level: 1,
+        name: 'Your technical operations, unified in a platform for multiple providers.',
+      }),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('heading', { name: 'One platform for your entire operation' }),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('heading', {
+        name: 'Start with the providers your operation already uses',
+      }),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('heading', {
+        name: 'Reliable data first. Then automation with control.',
+      }),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('heading', { name: 'Get started in three steps' }),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('heading', { name: 'Ready to see your operation more clearly?' }),
+    ).toBeInTheDocument()
+    expect(
+      within(screen.getByRole('contentinfo')).getByText(
+        'ATUA — Operations platform for technical service companies.',
+      ),
+    ).toBeInTheDocument()
+  })
+
+  it('persists an explicit selection, updates the document language and hands it off to Office', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+
+    const selector = screen.getByRole('group', { name: 'Selecionar idioma' })
+    expect(
+      within(selector).getByRole('button', {
+        name: 'Mudar idioma para Português (Brasil)',
+      }),
+    ).toHaveAttribute('aria-pressed', 'true')
+
+    await user.click(
+      within(selector).getByRole('button', {
+        name: 'Mudar idioma para Español (Argentina)',
+      }),
+    )
+
+    expect(
+      await screen.findByRole('heading', {
+        level: 1,
+        name: 'Tu operación técnica, unificada en una plataforma para múltiples proveedores.',
+      }),
+    ).toBeInTheDocument()
+    expect(document.documentElement).toHaveAttribute('lang', 'es-AR')
+    expect(document.title).toBe(
+      'ATUA — Plataforma operativa para empresas de servicios técnicos',
+    )
+    expect(localStorage.getItem(LOCALE_STORAGE_KEY)).toBe('es-AR')
+    expect(localStorage.getItem(EXPLICIT_LOCALE_STORAGE_KEY)).toBe('true')
+
+    const signUpUrl = addLocaleToUrl(OFFICE_SIGNUP_URL, 'es-AR')
+    const signInUrl = addLocaleToUrl(OFFICE_SIGNIN_URL, 'es-AR')
+
+    expect(screen.getByRole('link', { name: 'Comenzar gratis' })).toHaveAttribute(
+      'href',
+      signUpUrl,
+    )
+    expect(
+      screen.getByRole('link', { name: 'Crear cuenta gratis' }),
+    ).toHaveAttribute('href', signUpUrl)
+    expect(
+      within(screen.getByRole('contentinfo')).getByRole('link', {
+        name: 'Ingresar',
+      }),
+    ).toHaveAttribute('href', signInUrl)
+  })
+
+  it('marks an explicit choice even when the active locale is selected', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+
+    await user.click(
+      screen.getByRole('button', {
+        name: 'Mudar idioma para Português (Brasil)',
+      }),
+    )
+
+    expect(localStorage.getItem(EXPLICIT_LOCALE_STORAGE_KEY)).toBe('true')
+    expect(screen.getByRole('link', { name: 'Começar grátis' })).toHaveAttribute(
+      'href',
+      addLocaleToUrl(OFFICE_SIGNUP_URL, 'pt-BR'),
+    )
+  })
+})
+
+describe('Landing locale resolution', () => {
+  it('normalizes supported browser language variants and falls back to pt-BR', () => {
+    expect(normalizeLocale('pt')).toBe('pt-BR')
+    expect(normalizeLocale('EN-gb')).toBe('en-US')
+    expect(normalizeLocale('es_UY')).toBe('es-AR')
+    expect(normalizeLocale('fr-FR')).toBeUndefined()
+    expect(resolveInitialLocale(null, 'es-ES')).toBe('es-AR')
+    expect(resolveInitialLocale(null, 'fr-FR')).toBe('pt-BR')
+  })
+
+  it('gives a persisted supported locale precedence over the browser locale', () => {
+    expect(resolveInitialLocale('en-US', 'es-AR')).toBe('en-US')
+  })
+
+  it('adds or replaces locale while preserving query parameters and hash fragments', () => {
+    expect(
+      addLocaleToUrl(
+        'https://office.atyno.com.br/login?source=landing&locale=pt-BR#access',
+        'en-US',
+      ),
+    ).toBe(
+      'https://office.atyno.com.br/login?source=landing&locale=en-US#access',
+    )
   })
 })
