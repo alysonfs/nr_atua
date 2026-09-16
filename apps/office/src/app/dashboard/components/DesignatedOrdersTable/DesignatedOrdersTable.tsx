@@ -1,6 +1,8 @@
 import { flexRender, getCoreRowModel, useReactTable } from '@tanstack/react-table'
+import { useMemo } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useDesignatedServiceOrders } from '../../hooks/useDesignatedServiceOrders'
-import { designatedOrdersColumns } from './columns'
+import { createDesignatedOrdersColumns } from './columns'
 
 interface DesignatedOrdersTableProps {
   /** Tenant ativo do usuário (ver useMyTenants().defaultTenantId). */
@@ -15,29 +17,34 @@ interface DesignatedOrdersTableProps {
  * (ver useDesignatedServiceOrders).
  */
 export function DesignatedOrdersTable({ tenantId }: DesignatedOrdersTableProps) {
+  const { i18n, t } = useTranslation()
   const { orders, isLoading, isError } = useDesignatedServiceOrders(tenantId)
+  const columns = useMemo(
+    () => createDesignatedOrdersColumns(t, i18n.resolvedLanguage ?? 'pt-BR'),
+    [i18n.resolvedLanguage, t],
+  )
 
   const table = useReactTable({
     data: orders,
-    columns: designatedOrdersColumns,
+    columns,
     getCoreRowModel: getCoreRowModel(),
   })
 
   return (
     <section aria-labelledby="designated-orders-heading" className="space-y-3">
       <h2 id="designated-orders-heading" className="text-sm font-semibold text-slate-700">
-        Ordens de serviço designadas
+        {t('dashboard.designatedTitle')}
       </h2>
 
       {isLoading && (
         <p className="rounded-md border border-slate-200 bg-white px-4 py-3 text-sm text-slate-500">
-          Carregando ordens de serviço designadas...
+          {t('dashboard.designatedLoading')}
         </p>
       )}
 
       {!isLoading && isError && (
         <p role="alert" className="rounded-md border-l-4 border-red-500 bg-white p-4 text-sm text-red-800 shadow-sm">
-          Não foi possível carregar as ordens de serviço designadas. Tente novamente mais tarde.
+          {t('dashboard.designatedError')}
         </p>
       )}
 
@@ -63,8 +70,8 @@ export function DesignatedOrdersTable({ tenantId }: DesignatedOrdersTableProps) 
           <tbody className="divide-y divide-slate-100">
             {table.getRowModel().rows.length === 0 ? (
               <tr>
-                <td colSpan={designatedOrdersColumns.length} className="px-4 py-6 text-center text-sm text-slate-500">
-                  Nenhuma ordem de serviço designada no momento.
+                <td colSpan={columns.length} className="px-4 py-6 text-center text-sm text-slate-500">
+                  {t('dashboard.designatedEmpty')}
                 </td>
               </tr>
             ) : (

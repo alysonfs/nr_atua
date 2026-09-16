@@ -1,6 +1,7 @@
 import { NavLink } from 'react-router-dom'
 import { Dashboard } from '@icon-park/react'
 import type { ReactNode } from 'react'
+import { useTranslation } from 'react-i18next'
 
 interface SidebarItem {
   label: string
@@ -13,24 +14,25 @@ interface SidebarItem {
  * (rota /home) está definido — os demais itens são uma decisão de
  * produto que será feita em uma próxima etapa.
  */
-const SIDEBAR_ITEMS: SidebarItem[] = [
-  { label: 'Dashboard', to: '/home', icon: <Dashboard theme="outline" size={18} /> },
-]
-
 /**
  * Menu lateral esquerdo do Office, na mesma paleta escura do header.
  */
 export function Sidebar() {
+  const { t } = useTranslation()
+  const items: SidebarItem[] = [
+    { label: t('layout.dashboard'), to: '/home', icon: <Dashboard theme="outline" size={18} /> },
+  ]
+
   return (
     <aside
-      aria-label="Menu lateral"
+      aria-label={t('layout.sideMenu')}
       className="hidden w-56 shrink-0 border-r border-slate-800 bg-slate-950 text-slate-100 sm:block"
     >
-      <nav aria-label="Navegação principal" className="sticky top-16 space-y-1 p-4">
+      <nav aria-label={t('layout.mainNavigation')} className="sticky top-16 space-y-1 p-4">
         <p className="px-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
-          Menu
+          {t('layout.menu')}
         </p>
-        {SIDEBAR_ITEMS.map((item) => (
+        {items.map((item) => (
           <NavLink
             key={item.to}
             to={item.to}

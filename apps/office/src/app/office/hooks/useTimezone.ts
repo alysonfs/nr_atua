@@ -4,6 +4,7 @@ import {
   getSuggestedTimezone,
   isValidTimezone,
 } from '../lib/timezone'
+import { useTranslation } from 'react-i18next'
 
 /**
  * Hook to manage user timezone preference
@@ -17,6 +18,7 @@ import {
  * All backend dates are in UTC and are formatted to user's timezone in the UI.
  */
 export function useTimezone() {
+  const { t } = useTranslation()
   // TODO: Replace with actual API call when endpoint is available
   const [timezone, setTimezone] = useState<string>(() => {
     // Try to get from localStorage first
@@ -49,8 +51,8 @@ export function useTimezone() {
    */
   const updateTimezone = useCallback(async (newTimezone: string): Promise<void> => {
     if (!isValidTimezone(newTimezone)) {
-      setError('Invalid timezone')
-      throw new Error('Invalid timezone')
+      setError(t('timezone.updateError'))
+      throw new Error(t('timezone.updateError'))
     }
 
     setIsLoading(true)
@@ -69,13 +71,13 @@ export function useTimezone() {
       // Simulate API delay
       await new Promise((resolve) => setTimeout(resolve, 300))
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to update timezone'
+      const errorMessage = err instanceof Error ? err.message : t('timezone.updateError')
       setError(errorMessage)
       throw err
     } finally {
       setIsLoading(false)
     }
-  }, [])
+  }, [t])
 
   /**
    * Reset timezone to suggested value

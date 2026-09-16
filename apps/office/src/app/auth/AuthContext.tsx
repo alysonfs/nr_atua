@@ -22,6 +22,8 @@ import {
   type ReactNode,
 } from 'react'
 import { apiClient, setAccessTokenProvider } from '../../shared/lib/apiClient'
+import { changePreferredLocale, syncAuthenticatedLocale } from '../../shared/lib/localePreference'
+import type { SupportedLocale } from '../../i18n'
 
 interface AccessTokenResponse {
   accessToken: string
@@ -30,13 +32,17 @@ interface AccessTokenResponse {
 interface AuthState {
   accessToken: string | null
   isLoading: boolean
+  localeSyncError: boolean
 }
 
 interface AuthContextValue {
   isAuthenticated: boolean
   isLoading: boolean
+  localeSyncError: boolean
   signIn: (email: string, password: string) => Promise<void>
   signOut: () => Promise<void>
+  changeLocale: (locale: SupportedLocale) => Promise<void>
+  retryLocaleSync: () => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
@@ -57,6 +63,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<AuthState>({
     accessToken: null,
     isLoading: true,
+    localeSyncError: false,
   })
 
   // Ref para que setAccessTokenProvider sempre enxergue o token mais recente
@@ -80,14 +87,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     restoreSessionOnce()
       .then((data) => {
         if (!cancelled && data) {
-          setState({ accessToken: data.accessToken, isLoading: false })
+          tokenRef.current = data.accessToken
+          setState({ accessToken: data.accessToken, isLoading: false, localeSyncError: false })
+          void syncAuthenticatedLocale().catch(() => {
+            if (!cancelled) setState((current) => ({ ...current, localeSyncError: true }))
+          })
         } else if (!cancelled) {
-          setState({ accessToken: null, isLoading: false })
+          setState({ accessToken: null, isLoading: false, localeSyncError: false })
         }
       })
       .catch(() => {
         if (!cancelled) {
-          setState({ accessToken: null, isLoading: false })
+          setState({ accessToken: null, isLoading: false, localeSyncError: false })
         }
       })
 
@@ -102,7 +113,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       password,
     })
     if (data) {
-      setState({ accessToken: data.accessToken, isLoading: false })
+      tokenRef.current = data.accessToken
+      setState({ accessToken: data.accessToken, isLoading: false, localeSyncError: false })
+      try {
+        await syncAuthenticatedLocale()
+      } catch {
+        setState((current) => ({ ...current, localeSyncError: true }))
+      }
     }
   }, [])
 
@@ -110,7 +127,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       await apiClient.post('/auth/signout')
     } finally {
-      setState({ accessToken: null, isLoading: false })
+      tokenRef.current = null
+      setState({ accessToken: null, isLoading: false, localeSyncError: false })
+    }
+  }, [])
+
+  const changeLocale = useCallback(async (locale: SupportedLocale) => {
+    try {
+      await changePreferredLocale(locale, tokenRef.current !== null)
+      setState((current) => ({ ...current, localeSyncError: false }))
+    } catch {
+      setState((current) => ({ ...current, localeSyncError: true }))
+    }
+  }, [])
+
+  const retryLocaleSync = useCallback(async () => {
+    if (!tokenRef.current) return
+    try {
+      await syncAuthenticatedLocale()
+      setState((current) => ({ ...current, localeSyncError: false }))
+    } catch {
+      setState((current) => ({ ...current, localeSyncError: true }))
     }
   }, [])
 
@@ -119,8 +156,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       value={{
         isAuthenticated: state.accessToken !== null,
         isLoading: state.isLoading,
+        localeSyncError: state.localeSyncError,
         signIn,
         signOut,
+        changeLocale,
+        retryLocaleSync,
       }}
     >
       {children}
@@ -128,6 +168,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   )
 }
 
+// The hook intentionally shares this module with its provider to keep the
+// authentication contract and context private to one boundary.
+// eslint-disable-next-line react-refresh/only-export-components
 export function useAuth(): AuthContextValue {
   const ctx = useContext(AuthContext)
   if (!ctx) {
