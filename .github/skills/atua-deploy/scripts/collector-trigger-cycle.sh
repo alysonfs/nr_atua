@@ -57,12 +57,28 @@ DEACTIVATE_RESP="$(curl -s -m 15 -X DELETE \
   -H "Idempotency-Key: $(python3 -c 'import uuid; print(uuid.uuid4())')")"
 echo "    $DEACTIVATE_RESP"
 
+DEACTIVATE_STATUS="$(python3 -c \
+  "import json,sys; print(json.loads(sys.argv[1]).get('status', ''))" \
+  "$DEACTIVATE_RESP" 2>/dev/null || true)"
+if [ "$DEACTIVATE_STATUS" != "Inactive" ]; then
+  echo "FATAL: desativação não foi confirmada pela API. Resposta: $DEACTIVATE_RESP" >&2
+  exit 1
+fi
+
 echo "==> [3/3] Reativando collector-activation (gera novo comando Pending)..."
 ACTIVATE_RESP="$(curl -s -m 15 -X PUT \
   "http://$API_IP/api/tenants/$ATUA_TENANT_ID/integrations/$ATUA_INTEGRATION_ID/collector-activation" \
   -H "Authorization: Bearer $JWT" \
   -H "Idempotency-Key: $(python3 -c 'import uuid; print(uuid.uuid4())')")"
 echo "    $ACTIVATE_RESP"
+
+ACTIVATE_STATE="$(python3 -c \
+  "import json,sys; data=json.loads(sys.argv[1]); command=data.get('lastImmediateCommand') or {}; print(f\"{data.get('status', '')}|{command.get('status', '')}\")" \
+  "$ACTIVATE_RESP" 2>/dev/null || true)"
+if [ "$ACTIVATE_STATE" != "Active|Pending" ]; then
+  echo "FATAL: a API não criou um comando Pending. Resposta: $ACTIVATE_RESP" >&2
+  exit 1
+fi
 
 echo ""
 echo "Novo ciclo disparado. Acompanhe os logs do Worker com:"

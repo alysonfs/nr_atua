@@ -13,9 +13,11 @@ namespace Atua.Collector.Consumer;
 public interface IProviderInteractionOrderAdapter
 {
     /// <summary>
-    /// Extrai (providerId, status) de cada OS presente em <paramref name="orders"/>.
-    /// OS sem identificador ou sem status utilizável são omitidas do resultado — o
-    /// consumer loga um warning por OS descartada, sem abortar o restante do documento.
+    /// Extrai os dados de cada OS presente em <paramref name="orders"/>, incluindo
+    /// identificador, status e os campos descritivos de consumidor/contato/endereço/produto
+    /// (ver <see cref="ProviderWorkOrderData"/>). OS sem identificador ou sem status
+    /// utilizável são omitidas do resultado — o consumer loga um warning por OS descartada,
+    /// sem abortar o restante do documento.
     /// </summary>
-    IReadOnlyList<(string ProviderId, string Status)> ExtractOrders(BsonArray orders);
+    IReadOnlyList<ProviderWorkOrderData> ExtractOrders(BsonArray orders);
 }
