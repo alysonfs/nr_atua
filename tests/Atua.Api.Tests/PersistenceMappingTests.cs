@@ -22,6 +22,18 @@ public class PersistenceMappingTests
     }
 
     [Fact]
+    public void UserPersisteLocaleObrigatorioComDefaultSeguro()
+    {
+        using var context = CreateContext();
+        var user = context.Model.FindEntityType(typeof(User))!;
+        var preferredLocale = user.FindProperty(nameof(User.PreferredLocale))!;
+
+        Assert.False(preferredLocale.IsNullable);
+        Assert.Equal(5, preferredLocale.GetMaxLength());
+        Assert.Equal(UserLocale.Default, preferredLocale.GetDefaultValue());
+    }
+
+    [Fact]
     public void TenantPossuiIndiceUnicoParaCnpj()
     {
         using var context = CreateContext();

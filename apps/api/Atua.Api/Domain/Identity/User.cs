@@ -28,8 +28,20 @@ public sealed class User
 
     public DateTimeOffset? EmailConfirmedAt { get; private set; }
 
+    public string PreferredLocale { get; private set; } = UserLocale.Default;
+
     public void ConfirmEmail(DateTimeOffset confirmedAt)
     {
         EmailConfirmedAt ??= confirmedAt;
+    }
+
+    public void SetPreferredLocale(string? preferredLocale)
+    {
+        if (!UserLocale.IsSupported(preferredLocale))
+        {
+            throw new ArgumentException("Locale não suportado.", nameof(preferredLocale));
+        }
+
+        PreferredLocale = preferredLocale;
     }
 }

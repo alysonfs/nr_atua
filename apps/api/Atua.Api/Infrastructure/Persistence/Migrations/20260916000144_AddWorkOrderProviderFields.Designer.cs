@@ -3,6 +3,7 @@ using System;
 using Atua.Api.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Atua.Api.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(AtuaDbContext))]
-    partial class AtuaDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260916000144_AddWorkOrderProviderFields")]
+    partial class AddWorkOrderProviderFields
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -280,13 +283,6 @@ namespace Atua.Api.Infrastructure.Persistence.Migrations
                         .IsRequired()
                         .HasMaxLength(512)
                         .HasColumnType("character varying(512)");
-
-                    b.Property<string>("PreferredLocale")
-                        .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasMaxLength(5)
-                        .HasColumnType("character varying(5)")
-                        .HasDefaultValue("pt-BR");
 
                     b.HasKey("Id");
 
