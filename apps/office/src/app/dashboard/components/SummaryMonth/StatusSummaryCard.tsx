@@ -1,4 +1,5 @@
 import { Sparkline } from './Sparkline'
+import { useTranslation } from 'react-i18next'
 
 interface StatusSummaryCardProps {
   /** Nome cru do status (RF-017: string livre, sem enum fixo). */
@@ -16,15 +17,20 @@ interface StatusSummaryCardProps {
  * total no mês corrente e um mini-gráfico (sparkline) com a evolução diária.
  */
 export function StatusSummaryCard({ status, total, dailyCounts, accentColor }: StatusSummaryCardProps) {
+  const { t } = useTranslation()
   return (
     <div className="flex flex-col gap-3 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
       <div>
         <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">{status}</p>
         <p className="mt-1 text-2xl font-bold text-slate-950">{total}</p>
-        <p className="text-xs text-slate-500">OS no mês</p>
+        <p className="text-xs text-slate-500">{t('dashboard.ordersInMonth')}</p>
       </div>
 
-      <Sparkline data={dailyCounts} color={accentColor} ariaLabel={`Evolução diária de OS com status ${status}`} />
+      <Sparkline
+        data={dailyCounts}
+        color={accentColor}
+        ariaLabel={t('dashboard.dailyEvolution', { status })}
+      />
     </div>
   )
 }

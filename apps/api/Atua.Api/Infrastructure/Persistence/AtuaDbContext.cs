@@ -119,6 +119,8 @@ public sealed class AtuaDbContext(DbContextOptions<AtuaDbContext> options) : DbC
         builder.Property(user => user.PasswordHash).HasMaxLength(512).IsRequired();
         builder.Property(user => user.GlobalRole).HasConversion<string>().HasMaxLength(16)
             .IsRequired();
+        builder.Property(user => user.PreferredLocale).HasMaxLength(5)
+            .HasDefaultValue(UserLocale.Default).IsRequired();
         builder.HasIndex(user => user.Email).IsUnique();
     }
 

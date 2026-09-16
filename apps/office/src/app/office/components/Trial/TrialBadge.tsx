@@ -1,5 +1,6 @@
 import { useUserTrial } from '../../hooks/useUserTrial'
 import { useTimezone } from '../../hooks/useTimezone'
+import { useTranslation } from 'react-i18next'
 
 interface TrialBadgeProps {
   /**
@@ -27,6 +28,7 @@ interface TrialBadgeProps {
  * - Color changes to red when < 2 days remaining
  */
 export function TrialBadge({ compact = false, className = '' }: TrialBadgeProps) {
+  const { t } = useTranslation()
   const { trial, summary } = useUserTrial()
   const { formatDateLocal } = useTimezone()
 
@@ -54,12 +56,12 @@ export function TrialBadge({ compact = false, className = '' }: TrialBadgeProps)
 
   // Determine display text
   const displayText = summary.isExpired
-    ? 'Trial expirou'
+    ? t('trial.badgeExpired')
     : summary.daysRemaining === 0
-      ? `Trial expira hoje (${summary.hoursRemaining}h)`
+      ? t('trial.badgeToday', { hours: summary.hoursRemaining })
       : summary.daysRemaining === 1
-        ? 'Trial até amanhã (1 dia)'
-        : `Trial até ${expirationDate} (${summary.daysRemaining} dias)`
+        ? t('trial.badgeTomorrow')
+        : t('trial.badgeUntil', { date: expirationDate, days: summary.daysRemaining })
 
   if (compact) {
     return (

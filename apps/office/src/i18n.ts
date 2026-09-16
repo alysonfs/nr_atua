@@ -1,8 +1,722 @@
 import i18n from 'i18next'
 import { initReactI18next } from 'react-i18next'
 
+export const SUPPORTED_LOCALES = ['pt-BR', 'en-US', 'es-AR'] as const
+export type SupportedLocale = (typeof SUPPORTED_LOCALES)[number]
+
+export const DEFAULT_LOCALE: SupportedLocale = 'pt-BR'
+export const LOCALE_STORAGE_KEY = 'atua.locale'
+export const PENDING_LOCALE_STORAGE_KEY = 'atua.office.localePendingSync'
+
+export const languages: ReadonlyArray<{
+  locale: SupportedLocale
+  flag: string
+  nameKey: string
+}> = [
+  { locale: 'pt-BR', flag: '🇧🇷', nameKey: 'language.languages.pt-BR' },
+  { locale: 'en-US', flag: '🇺🇸', nameKey: 'language.languages.en-US' },
+  { locale: 'es-AR', flag: '🇦🇷', nameKey: 'language.languages.es-AR' },
+]
+
+const ptBR = {
+  language: {
+    label: 'Idioma',
+    select: 'Selecionar idioma',
+    option: 'Usar {{language}}',
+    syncError: 'O idioma foi alterado neste dispositivo, mas não foi possível salvar a preferência no perfil.',
+    languages: { 'pt-BR': 'Português', 'en-US': 'English', 'es-AR': 'Español' },
+  },
+  common: {
+    brandAlt: 'Atyno',
+    email: 'E-mail',
+    password: 'Senha',
+    loading: 'Carregando...',
+    saving: 'Salvando...',
+    change: 'Alterar',
+    close: 'Fechar',
+    access: 'Acessar',
+    status: 'Status',
+    providerOrderNumber: 'Nº da OS no provedor',
+    createdAt: 'Criada em',
+    updatedAt: 'Atualizada em',
+    footer: 'Atyno — Plataforma operacional para empresas de serviços técnicos.',
+    retryLater: 'Tente novamente mais tarde.',
+  },
+  auth: {
+    institutional: {
+      secureTitle: 'Ambiente 100% seguro',
+      secureDescription: 'Criptografia de ponta a ponta na sua infraestrutura técnica.',
+    },
+    validation: {
+      emailRequired: 'Informe seu e-mail.',
+      invalidEmail: 'E-mail inválido.',
+      passwordRequired: 'Informe sua senha.',
+      passwordMin: 'A senha deve ter no mínimo 8 caracteres.',
+      passwordConfirmationRequired: 'Confirme sua senha.',
+      passwordMismatch: 'As senhas não coincidem.',
+      codeRequired: 'Informe o código de confirmação.',
+    },
+    signIn: {
+      sideTitle: 'Conecte sua operação em um único lugar',
+      sideDescription: 'Organize dados, acompanhe sua operação e prepare sua empresa para conectar vários provedores em uma única plataforma.',
+      title: 'Entrar na sua conta',
+      subtitle: 'Acesse sua operação no Atyno.',
+      emailPlaceholder: 'seuemail@empresa.com',
+      submit: 'Entrar',
+      submitting: 'Entrando...',
+      invalidCredentials: 'E-mail ou senha inválidos. Verifique suas credenciais e tente novamente.',
+      genericError: 'Não foi possível entrar. Tente novamente mais tarde.',
+      noAccount: 'Ainda não tem conta?',
+      createAccount: 'Criar conta',
+      receivedCode: 'Recebeu o código de confirmação?',
+      confirmEmail: 'Confirmar e-mail',
+    },
+    signUp: {
+      sideTitle: 'Sua operação, organizada em um só lugar',
+      sideDescription: 'Crie sua conta e comece a conectar seus provedores de serviço à plataforma Atyno.',
+      title: 'Criar conta',
+      subtitle: 'Comece a usar o Atyno agora mesmo.',
+      confirmPassword: 'Confirmar senha',
+      submit: 'Criar conta',
+      submitting: 'Criando conta...',
+      success: 'Conta criada! Verifique seu e-mail para confirmar o cadastro.',
+      alreadyRegistered: 'Este e-mail já está cadastrado. Tente entrar ou confirme seu e-mail.',
+      invalidEmail: 'E-mail inválido. Verifique e tente novamente.',
+      invalidPassword: 'Senha inválida. Use no mínimo 8 caracteres com letras maiúsculas, minúsculas e números.',
+      genericError: 'Não foi possível criar a conta. Tente novamente mais tarde.',
+      hasAccount: 'Já tem conta?',
+      signIn: 'Entre aqui',
+    },
+    confirm: {
+      sideTitle: 'Só falta um passo',
+      sideDescription: 'Digite o código que enviamos para o seu e-mail e comece a usar o Atyno.',
+      title: 'Confirme seu e-mail',
+      knownEmailSubtitle: 'Digite abaixo o código que enviamos para o seu e-mail.',
+      unknownEmailSubtitle: 'Informe seu e-mail e o código de confirmação recebido.',
+      accountCreated: 'Conta criada! Verifique sua caixa de entrada e insira o código de confirmação abaixo.',
+      code: 'Código de confirmação',
+      submit: 'Confirmar e-mail',
+      submitting: 'Confirmando...',
+      success: 'E-mail confirmado! Você já pode entrar.',
+      alreadyConfirmed: 'Este e-mail já foi confirmado. Você já pode entrar.',
+      invalidCode: 'Código inválido. Verifique o e-mail e tente novamente.',
+      expiredCode: 'Código expirado. Solicite um novo código e tente novamente.',
+      genericError: 'Não foi possível confirmar o e-mail. Tente novamente mais tarde.',
+      resend: 'Não recebeu o código? Reenviar',
+      resending: 'Reenviando...',
+      resendEmailRequired: 'Informe o e-mail para reenviar o código.',
+      resendSuccess: 'Código reenviado! Confira sua caixa de entrada.',
+      resendError: 'Não foi possível reenviar o código. Tente novamente mais tarde.',
+      alreadyConfirmedPrompt: 'Já confirmou?',
+      backToSignIn: 'Entrar',
+    },
+  },
+  layout: {
+    office: 'Office',
+    subtitle: 'Operações e integrações',
+    clientName: 'Nome do Cliente',
+    alerts: 'Alertas (área reservada)',
+    settings: 'Configurações',
+    signOut: 'Sair',
+    signOutAria: 'Sair da conta',
+    sideMenu: 'Menu lateral',
+    mainNavigation: 'Navegação principal',
+    menu: 'Menu',
+    dashboard: 'Dashboard',
+  },
+  dashboard: {
+    eyebrow: 'Atyno',
+    title: 'Dashboard',
+    subtitle: 'Visão geral das ordens de serviço da sua operação.',
+    loadingCompany: 'Carregando dados da sua empresa...',
+    companyError: 'Não foi possível carregar os dados da sua empresa. Tente novamente mais tarde.',
+    summaryTitle: 'Resumo do mês',
+    summaryLoading: 'Carregando resumo do mês...',
+    summaryError: 'Não foi possível carregar o resumo do mês. Tente novamente mais tarde.',
+    ordersInMonth: 'OS no mês',
+    dailyEvolution: 'Evolução diária de OS com status {{status}}',
+    designatedTitle: 'Ordens de serviço designadas',
+    designatedLoading: 'Carregando ordens de serviço designadas...',
+    designatedError: 'Não foi possível carregar as ordens de serviço designadas. Tente novamente mais tarde.',
+    designatedEmpty: 'Nenhuma ordem de serviço designada no momento.',
+    statuses: {
+      requestCancel: 'Cancelamento Solicitado',
+      assigned: 'Designado',
+      exchangeProposal: 'Proposta de Troca',
+      closed: 'Fechado',
+      cancelled: 'Cancelado',
+      paymentRejected: 'Pagamento Rejeitado',
+      requestToExplain: 'Solicitação de Explicação',
+      pending: 'Pendente',
+      paymentApproved: 'Pagamento Aprovado',
+    },
+  },
+  settings: {
+    navigation: {
+      overview: 'Visão geral',
+      integrations: 'Integrações',
+      collector: 'Coletor',
+      preferences: 'Preferências',
+    },
+    eyebrow: 'Backoffice',
+    title: 'Configurações',
+    subtitle: 'Controle de trial, integração iService e preferências da conta.',
+    account: 'Conta',
+    activeTrial: 'Trial ativo',
+    trialWindow: 'Janela de teste em andamento',
+    integration: 'Integração',
+    credentialsValidation: 'Credenciais e validação',
+    collector: 'Coletor',
+    ready: 'Preparado',
+    awaitingCommands: 'Aguardando comandos da API',
+    yourTrial: 'Seu Trial',
+    trialDescription: 'Janela de uso e vencimento da conta.',
+    iserviceTitle: 'Integração com o iService',
+    iserviceDescription: 'Credenciais, validação e preparo do ciclo do coletor.',
+    loadingCompanies: 'Carregando suas empresas...',
+    companiesError: 'Não foi possível carregar suas empresas. Tente novamente mais tarde.',
+    preparingIntegration: 'Preparando a configuração da integração...',
+    preferences: 'Preferências',
+    preferencesDescription: 'Configurações que afetam a leitura operacional.',
+  },
+  onboarding: {
+    createTitle: 'Cadastre sua empresa',
+    createDescription: 'Antes de configurar a integração, informe o nome e o CNPJ da sua empresa.',
+    companyName: 'Nome da empresa',
+    create: 'Criar empresa',
+    creating: 'Criando empresa...',
+    nameRequired: 'Informe o nome da empresa.',
+    invalidCnpj: 'CNPJ inválido. Verifique o número informado.',
+    errors: {
+      invalid_cnpj: 'CNPJ inválido. Verifique os dígitos informados.',
+      cnpj_already_registered: 'Este CNPJ já está associado a outra empresa.',
+      user_already_has_tenant: 'Você já possui uma empresa cadastrada.',
+      trial_not_found: 'Não foi possível localizar seu período de teste. Contate o suporte.',
+      unknown_error: 'Não foi possível concluir o cadastro. Tente novamente em instantes.',
+    },
+    selectTitle: 'Selecione uma empresa',
+    selectDescription: 'Você possui acesso a mais de uma empresa. Escolha qual deseja acessar.',
+    company: 'Empresa',
+    selectPlaceholder: 'Selecione...',
+  },
+  integration: {
+    credentialsTitle: 'Credenciais do iService',
+    credentialsDescription: 'As credenciais são armazenadas de forma criptografada e nunca são exibidas novamente.',
+    username: 'Usuário',
+    password: 'Senha',
+    token: 'Token',
+    baseUrl: 'URL/tenant do iService',
+    optional: '(opcional)',
+    baseUrlHelp: 'Endereço específico do iService do seu tenant (ex.: subdomínio dedicado do seu provedor). Deixe em branco para usar o endereço padrão — só preencha se o iService informou uma URL customizada para a sua empresa.',
+    fieldHelp: 'Ajuda sobre este campo',
+    showPassword: 'Mostrar senha',
+    hidePassword: 'Ocultar senha',
+    usernameRequired: 'Informe o usuário do iService.',
+    passwordRequired: 'Informe a senha do iService.',
+    save: 'Salvar credenciais',
+    saving: 'Salvando credenciais...',
+    edit: 'Editar credenciais',
+    saved: 'Credenciais salvas com sucesso.',
+    saveErrors: {
+      integration_not_found: 'Integração não encontrada. Contate o suporte.',
+      invalid_credentials: 'Preencha usuário e senha do iService corretamente.',
+      forbidden: 'Apenas o proprietário da empresa pode configurar esta integração.',
+      unknown_error: 'Não foi possível salvar as credenciais. Tente novamente.',
+    },
+    validationTitle: 'Validação da integração',
+    loadingStatus: 'Carregando status da integração...',
+    statusError: 'Não foi possível carregar o status da integração. Tente novamente mais tarde.',
+    noCredentials: 'Nenhuma credencial configurada ainda. Cadastre as credenciais do iService para habilitar a validação.',
+    notValidated: 'Não validado',
+    valid: 'Credenciais válidas',
+    failed: 'Falha na validação',
+    lastValidation: 'Última validação em {{date}}',
+    validationPending: 'Esta integração ainda não foi validada. A ativação do Agente Coletor permanecerá indisponível até que a validação seja concluída com sucesso.',
+    validationFailed: 'A validação falhou. Verifique as credenciais cadastradas e tente novamente.',
+    validationSucceeded: 'Credenciais validadas com sucesso.',
+    validating: 'Testando validação...',
+    validate: 'Testar validação',
+    errors: {
+      credentials_not_configured: 'Cadastre as credenciais antes de testar a validação.',
+      forbidden: 'Você não tem permissão para validar esta integração.',
+      unknown_error: 'Não foi possível validar as credenciais agora. Tente novamente.',
+    },
+  },
+  timezone: {
+    title: 'Fuso Horário',
+    description: 'Todas as datas são armazenadas em UTC e exibidas no seu fuso horário selecionado.',
+    changeAria: 'Alterar fuso horário',
+    updateError: 'Falha ao atualizar fuso horário',
+    pickerTitle: 'Selecionar Fuso Horário',
+    search: 'Pesquisar fuso horário...',
+    clearSearch: 'Limpar pesquisa',
+    suggested: 'Sugerido',
+    currentSection: 'Seu Fuso Atual',
+    current: 'Atual',
+    empty: 'Nenhum fuso horário encontrado',
+    cancel: 'Cancelar',
+    save: 'Salvar',
+  },
+  trial: {
+    active: 'Trial Ativo',
+    expired: 'Trial Expirado',
+    expiresSoon: 'Expira em breve',
+    freePlan: 'Plano de teste gratuito',
+    daysRemaining: 'Dias Restantes',
+    hoursRemaining: 'Horas Restantes',
+    activatedAt: 'Ativado em',
+    expiresAt: 'Expira em',
+    urgentMessage: 'Seu plano Trial expira em poucas horas. Configure uma integração ou atualize para continuar usando o Atyno.',
+    warningMessage: 'Seu plano Trial expira em breve. Configure uma integração ou considere fazer upgrade.',
+    expiredMessage: 'Seu período de teste acabou. Entre em contato conosco para continuar usando o Atyno.',
+    upgrade: 'Fazer Upgrade',
+    upgradeAria: 'Upgrade plano',
+    contactSales: 'Contatar Vendas',
+    contactSalesAria: 'Contatar vendas',
+    badgeExpired: 'Trial expirou',
+    badgeToday: 'Trial expira hoje ({{hours}}h)',
+    badgeTomorrow: 'Trial até amanhã (1 dia)',
+    badgeUntil: 'Trial até {{date}} ({{days}} dias)',
+    alertHours_one: 'Seu Trial expira em {{count}} hora!',
+    alertHours_other: 'Seu Trial expira em {{count}} horas!',
+    alertDays_one: 'Seu Trial expira em {{count}} dia.',
+    alertDays_other: 'Seu Trial expira em {{count}} dias.',
+    urgentAction: 'Faça upgrade agora para manter suas integrações ativas e dados seguros.',
+    warningAction: 'Configure suas integrações agora ou faça upgrade para continuar usando o Atyno.',
+    closeAlert: 'Fechar aviso',
+  },
+} as const
+
+const enUS = {
+  ...ptBR,
+  language: {
+    label: 'Language',
+    select: 'Select language',
+    option: 'Use {{language}}',
+    syncError: 'The language changed on this device, but the preference could not be saved to your profile.',
+    languages: { 'pt-BR': 'Português', 'en-US': 'English', 'es-AR': 'Español' },
+  },
+  common: {
+    ...ptBR.common,
+    email: 'Email', password: 'Password', loading: 'Loading...', saving: 'Saving...',
+    change: 'Change', close: 'Close', access: 'Access', status: 'Status',
+    providerOrderNumber: 'Provider work order no.', createdAt: 'Created at', updatedAt: 'Updated at',
+    footer: 'Atyno — Operations platform for technical service companies.',
+    retryLater: 'Please try again later.',
+  },
+  auth: {
+    institutional: {
+      secureTitle: '100% secure environment',
+      secureDescription: 'End-to-end encryption across your technical infrastructure.',
+    },
+    validation: {
+      emailRequired: 'Enter your email.', invalidEmail: 'Invalid email.',
+      passwordRequired: 'Enter your password.', passwordMin: 'Password must be at least 8 characters.',
+      passwordConfirmationRequired: 'Confirm your password.', passwordMismatch: 'Passwords do not match.',
+      codeRequired: 'Enter the confirmation code.',
+    },
+    signIn: {
+      ...ptBR.auth.signIn,
+      sideTitle: 'Connect your operation in one place',
+      sideDescription: 'Organize data, track your operation, and prepare your company to connect multiple providers on one platform.',
+      title: 'Sign in to your account', subtitle: 'Access your operation in Atyno.',
+      emailPlaceholder: 'you@company.com', submit: 'Sign in', submitting: 'Signing in...',
+      invalidCredentials: 'Invalid email or password. Check your credentials and try again.',
+      genericError: 'Unable to sign in. Please try again later.', noAccount: 'Don’t have an account yet?',
+      createAccount: 'Create account', receivedCode: 'Received the confirmation code?',
+      confirmEmail: 'Confirm email',
+    },
+    signUp: {
+      ...ptBR.auth.signUp,
+      sideTitle: 'Your operation, organized in one place',
+      sideDescription: 'Create your account and start connecting your service providers to the Atyno platform.',
+      title: 'Create account', subtitle: 'Start using Atyno now.', confirmPassword: 'Confirm password',
+      submit: 'Create account', submitting: 'Creating account...',
+      success: 'Account created! Check your email to confirm your registration.',
+      alreadyRegistered: 'This email is already registered. Try signing in or confirming your email.',
+      invalidEmail: 'Invalid email. Check it and try again.',
+      invalidPassword: 'Invalid password. Use at least 8 characters with uppercase and lowercase letters and numbers.',
+      genericError: 'Unable to create the account. Please try again later.',
+      hasAccount: 'Already have an account?', signIn: 'Sign in here',
+    },
+    confirm: {
+      ...ptBR.auth.confirm,
+      sideTitle: 'Confirm your email', sideDescription: 'Use the code sent to your email to securely activate your account.',
+      title: 'Confirm your email',
+      knownEmailSubtitle: 'Enter the code we sent to your email below.',
+      unknownEmailSubtitle: 'Enter your email and the confirmation code you received.',
+      accountCreated: 'Account created! Check your inbox and enter the confirmation code below.',
+      code: 'Confirmation code', submit: 'Confirm email', submitting: 'Confirming...',
+      success: 'Email confirmed! You can now sign in.',
+      alreadyConfirmed: 'This email has already been confirmed. You can sign in.',
+      invalidCode: 'Invalid confirmation code.', expiredCode: 'The code expired. Request a new code.',
+      genericError: 'Unable to confirm the email. Please try again later.', resend: 'Didn’t receive the code? Resend',
+      resending: 'Resending...', resendEmailRequired: 'Enter your email to resend the code.',
+      resendSuccess: 'Code resent! Check your inbox.',
+      resendError: 'Unable to resend the code. Please try again later.',
+      alreadyConfirmedPrompt: 'Already confirmed?', backToSignIn: 'Sign in',
+    },
+  },
+  layout: {
+    office: 'Office', subtitle: 'Operations and integrations', clientName: 'Client Name',
+    alerts: 'Alerts (reserved area)', settings: 'Settings', signOut: 'Sign out',
+    signOutAria: 'Sign out of account', sideMenu: 'Side menu', mainNavigation: 'Main navigation',
+    menu: 'Menu', dashboard: 'Dashboard',
+  },
+  dashboard: {
+    ...ptBR.dashboard,
+    title: 'Dashboard', subtitle: 'Overview of your operation’s work orders.',
+    loadingCompany: 'Loading your company data...', companyError: 'Unable to load your company data. Please try again later.',
+    summaryTitle: 'Monthly summary', summaryLoading: 'Loading monthly summary...',
+    summaryError: 'Unable to load the monthly summary. Please try again later.',
+    ordersInMonth: 'work orders this month', dailyEvolution: 'Daily evolution of work orders with status {{status}}',
+    designatedTitle: 'Assigned work orders', designatedLoading: 'Loading assigned work orders...',
+    designatedError: 'Unable to load assigned work orders. Please try again later.',
+    designatedEmpty: 'No assigned work orders at the moment.',
+    statuses: {
+      requestCancel: 'Cancellation Requested', assigned: 'Assigned', exchangeProposal: 'Exchange Proposal',
+      closed: 'Closed', cancelled: 'Cancelled', paymentRejected: 'Payment Rejected',
+      requestToExplain: 'Request to Explain', pending: 'Pending', paymentApproved: 'Payment Approved',
+    },
+  },
+  settings: {
+    ...ptBR.settings,
+    navigation: { overview: 'Overview', integrations: 'Integrations', collector: 'Collector', preferences: 'Preferences' },
+    title: 'Settings', subtitle: 'Manage trial, iService integration, and account preferences.',
+    account: 'Account', activeTrial: 'Active trial', trialWindow: 'Trial period in progress',
+    integration: 'Integration', credentialsValidation: 'Credentials and validation',
+    collector: 'Collector', ready: 'Ready', awaitingCommands: 'Waiting for API commands',
+    yourTrial: 'Your Trial', trialDescription: 'Account usage and expiration period.',
+    iserviceTitle: 'iService integration', iserviceDescription: 'Credentials, validation, and collector cycle preparation.',
+    loadingCompanies: 'Loading your companies...', companiesError: 'Unable to load your companies. Please try again later.',
+    preparingIntegration: 'Preparing integration settings...', preferences: 'Preferences',
+    preferencesDescription: 'Settings that affect operational viewing.',
+  },
+  onboarding: {
+    ...ptBR.onboarding,
+    createTitle: 'Register your company', createDescription: 'Before configuring the integration, enter your company name and CNPJ.',
+    companyName: 'Company name', create: 'Create company', creating: 'Creating company...',
+    nameRequired: 'Enter the company name.', invalidCnpj: 'Invalid CNPJ. Check the number entered.',
+    errors: {
+      invalid_cnpj: 'Invalid CNPJ. Check the digits entered.',
+      cnpj_already_registered: 'This CNPJ is already associated with another company.',
+      user_already_has_tenant: 'You already have a registered company.',
+      trial_not_found: 'Your trial period could not be found. Contact support.',
+      unknown_error: 'Unable to complete registration. Try again shortly.',
+    },
+    selectTitle: 'Select a company', selectDescription: 'You have access to more than one company. Choose which one to access.',
+    company: 'Company', selectPlaceholder: 'Select...',
+  },
+  integration: {
+    ...ptBR.integration,
+    credentialsTitle: 'iService credentials',
+    credentialsDescription: 'Credentials are encrypted and never displayed again.',
+    username: 'Username', token: 'Token', save: 'Save credentials', saving: 'Saving credentials...',
+    password: 'Password', baseUrl: 'iService URL/tenant', optional: '(optional)',
+    baseUrlHelp: 'Your tenant-specific iService address (for example, a dedicated provider subdomain). Leave blank to use the default address and only fill it in if iService provided a custom URL for your company.',
+    fieldHelp: 'Help about this field', showPassword: 'Show password', hidePassword: 'Hide password',
+    usernameRequired: 'Enter the iService username.', passwordRequired: 'Enter the iService password.',
+    edit: 'Edit credentials',
+    saved: 'Credentials saved successfully.', validationTitle: 'Integration validation',
+    saveErrors: {
+      integration_not_found: 'Integration not found. Contact support.',
+      invalid_credentials: 'Enter the iService username and password correctly.',
+      forbidden: 'Only the company owner can configure this integration.',
+      unknown_error: 'Unable to save credentials. Try again.',
+    },
+    loadingStatus: 'Loading integration status...',
+    statusError: 'Unable to load integration status. Please try again later.',
+    noCredentials: 'No credentials configured yet. Register iService credentials to enable validation.',
+    notValidated: 'Not validated', valid: 'Valid credentials', failed: 'Validation failed',
+    lastValidation: 'Last validation at {{date}}',
+    validationPending: 'This integration has not been validated yet. Collector activation remains unavailable until validation succeeds.',
+    validationFailed: 'Validation failed. Check the registered credentials and try again.',
+    validationSucceeded: 'Credentials validated successfully.', validating: 'Testing validation...', validate: 'Test validation',
+    errors: {
+      credentials_not_configured: 'Register credentials before testing validation.',
+      forbidden: 'You do not have permission to validate this integration.',
+      unknown_error: 'Credentials cannot be validated now. Try again.',
+    },
+  },
+  timezone: {
+    title: 'Time Zone', description: 'All dates are stored in UTC and shown in your selected time zone.',
+    changeAria: 'Change time zone', updateError: 'Failed to update time zone',
+    pickerTitle: 'Select Time Zone', search: 'Search time zones...', clearSearch: 'Clear search',
+    suggested: 'Suggested', currentSection: 'Your Current Time Zone', current: 'Current',
+    empty: 'No time zones found', cancel: 'Cancel', save: 'Save',
+  },
+  trial: {
+    ...ptBR.trial,
+    active: 'Active Trial', expired: 'Expired Trial', expiresSoon: 'Expires soon', freePlan: 'Free trial plan',
+    daysRemaining: 'Days Remaining', hoursRemaining: 'Hours Remaining', activatedAt: 'Activated at', expiresAt: 'Expires at',
+    urgentMessage: 'Your Trial expires in a few hours. Configure an integration or upgrade to keep using Atyno.',
+    warningMessage: 'Your Trial expires soon. Configure an integration or consider upgrading.',
+    expiredMessage: 'Your trial period has ended. Contact us to keep using Atyno.',
+    upgrade: 'Upgrade', upgradeAria: 'Upgrade plan', contactSales: 'Contact Sales', contactSalesAria: 'Contact sales',
+    badgeExpired: 'Trial expired', badgeToday: 'Trial expires today ({{hours}}h)',
+    badgeTomorrow: 'Trial until tomorrow (1 day)', badgeUntil: 'Trial until {{date}} ({{days}} days)',
+    alertHours_one: 'Your Trial expires in {{count}} hour!', alertHours_other: 'Your Trial expires in {{count}} hours!',
+    alertDays_one: 'Your Trial expires in {{count}} day.', alertDays_other: 'Your Trial expires in {{count}} days.',
+    urgentAction: 'Upgrade now to keep your integrations active and data secure.',
+    warningAction: 'Configure your integrations now or upgrade to keep using Atyno.',
+    closeAlert: 'Close alert',
+  },
+} as const
+
+const esAR = {
+  ...enUS,
+  language: {
+    label: 'Idioma', select: 'Seleccionar idioma', option: 'Usar {{language}}',
+    syncError: 'El idioma cambió en este dispositivo, pero no se pudo guardar la preferencia en tu perfil.',
+    languages: { 'pt-BR': 'Português', 'en-US': 'English', 'es-AR': 'Español' },
+  },
+  common: {
+    ...enUS.common,
+    email: 'Correo electrónico', password: 'Contraseña', loading: 'Cargando...', saving: 'Guardando...',
+    change: 'Cambiar', close: 'Cerrar', access: 'Acceder', status: 'Estado',
+    providerOrderNumber: 'N.º de OS en el proveedor', createdAt: 'Creada el', updatedAt: 'Actualizada el',
+    footer: 'Atyno — Plataforma operativa para empresas de servicios técnicos.',
+    retryLater: 'Intentá nuevamente más tarde.',
+  },
+  auth: {
+    institutional: {
+      secureTitle: 'Entorno 100% seguro',
+      secureDescription: 'Cifrado de extremo a extremo en tu infraestructura técnica.',
+    },
+    validation: {
+      emailRequired: 'Ingresá tu correo.', invalidEmail: 'Correo inválido.',
+      passwordRequired: 'Ingresá tu contraseña.', passwordMin: 'La contraseña debe tener al menos 8 caracteres.',
+      passwordConfirmationRequired: 'Confirmá tu contraseña.', passwordMismatch: 'Las contraseñas no coinciden.',
+      codeRequired: 'Ingresá el código de confirmación.',
+    },
+    signIn: {
+      ...enUS.auth.signIn,
+      sideTitle: 'Conectá tu operación en un solo lugar',
+      sideDescription: 'Organizá datos, seguí tu operación y prepará tu empresa para conectar varios proveedores en una única plataforma.',
+      title: 'Ingresá a tu cuenta', subtitle: 'Accedé a tu operación en Atyno.',
+      emailPlaceholder: 'tuemail@empresa.com', submit: 'Ingresar', submitting: 'Ingresando...',
+      invalidCredentials: 'Correo o contraseña inválidos. Verificá tus credenciales e intentá nuevamente.',
+      genericError: 'No fue posible ingresar. Intentá nuevamente más tarde.',
+      noAccount: '¿Todavía no tenés cuenta?', createAccount: 'Crear cuenta',
+      receivedCode: '¿Recibiste el código de confirmación?', confirmEmail: 'Confirmar correo',
+    },
+    signUp: {
+      ...enUS.auth.signUp,
+      sideTitle: 'Tu operación, organizada en un solo lugar',
+      sideDescription: 'Creá tu cuenta y comenzá a conectar tus proveedores de servicio a la plataforma Atyno.',
+      title: 'Crear cuenta', subtitle: 'Comenzá a usar Atyno ahora mismo.', confirmPassword: 'Confirmar contraseña',
+      submit: 'Crear cuenta', submitting: 'Creando cuenta...',
+      success: '¡Cuenta creada! Revisá tu correo para confirmar el registro.',
+      alreadyRegistered: 'Este correo ya está registrado. Intentá ingresar o confirmá tu correo.',
+      invalidEmail: 'Correo inválido. Verificalo e intentá nuevamente.',
+      invalidPassword: 'Contraseña inválida. Usá al menos 8 caracteres con mayúsculas, minúsculas y números.',
+      genericError: 'No fue posible crear la cuenta. Intentá nuevamente más tarde.',
+      hasAccount: '¿Ya tenés cuenta?', signIn: 'Ingresá acá',
+    },
+    confirm: {
+      ...enUS.auth.confirm,
+      sideTitle: 'Confirmá tu correo', sideDescription: 'Usá el código enviado a tu correo para activar tu cuenta de forma segura.',
+      title: 'Confirmá tu correo',
+      knownEmailSubtitle: 'Ingresá abajo el código que enviamos a tu correo.',
+      unknownEmailSubtitle: 'Ingresá tu correo y el código de confirmación recibido.',
+      accountCreated: '¡Cuenta creada! Revisá tu bandeja de entrada e ingresá el código de confirmación abajo.',
+      code: 'Código de confirmación', submit: 'Confirmar correo', submitting: 'Confirmando...',
+      success: '¡Correo confirmado! Ya podés ingresar.',
+      alreadyConfirmed: 'Este correo ya fue confirmado. Ya podés ingresar.',
+      invalidCode: 'Código de confirmación inválido.', expiredCode: 'El código venció. Solicitá uno nuevo.',
+      genericError: 'No fue posible confirmar el correo. Intentá nuevamente más tarde.',
+      resend: '¿No recibiste el código? Reenviar', resending: 'Reenviando...',
+      resendEmailRequired: 'Ingresá el correo para reenviar el código.',
+      resendSuccess: '¡Código reenviado! Revisá tu bandeja de entrada.',
+      resendError: 'No fue posible reenviar el código. Intentá nuevamente más tarde.',
+      alreadyConfirmedPrompt: '¿Ya confirmaste?', backToSignIn: 'Ingresar',
+    },
+  },
+  layout: {
+    office: 'Office', subtitle: 'Operaciones e integraciones', clientName: 'Nombre del Cliente',
+    alerts: 'Alertas (área reservada)', settings: 'Configuración', signOut: 'Salir',
+    signOutAria: 'Cerrar sesión', sideMenu: 'Menú lateral', mainNavigation: 'Navegación principal',
+    menu: 'Menú', dashboard: 'Panel',
+  },
+  dashboard: {
+    ...enUS.dashboard,
+    title: 'Panel', subtitle: 'Vista general de las órdenes de servicio de tu operación.',
+    loadingCompany: 'Cargando los datos de tu empresa...',
+    companyError: 'No fue posible cargar los datos de tu empresa. Intentá nuevamente más tarde.',
+    summaryTitle: 'Resumen del mes', summaryLoading: 'Cargando el resumen del mes...',
+    summaryError: 'No fue posible cargar el resumen del mes. Intentá nuevamente más tarde.',
+    ordersInMonth: 'OS en el mes', dailyEvolution: 'Evolución diaria de OS con estado {{status}}',
+    designatedTitle: 'Órdenes de servicio asignadas', designatedLoading: 'Cargando órdenes de servicio asignadas...',
+    designatedError: 'No fue posible cargar las órdenes asignadas. Intentá nuevamente más tarde.',
+    designatedEmpty: 'No hay órdenes de servicio asignadas en este momento.',
+    statuses: {
+      requestCancel: 'Cancelación Solicitada', assigned: 'Asignado', exchangeProposal: 'Propuesta de Cambio',
+      closed: 'Cerrado', cancelled: 'Cancelado', paymentRejected: 'Pago Rechazado',
+      requestToExplain: 'Solicitud de Explicación', pending: 'Pendiente', paymentApproved: 'Pago Aprobado',
+    },
+  },
+  settings: {
+    ...enUS.settings,
+    navigation: { overview: 'Vista general', integrations: 'Integraciones', collector: 'Colector', preferences: 'Preferencias' },
+    title: 'Configuración', subtitle: 'Control del trial, integración iService y preferencias de la cuenta.',
+    account: 'Cuenta', activeTrial: 'Trial activo', trialWindow: 'Período de prueba en curso',
+    integration: 'Integración', credentialsValidation: 'Credenciales y validación',
+    collector: 'Colector', ready: 'Preparado', awaitingCommands: 'Esperando comandos de la API',
+    yourTrial: 'Tu Trial', trialDescription: 'Período de uso y vencimiento de la cuenta.',
+    iserviceTitle: 'Integración con iService', iserviceDescription: 'Credenciales, validación y preparación del ciclo del colector.',
+    loadingCompanies: 'Cargando tus empresas...', companiesError: 'No fue posible cargar tus empresas. Intentá nuevamente más tarde.',
+    preparingIntegration: 'Preparando la configuración de la integración...', preferences: 'Preferencias',
+    preferencesDescription: 'Configuraciones que afectan la lectura operativa.',
+  },
+  onboarding: {
+    ...enUS.onboarding,
+    createTitle: 'Registrá tu empresa', createDescription: 'Antes de configurar la integración, ingresá el nombre y CNPJ de tu empresa.',
+    companyName: 'Nombre de la empresa', create: 'Crear empresa', creating: 'Creando empresa...',
+    nameRequired: 'Ingresá el nombre de la empresa.', invalidCnpj: 'CNPJ inválido. Verificá el número ingresado.',
+    errors: {
+      invalid_cnpj: 'CNPJ inválido. Verificá los dígitos ingresados.',
+      cnpj_already_registered: 'Este CNPJ ya está asociado a otra empresa.',
+      user_already_has_tenant: 'Ya tenés una empresa registrada.',
+      trial_not_found: 'No fue posible encontrar tu período de prueba. Contactá a soporte.',
+      unknown_error: 'No fue posible completar el registro. Intentá nuevamente en unos instantes.',
+    },
+    selectTitle: 'Seleccioná una empresa', selectDescription: 'Tenés acceso a más de una empresa. Elegí cuál querés usar.',
+    company: 'Empresa', selectPlaceholder: 'Seleccioná...',
+  },
+  integration: {
+    ...enUS.integration,
+    credentialsTitle: 'Credenciales de iService',
+    credentialsDescription: 'Las credenciales se almacenan cifradas y nunca vuelven a mostrarse.',
+    username: 'Usuario', token: 'Token', save: 'Guardar credenciales', saving: 'Guardando credenciales...',
+    password: 'Contraseña', baseUrl: 'URL/tenant de iService', optional: '(opcional)',
+    baseUrlHelp: 'Dirección específica de iService para tu tenant (por ejemplo, un subdominio dedicado del proveedor). Dejala vacía para usar la dirección predeterminada y completala solo si iService informó una URL personalizada para tu empresa.',
+    fieldHelp: 'Ayuda sobre este campo', showPassword: 'Mostrar contraseña', hidePassword: 'Ocultar contraseña',
+    usernameRequired: 'Ingresá el usuario de iService.', passwordRequired: 'Ingresá la contraseña de iService.',
+    edit: 'Editar credenciales',
+    saved: 'Credenciales guardadas correctamente.', validationTitle: 'Validación de la integración',
+    saveErrors: {
+      integration_not_found: 'Integración no encontrada. Contactá a soporte.',
+      invalid_credentials: 'Completá correctamente el usuario y la contraseña de iService.',
+      forbidden: 'Solo el propietario de la empresa puede configurar esta integración.',
+      unknown_error: 'No fue posible guardar las credenciales. Intentá nuevamente.',
+    },
+    loadingStatus: 'Cargando el estado de la integración...',
+    statusError: 'No fue posible cargar el estado de la integración. Intentá nuevamente más tarde.',
+    noCredentials: 'Todavía no hay credenciales configuradas. Registrá las credenciales de iService para habilitar la validación.',
+    notValidated: 'No validado', valid: 'Credenciales válidas', failed: 'Falló la validación',
+    lastValidation: 'Última validación: {{date}}',
+    validationPending: 'Esta integración todavía no fue validada. La activación del Agente Colector seguirá no disponible hasta que la validación sea exitosa.',
+    validationFailed: 'La validación falló. Verificá las credenciales e intentá nuevamente.',
+    validationSucceeded: 'Credenciales validadas correctamente.', validating: 'Probando validación...', validate: 'Probar validación',
+    errors: {
+      credentials_not_configured: 'Registrá las credenciales antes de probar la validación.',
+      forbidden: 'No tenés permiso para validar esta integración.',
+      unknown_error: 'No fue posible validar las credenciales ahora. Intentá nuevamente.',
+    },
+  },
+  timezone: {
+    title: 'Zona horaria', description: 'Todas las fechas se almacenan en UTC y se muestran en la zona horaria seleccionada.',
+    changeAria: 'Cambiar zona horaria', updateError: 'No fue posible actualizar la zona horaria',
+    pickerTitle: 'Seleccionar Zona Horaria', search: 'Buscar zona horaria...', clearSearch: 'Limpiar búsqueda',
+    suggested: 'Sugerido', currentSection: 'Tu Zona Horaria Actual', current: 'Actual',
+    empty: 'No se encontraron zonas horarias', cancel: 'Cancelar', save: 'Guardar',
+  },
+  trial: {
+    ...enUS.trial,
+    active: 'Trial Activo', expired: 'Trial Vencido', expiresSoon: 'Vence pronto', freePlan: 'Plan de prueba gratuito',
+    daysRemaining: 'Días Restantes', hoursRemaining: 'Horas Restantes', activatedAt: 'Activado el', expiresAt: 'Vence el',
+    urgentMessage: 'Tu Trial vence en pocas horas. Configurá una integración o actualizá el plan para seguir usando Atyno.',
+    warningMessage: 'Tu Trial vence pronto. Configurá una integración o considerá actualizar el plan.',
+    expiredMessage: 'Tu período de prueba terminó. Contactanos para seguir usando Atyno.',
+    upgrade: 'Actualizar Plan', upgradeAria: 'Actualizar plan', contactSales: 'Contactar Ventas', contactSalesAria: 'Contactar ventas',
+    badgeExpired: 'Trial vencido', badgeToday: 'El Trial vence hoy ({{hours}}h)',
+    badgeTomorrow: 'Trial hasta mañana (1 día)', badgeUntil: 'Trial hasta {{date}} ({{days}} días)',
+    alertHours_one: '¡Tu Trial vence en {{count}} hora!', alertHours_other: '¡Tu Trial vence en {{count}} horas!',
+    alertDays_one: 'Tu Trial vence en {{count}} día.', alertDays_other: 'Tu Trial vence en {{count}} días.',
+    urgentAction: 'Actualizá ahora para mantener tus integraciones activas y tus datos seguros.',
+    warningAction: 'Configurá tus integraciones ahora o actualizá el plan para seguir usando Atyno.',
+    closeAlert: 'Cerrar aviso',
+  },
+} as const
+
+const resources = {
+  'pt-BR': { translation: ptBR },
+  'en-US': { translation: enUS },
+  'es-AR': { translation: esAR },
+}
+
+export function normalizeLocale(language?: string | null): SupportedLocale | undefined {
+  if (!language) return undefined
+  const normalized = language.replace('_', '-').toLowerCase()
+  if (normalized === 'pt' || normalized.startsWith('pt-')) return 'pt-BR'
+  if (normalized === 'en' || normalized.startsWith('en-')) return 'en-US'
+  if (normalized === 'es' || normalized.startsWith('es-')) return 'es-AR'
+  return undefined
+}
+
+function readStorage(key: string): string | null {
+  try {
+    return globalThis.localStorage?.getItem(key) ?? null
+  } catch {
+    return null
+  }
+}
+
+function writeStorage(key: string, value: string): void {
+  try {
+    globalThis.localStorage?.setItem(key, value)
+  } catch {
+    // The active language still works when browser storage is unavailable.
+  }
+}
+
+export function persistLocale(locale: SupportedLocale): void {
+  writeStorage(LOCALE_STORAGE_KEY, locale)
+}
+
+export function getPendingLocale(): SupportedLocale | undefined {
+  return normalizeLocale(readStorage(PENDING_LOCALE_STORAGE_KEY))
+}
+
+export function markLocalePending(locale: SupportedLocale): void {
+  writeStorage(PENDING_LOCALE_STORAGE_KEY, locale)
+}
+
+export function clearPendingLocale(): void {
+  try {
+    globalThis.localStorage?.removeItem(PENDING_LOCALE_STORAGE_KEY)
+  } catch {
+    // A stale marker is harmless; the next authenticated session retries.
+  }
+}
+
+function consumeLocaleFromUrl(): SupportedLocale | undefined {
+  if (typeof window === 'undefined') return undefined
+  const url = new URL(window.location.href)
+  const locale = normalizeLocale(url.searchParams.get('locale'))
+  if (!locale) return undefined
+
+  url.searchParams.delete('locale')
+  window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`)
+  return locale
+}
+
+const urlLocale = consumeLocaleFromUrl()
+const storedLocale = normalizeLocale(readStorage(LOCALE_STORAGE_KEY))
+const browserLocale = typeof navigator === 'undefined' ? undefined : normalizeLocale(navigator.language)
+const initialLocale = urlLocale ?? storedLocale ?? browserLocale ?? DEFAULT_LOCALE
+
+persistLocale(initialLocale)
+if (urlLocale) markLocalePending(urlLocale)
+if (typeof document !== 'undefined') document.documentElement.lang = initialLocale
+
 void i18n.use(initReactI18next).init({
-  fallbackLng: 'pt-BR',
+  fallbackLng: DEFAULT_LOCALE,
   interpolation: { escapeValue: false },
-  resources: { 'pt-BR': { translation: {} } },
+  lng: initialLocale,
+  load: 'currentOnly',
+  resources,
+  supportedLngs: SUPPORTED_LOCALES,
 })
+
+export default i18n

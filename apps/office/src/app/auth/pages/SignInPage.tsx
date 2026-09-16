@@ -3,13 +3,16 @@ import { Link, useNavigate } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { toast } from 'react-toastify'
+import { useTranslation } from 'react-i18next'
 import { ApiError } from '../../../shared/lib/apiClient'
 import { useAuth } from '../AuthContext'
-import { signInSchema, type SignInFormValues } from '../schemas'
+import { AuthLanguageSelector } from '../AuthLanguageSelector'
+import { createSignInSchema, type SignInFormValues } from '../schemas'
 import logoBgLight from '../../../../../../assets/logo_bg_light.svg'
 import logoBgDark from '../../../../../../assets/logo_bg_dark.svg'
 
 export function SignInPage() {
+  const { t } = useTranslation()
   const { signIn } = useAuth()
   const navigate = useNavigate()
   const [error, setError] = useState<string | null>(null)
@@ -19,7 +22,7 @@ export function SignInPage() {
     handleSubmit,
     formState: { errors, isSubmitting },
   } = useForm<SignInFormValues>({
-    resolver: zodResolver(signInSchema),
+    resolver: zodResolver(createSignInSchema(t)),
   })
 
   async function onSubmit(values: SignInFormValues) {
@@ -34,27 +37,27 @@ export function SignInPage() {
         // RN-005.3: O backend atual (AuthService.SignInAsync) trata
         // "email não confirmado" com o mesmo 401 genérico — ver nota no
         // relatório final. Exibimos mensagem genérica conforme RN-005.2.
-        setError('E-mail ou senha inválidos. Verifique suas credenciais e tente novamente.')
+        setError(t('auth.signIn.invalidCredentials'))
       } else {
-        setError('Não foi possível entrar. Tente novamente mais tarde.')
-        toast.error('Não foi possível entrar. Tente novamente mais tarde.')
+        setError(t('auth.signIn.genericError'))
+        toast.error(t('auth.signIn.genericError'))
       }
     }
   }
 
   return (
-    <main className="flex min-h-screen w-full bg-[#f8fafc]">
+    <main className="relative flex min-h-screen w-full bg-[#f8fafc]">
+      <AuthLanguageSelector />
       {/* Coluna institucional (oculta em telas pequenas) */}
       <div className="hidden flex-1 flex-col justify-between bg-[#0f172a] p-20 lg:flex">
         <img src={logoBgDark} alt="Atyno" className="h-[70px] w-[240px]" />
 
         <div className="flex flex-col gap-6">
           <p className="text-4xl leading-tight font-bold text-white">
-            Conecte sua operação em um único lugar
+            {t('auth.signIn.sideTitle')}
           </p>
           <p className="text-[15px] leading-relaxed text-[#64748b]">
-            Organize dados, acompanhe sua operação e prepare sua empresa para
-            conectar vários provedores em uma única plataforma.
+            {t('auth.signIn.sideDescription')}
           </p>
         </div>
 
@@ -72,9 +75,9 @@ export function SignInPage() {
             </svg>
           </div>
           <div>
-            <p className="text-sm font-semibold text-white">Ambiente 100% seguro</p>
+            <p className="text-sm font-semibold text-white">{t('auth.institutional.secureTitle')}</p>
             <p className="text-xs text-[#64748b]">
-              Criptografia de ponta a ponta na sua infraestrutura técnica.
+              {t('auth.institutional.secureDescription')}
             </p>
           </div>
         </div>
@@ -88,16 +91,16 @@ export function SignInPage() {
 
           <div className="mb-8">
             <h1 className="text-[32px] leading-tight font-bold text-[#0e1a30]">
-              Entrar na sua conta
+              {t('auth.signIn.title')}
             </h1>
-            <p className="mt-2 text-base text-[#64748b]">Acesse sua operação no Atyno.</p>
+            <p className="mt-2 text-base text-[#64748b]">{t('auth.signIn.subtitle')}</p>
           </div>
 
           <form onSubmit={(e) => void handleSubmit(onSubmit)(e)} noValidate>
             <fieldset disabled={isSubmitting} className="space-y-5">
               <div>
                 <label htmlFor="email" className="mb-2 block text-sm font-semibold text-[#0e1a30]">
-                  E-mail
+                  {t('common.email')}
                 </label>
                 <input
                   id="email"
@@ -105,7 +108,7 @@ export function SignInPage() {
                   autoComplete="email"
                   {...register('email')}
                   className="input input-bordered w-full border-[#e2e8f0] bg-white text-[#0e1a30] focus:border-[#3b82f6]"
-                  placeholder="seuemail@empresa.com"
+                  placeholder={t('auth.signIn.emailPlaceholder')}
                 />
                 {errors.email && (
                   <p className="mt-1.5 text-sm text-red-700">{errors.email.message}</p>
@@ -114,7 +117,7 @@ export function SignInPage() {
 
               <div>
                 <label htmlFor="password" className="mb-2 block text-sm font-semibold text-[#0e1a30]">
-                  Senha
+                  {t('common.password')}
                 </label>
                 <input
                   id="password"
@@ -141,31 +144,31 @@ export function SignInPage() {
                 aria-busy={isSubmitting}
               >
                 {isSubmitting ? (
-                  <span className="loading loading-spinner loading-sm" />
+                  <><span className="loading loading-spinner loading-sm" />{t('auth.signIn.submitting')}</>
                 ) : (
-                  'Entrar'
+                  t('auth.signIn.submit')
                 )}
               </button>
             </fieldset>
           </form>
 
           <p className="mt-6 text-center text-sm text-[#64748b]">
-            Ainda não tem conta?{' '}
+            {t('auth.signIn.noAccount')}{' '}
             <Link to="/cadastro" className="font-semibold text-[#3b82f6] hover:underline">
-              Criar conta
+              {t('auth.signIn.createAccount')}
             </Link>
           </p>
           <p className="mt-2 text-center text-sm text-[#64748b]">
-            Recebeu o código de confirmação?{' '}
+            {t('auth.signIn.receivedCode')}{' '}
             <Link to="/confirmar-email" className="font-semibold text-[#3b82f6] hover:underline">
-              Confirmar e-mail
+              {t('auth.signIn.confirmEmail')}
             </Link>
           </p>
 
           <hr className="my-8 border-[#e2e8f0]" />
 
           <p className="text-center text-xs text-[#64748b]">
-            Atyno — Plataforma operacional para empresas de serviços técnicos.
+            {t('common.footer')}
           </p>
         </div>
       </div>

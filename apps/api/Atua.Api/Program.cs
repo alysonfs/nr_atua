@@ -119,6 +119,7 @@ builder.Services.AddScoped<SignUpService>();
 builder.Services.AddScoped<ConfirmEmailService>();
 builder.Services.AddScoped<AuthService>();
 builder.Services.AddScoped<TimeZonePreferenceService>();
+builder.Services.AddScoped<UserLocalePreferenceService>();
 builder.Services.Configure<CredentialCipherOptions>(
     builder.Configuration.GetSection(CredentialCipherOptions.SectionName));
 // Seleciona a implementação de ICredentialCipher com base na configuração:
@@ -216,6 +217,7 @@ app.MapGet("/health", () => Results.Ok(new { status = "healthy" }));
 app.MapAuthEndpoints();
 app.MapTenantEndpoints();
 app.MapTimeZoneEndpoints();
+app.MapUserLocaleEndpoints();
 app.MapCollectorActivationEndpoints();
 app.MapCollectorEligibilityEndpoints();
 app.MapCollectorCommandEndpoints();

@@ -2,18 +2,11 @@ import { type FormEvent, useState } from 'react'
 import { useCreateTenant } from '../../hooks/useTenants'
 import { formatCnpj, isValidCnpj, normalizeCnpj } from '../../lib/cnpj'
 import type { CreateTenantErrorCode } from '../../../../shared/types/tenant'
+import { useTranslation } from 'react-i18next'
 
 interface CreateTenantFormProps {
   onCreated: (tenantId: string, integrationId: string) => void
   className?: string
-}
-
-const ERROR_MESSAGES: Record<CreateTenantErrorCode, string> = {
-  invalid_cnpj: 'CNPJ inválido. Verifique os dígitos informados.',
-  cnpj_already_registered: 'Este CNPJ já está associado a outra empresa.',
-  user_already_has_tenant: 'Você já possui uma empresa cadastrada.',
-  trial_not_found: 'Não foi possível localizar seu período de teste. Contate o suporte.',
-  unknown_error: 'Não foi possível concluir o cadastro. Tente novamente em instantes.',
 }
 
 /**
@@ -24,6 +17,7 @@ const ERROR_MESSAGES: Record<CreateTenantErrorCode, string> = {
  * não recebe erro genérico de autorização).
  */
 export function CreateTenantForm({ onCreated, className = '' }: CreateTenantFormProps) {
+  const { t } = useTranslation()
   const { createTenant, isSubmitting } = useCreateTenant()
   const [name, setName] = useState('')
   const [cnpj, setCnpj] = useState('')
@@ -39,7 +33,7 @@ export function CreateTenantForm({ onCreated, className = '' }: CreateTenantForm
 
     let hasError = false
     if (!name.trim()) {
-      setNameError('Informe o nome da empresa.')
+      setNameError(t('onboarding.nameRequired'))
       hasError = true
     } else {
       setNameError(null)
@@ -47,7 +41,7 @@ export function CreateTenantForm({ onCreated, className = '' }: CreateTenantForm
 
     const normalizedCnpj = normalizeCnpj(cnpj)
     if (!isValidCnpj(cnpj)) {
-      setCnpjError('CNPJ inválido. Verifique o número informado.')
+      setCnpjError(t('onboarding.invalidCnpj'))
       hasError = true
     } else {
       setCnpjError(null)
@@ -61,20 +55,21 @@ export function CreateTenantForm({ onCreated, className = '' }: CreateTenantForm
       return
     }
 
-    setSubmitError(ERROR_MESSAGES[result.errorCode ?? 'unknown_error'])
+    const errorCode: CreateTenantErrorCode = result.errorCode ?? 'unknown_error'
+    setSubmitError(t(`onboarding.errors.${errorCode}`))
   }
 
   return (
     <div className={`rounded-lg border border-slate-200 bg-white p-6 shadow-sm ${className}`}>
-      <h2 className="mb-1 text-lg font-semibold text-slate-900">Cadastre sua empresa</h2>
+      <h2 className="mb-1 text-lg font-semibold text-slate-900">{t('onboarding.createTitle')}</h2>
       <p className="mb-4 text-sm text-slate-600">
-        Antes de configurar a integração, informe o nome e o CNPJ da sua empresa.
+        {t('onboarding.createDescription')}
       </p>
 
       <form onSubmit={handleSubmit} noValidate>
         <div className="mb-4">
           <label htmlFor="tenant-name" className="mb-1 block text-sm font-medium text-slate-700">
-            Nome da empresa
+            {t('onboarding.companyName')}
           </label>
           <input
             id="tenant-name"
@@ -127,7 +122,7 @@ export function CreateTenantForm({ onCreated, className = '' }: CreateTenantForm
           disabled={isSubmitting}
           className="w-full rounded-lg bg-blue-600 px-4 py-2 font-semibold text-white transition-colors hover:bg-blue-700 active:bg-blue-800 disabled:cursor-not-allowed disabled:bg-slate-300"
         >
-          {isSubmitting ? 'Criando empresa...' : 'Criar empresa'}
+          {isSubmitting ? t('onboarding.creating') : t('onboarding.create')}
         </button>
       </form>
     </div>

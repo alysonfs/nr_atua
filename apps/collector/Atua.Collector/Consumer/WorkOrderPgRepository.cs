@@ -27,7 +27,7 @@ public sealed class WorkOrderPgRepository(
     public async Task ProcessInteractionAsync(
         Guid interactionId,
         Guid tenantId,
-        IReadOnlyList<(string ProviderId, string Status)> orders,
+        IReadOnlyList<ProviderWorkOrderData> orders,
         string resumeToken,
         string consumerId,
         CancellationToken cancellationToken = default)
@@ -39,15 +39,15 @@ public sealed class WorkOrderPgRepository(
 
         try
         {
-            foreach (var (providerId, status) in orders)
+            foreach (var order in orders)
             {
                 var (workOrderId, previousStatus, isNew) =
-                    await UpsertWorkOrderAsync(conn, tx, tenantId, providerId, status, cancellationToken);
+                    await UpsertWorkOrderAsync(conn, tx, tenantId, order, cancellationToken);
 
-                if (isNew || !string.Equals(previousStatus, status, StringComparison.Ordinal))
+                if (isNew || !string.Equals(previousStatus, order.Status, StringComparison.Ordinal))
                 {
                     await InsertWorkOrderHistoryAsync(conn, tx,
-                        workOrderId, interactionId, tenantId, providerId, status, cancellationToken);
+                        workOrderId, interactionId, tenantId, order, cancellationToken);
                 }
             }
 
@@ -144,16 +144,60 @@ public sealed class WorkOrderPgRepository(
     // -------------------------------------------------------------------------
 
     /// <summary>
+    /// Colunas descritivas (datas do provedor + consumidor/contato/endereço/produto/sintoma)
+    /// compartilhadas entre o UPDATE/INSERT de <c>work_orders</c> e o INSERT de
+    /// <c>work_order_histories</c> — evita duplicar a lista em quatro lugares.
+    /// </summary>
+    private static readonly string[] DetailColumns =
+    [
+        "ProviderCreatedAt", "ProviderUpdatedAt",
+        "CustomerType", "CustomerName", "CustomerCpf",
+        "ContactEmail", "ContactPhone", "ContactName",
+        "Address", "ZipCode", "CountryName", "StateName", "CityName",
+        "ProductBrand", "PdCode", "CategoryId", "ProductCategoryCode", "ProductCode",
+        "ProductModel", "ProductStatus", "Symptom",
+    ];
+
+    /// <summary>
+    /// Adiciona os parâmetros <c>@d0..@d20</c> correspondentes a <see cref="DetailColumns"/>,
+    /// na mesma ordem, convertendo null para <see cref="DBNull"/>.
+    /// </summary>
+    private static void AddDetailParameters(NpgsqlCommand cmd, ProviderWorkOrderData order)
+    {
+        object?[] values =
+        [
+            order.ProviderCreatedAt, order.ProviderUpdatedAt,
+            order.CustomerType, order.CustomerName, order.CustomerCpf,
+            order.ContactEmail, order.ContactPhone, order.ContactName,
+            order.Address, order.ZipCode, order.CountryName, order.StateName, order.CityName,
+            order.ProductBrand, order.PdCode, order.CategoryId, order.ProductCategoryCode, order.ProductCode,
+            order.ProductModel, order.ProductStatus, order.Symptom,
+        ];
+
+        for (var i = 0; i < values.Length; i++)
+            cmd.Parameters.AddWithValue($"@d{i}", values[i] ?? (object)DBNull.Value);
+    }
+
+    private static string DetailColumnList() => string.Join(", ", DetailColumns.Select(c => $"\"{c}\""));
+
+    private static string DetailParamList() => string.Join(", ", Enumerable.Range(0, DetailColumns.Length).Select(i => $"@d{i}"));
+
+    private static string DetailAssignmentList() =>
+        string.Join(", ", DetailColumns.Select((c, i) => $"\"{c}\" = @d{i}"));
+
+    /// <summary>
     /// UPSERT em work_orders. Retorna (id, statusAnterior, isNew).
     /// </summary>
     private static async Task<(Guid WorkOrderId, string? PreviousStatus, bool IsNew)> UpsertWorkOrderAsync(
         NpgsqlConnection conn,
         NpgsqlTransaction tx,
         Guid tenantId,
-        string providerId,
-        string newStatus,
+        ProviderWorkOrderData order,
         CancellationToken cancellationToken)
     {
+        var providerId = order.ProviderId;
+        var newStatus = order.Status;
+
         // Primeiro tenta ler o estado atual
         await using var selectCmd = conn.CreateCommand();
         selectCmd.Transaction = tx;
@@ -170,14 +214,15 @@ public sealed class WorkOrderPgRepository(
             var existingStatus = reader.GetString(1);
             await reader.CloseAsync();
 
-            // Atualiza: sempre updated_at; status se mudou (RF-017.1)
+            // Atualiza: sempre updated_at + campos descritivos; status se mudou (RF-017.1)
             await using var updateCmd = conn.CreateCommand();
             updateCmd.Transaction = tx;
             updateCmd.CommandText =
-                "UPDATE work_orders SET \"Status\" = @status, \"UpdatedAt\" = @now WHERE \"Id\" = @id";
+                $"UPDATE work_orders SET \"Status\" = @status, \"UpdatedAt\" = @now, {DetailAssignmentList()} WHERE \"Id\" = @id";
             updateCmd.Parameters.AddWithValue("@status", newStatus);
             updateCmd.Parameters.AddWithValue("@now", DateTimeOffset.UtcNow);
             updateCmd.Parameters.AddWithValue("@id", existingId);
+            AddDetailParameters(updateCmd, order);
             await updateCmd.ExecuteNonQueryAsync(cancellationToken);
 
             return (existingId, existingStatus, false);
@@ -192,15 +237,16 @@ public sealed class WorkOrderPgRepository(
         await using var insertCmd = conn.CreateCommand();
         insertCmd.Transaction = tx;
         insertCmd.CommandText =
-            """
-            INSERT INTO work_orders ("Id", "TenantId", "ProviderId", "Status", "CreatedAt", "UpdatedAt")
-            VALUES (@id, @tid, @pid, @status, @now, @now)
+            $"""
+            INSERT INTO work_orders ("Id", "TenantId", "ProviderId", "Status", "CreatedAt", "UpdatedAt", {DetailColumnList()})
+            VALUES (@id, @tid, @pid, @status, @now, @now, {DetailParamList()})
             """;
         insertCmd.Parameters.AddWithValue("@id", newId);
         insertCmd.Parameters.AddWithValue("@tid", tenantId);
         insertCmd.Parameters.AddWithValue("@pid", providerId);
         insertCmd.Parameters.AddWithValue("@status", newStatus);
         insertCmd.Parameters.AddWithValue("@now", now);
+        AddDetailParameters(insertCmd, order);
         await insertCmd.ExecuteNonQueryAsync(cancellationToken);
 
         return (newId, null, true);
@@ -218,8 +264,7 @@ public sealed class WorkOrderPgRepository(
         Guid workOrderId,
         Guid interactionId,
         Guid tenantId,
-        string providerId,
-        string status,
+        ProviderWorkOrderData order,
         CancellationToken cancellationToken)
     {
         var now = DateTimeOffset.UtcNow;
@@ -227,18 +272,19 @@ public sealed class WorkOrderPgRepository(
         await using var cmd = conn.CreateCommand();
         cmd.Transaction = tx;
         cmd.CommandText =
-            """
+            $"""
             INSERT INTO work_order_histories
-                ("Id", "WorkOrderId", "WorkOrderSnapshotId", "TenantId", "ProviderId", "Status", "CreatedAt", "UpdatedAt")
-            VALUES (@id, @woid, @snid, @tid, @pid, @status, @now, @now)
+                ("Id", "WorkOrderId", "WorkOrderSnapshotId", "TenantId", "ProviderId", "Status", "CreatedAt", "UpdatedAt", {DetailColumnList()})
+            VALUES (@id, @woid, @snid, @tid, @pid, @status, @now, @now, {DetailParamList()})
             """;
         cmd.Parameters.AddWithValue("@id", Guid.CreateVersion7());
         cmd.Parameters.AddWithValue("@woid", workOrderId);
         cmd.Parameters.AddWithValue("@snid", interactionId);
         cmd.Parameters.AddWithValue("@tid", tenantId);
-        cmd.Parameters.AddWithValue("@pid", providerId);
-        cmd.Parameters.AddWithValue("@status", status);
+        cmd.Parameters.AddWithValue("@pid", order.ProviderId);
+        cmd.Parameters.AddWithValue("@status", order.Status);
         cmd.Parameters.AddWithValue("@now", now);
+        AddDetailParameters(cmd, order);
         await cmd.ExecuteNonQueryAsync(cancellationToken);
     }
 

@@ -1,7 +1,8 @@
-import { type FormEvent, useEffect, useState } from 'react'
+import { type FormEvent, useState } from 'react'
 import { PreviewOpen, PreviewClose } from '@icon-park/react'
 import { useIServiceCredentials, useSetIServiceCredentials } from '../../hooks/useIServiceIntegration'
 import type { SetCredentialsErrorCode } from '../../../../shared/types/integration'
+import { useTranslation } from 'react-i18next'
 
 interface IServiceCredentialsFormProps {
   tenantId: string
@@ -10,15 +11,8 @@ interface IServiceCredentialsFormProps {
   className?: string
 }
 
-const ERROR_MESSAGES: Record<SetCredentialsErrorCode, string> = {
-  integration_not_found: 'Integração não encontrada. Contate o suporte.',
-  invalid_credentials: 'Preencha usuário e senha do iService corretamente.',
-  forbidden: 'Apenas o proprietário da empresa pode configurar esta integração.',
-  unknown_error: 'Não foi possível salvar as credenciais. Tente novamente.',
-}
-
 /** Botão "i" com tooltip do daisyUI (hover/foco, sem JS) explicando o campo. */
-function InfoTooltip({ text }: { text: string }) {
+function InfoTooltip({ text, ariaLabel }: { text: string; ariaLabel: string }) {
   return (
     <div className="tooltip tooltip-right align-middle">
       <div className="tooltip-content">
@@ -26,7 +20,7 @@ function InfoTooltip({ text }: { text: string }) {
       </div>
       <button
         type="button"
-        aria-label="Ajuda sobre este campo"
+        aria-label={ariaLabel}
         className="inline-flex size-4 items-center justify-center rounded-full border border-slate-400 text-[10px] font-semibold leading-none text-slate-500 hover:border-slate-600 hover:text-slate-700"
       >
         i
@@ -55,6 +49,7 @@ export function IServiceCredentialsForm({
   onSaved,
   className = '',
 }: IServiceCredentialsFormProps) {
+  const { t } = useTranslation()
   const { setCredentials, isSubmitting } = useSetIServiceCredentials(tenantId, integrationId)
   const { status } = useIServiceCredentials(tenantId, integrationId)
   const [username, setUsername] = useState('')
@@ -63,27 +58,22 @@ export function IServiceCredentialsForm({
   const [usernameError, setUsernameError] = useState<string | null>(null)
   const [passwordError, setPasswordError] = useState<string | null>(null)
   const [submitError, setSubmitError] = useState<string | null>(null)
-  const [isLocked, setIsLocked] = useState(false)
+  const [isEditing, setIsEditing] = useState(false)
+  const [savedLocally, setSavedLocally] = useState(false)
   const [isPasswordVisible, setIsPasswordVisible] = useState(false)
-  const [isPlaceholder, setIsPlaceholder] = useState(false)
-
-  useEffect(() => {
-    if (status?.hasCredentials) {
-      setIsLocked(true)
-      setIsPlaceholder(true)
-    }
-  }, [status?.hasCredentials])
+  const isPlaceholder = Boolean(status?.hasCredentials) && !isEditing && !savedLocally
+  const isLocked = savedLocally || (Boolean(status?.hasCredentials) && !isEditing)
 
   const fieldsDisabled = isSubmitting || isLocked
 
   const handleEdit = () => {
-    setIsLocked(false)
+    setIsEditing(true)
+    setSavedLocally(false)
     if (isPlaceholder) {
       // Nunca houve valor real em memória (veio apenas do status do backend): limpa para digitação nova.
       setUsername('')
       setPassword('')
     }
-    setIsPlaceholder(false)
   }
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
@@ -94,14 +84,14 @@ export function IServiceCredentialsForm({
 
     let hasError = false
     if (!username.trim()) {
-      setUsernameError('Informe o usuário do iService.')
+      setUsernameError(t('integration.usernameRequired'))
       hasError = true
     } else {
       setUsernameError(null)
     }
 
     if (!password) {
-      setPasswordError('Informe a senha do iService.')
+      setPasswordError(t('integration.passwordRequired'))
       hasError = true
     } else {
       setPasswordError(null)
@@ -117,21 +107,22 @@ export function IServiceCredentialsForm({
 
     if (result.status === 'success') {
       // Mantém os valores visíveis, porém travados, para o usuário conferir o que foi salvo.
-      setIsLocked(true)
-      setIsPlaceholder(false)
+      setSavedLocally(true)
+      setIsEditing(false)
       onSaved()
       return
     }
 
-    setSubmitError(ERROR_MESSAGES[result.errorCode ?? 'unknown_error'])
+    const errorCode: SetCredentialsErrorCode = result.errorCode ?? 'unknown_error'
+    setSubmitError(t(`integration.saveErrors.${errorCode}`))
   }
 
   return (
     <div className={`rounded-md border border-slate-200 bg-white shadow-sm ${className}`}>
       <div className="border-b border-slate-200 px-5 py-4">
-        <h2 className="text-base font-semibold text-slate-950">Credenciais do iService</h2>
+        <h2 className="text-base font-semibold text-slate-950">{t('integration.credentialsTitle')}</h2>
         <p className="mt-1 max-w-3xl text-sm text-slate-600">
-          Acesso cifrado para o ciclo do coletor. As credenciais não são exibidas após o cadastro.
+          {t('integration.credentialsDescription')}
         </p>
       </div>
 
@@ -142,7 +133,7 @@ export function IServiceCredentialsForm({
             htmlFor="iservice-username"
             className="mb-1 block text-sm font-medium text-slate-700"
           >
-            Usuário
+            {t('integration.username')}
           </label>
           <input
             id="iservice-username"
@@ -168,7 +159,7 @@ export function IServiceCredentialsForm({
             htmlFor="iservice-password"
             className="mb-1 block text-sm font-medium text-slate-700"
           >
-            Senha
+            {t('integration.password')}
           </label>
           <div className="relative">
             <input
@@ -187,7 +178,7 @@ export function IServiceCredentialsForm({
               <button
                 type="button"
                 onClick={() => setIsPasswordVisible((visible) => !visible)}
-                aria-label={isPasswordVisible ? 'Ocultar senha' : 'Mostrar senha'}
+                aria-label={isPasswordVisible ? t('integration.hidePassword') : t('integration.showPassword')}
                 aria-pressed={isPasswordVisible}
                 className="absolute inset-y-0 right-0 flex items-center px-3 text-slate-500 hover:text-slate-700"
               >
@@ -212,10 +203,10 @@ export function IServiceCredentialsForm({
             htmlFor="iservice-base-url"
             className="mb-1 block text-sm font-medium text-slate-700"
           >
-            URL/tenant do iService{' '}
-            <span className="font-normal text-slate-500">(opcional)</span>
+            {t('integration.baseUrl')}{' '}
+            <span className="font-normal text-slate-500">{t('integration.optional')}</span>
           </label>{' '}
-          <InfoTooltip text="Endereço específico do iService do seu tenant (ex.: subdomínio dedicado do seu provedor). Deixe em branco para usar o endereço padrão — só preencha se o iService informou uma URL customizada para a sua empresa." />
+          <InfoTooltip text={t('integration.baseUrlHelp')} ariaLabel={t('integration.fieldHelp')} />
           <input
             id="iservice-base-url"
             type="text"
@@ -239,7 +230,7 @@ export function IServiceCredentialsForm({
               onClick={handleEdit}
               className="rounded-md bg-slate-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-slate-700 active:bg-slate-800"
             >
-              Editar credenciais
+              {t('integration.edit')}
             </button>
           ) : (
             <button
@@ -247,7 +238,7 @@ export function IServiceCredentialsForm({
               disabled={isSubmitting}
               className="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-700 active:bg-blue-800 disabled:cursor-not-allowed disabled:bg-slate-300"
             >
-              {isSubmitting ? 'Salvando...' : 'Salvar credenciais'}
+              {isSubmitting ? t('integration.saving') : t('integration.save')}
             </button>
           )}
         </div>

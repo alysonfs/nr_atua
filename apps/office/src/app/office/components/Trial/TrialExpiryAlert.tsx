@@ -1,4 +1,5 @@
 import { useUserTrial } from '../../hooks/useUserTrial'
+import { useTranslation } from 'react-i18next'
 
 interface TrialExpiryAlertProps {
   /**
@@ -41,6 +42,7 @@ export function TrialExpiryAlert({
   onClose,
   onActionClick,
 }: TrialExpiryAlertProps) {
+  const { t } = useTranslation()
   const { summary } = useUserTrial()
 
   // Only show when trial is about to expire
@@ -63,19 +65,19 @@ export function TrialExpiryAlert({
           {isUrgent ? (
             <>
               <h3 className="font-semibold">
-                Seu Trial expira em {summary.hoursRemaining} {summary.hoursRemaining === 1 ? 'hora' : 'horas'}!
+                {t('trial.alertHours', { count: summary.hoursRemaining })}
               </h3>
               <p className="text-sm opacity-90">
-                Faça upgrade agora para manter suas integrações ativas e dados seguros.
+                {t('trial.urgentAction')}
               </p>
             </>
           ) : (
             <>
               <h3 className="font-semibold">
-                Seu Trial expira em {summary.daysRemaining} {summary.daysRemaining === 1 ? 'dia' : 'dias'}.
+                {t('trial.alertDays', { count: summary.daysRemaining })}
               </h3>
               <p className="text-sm opacity-90">
-                Configure suas integrações agora ou faça upgrade para continuar usando o Atyno.
+                {t('trial.warningAction')}
               </p>
             </>
           )}
@@ -87,16 +89,16 @@ export function TrialExpiryAlert({
           <button
             onClick={onActionClick}
             className="whitespace-nowrap rounded-lg bg-red-600 px-4 py-2 font-semibold text-white transition-colors hover:bg-red-700 active:bg-red-800"
-            aria-label="Fazer upgrade"
+            aria-label={t('trial.upgrade')}
           >
-            Fazer Upgrade
+            {t('trial.upgrade')}
           </button>
         )}
         {showClose && (
           <button
             onClick={onClose}
             className="rounded-lg p-1 hover:bg-red-100 active:bg-red-200"
-            aria-label="Fechar aviso"
+            aria-label={t('trial.closeAlert')}
           >
             <span aria-hidden="true">✕</span>
           </button>

@@ -2,13 +2,14 @@ import { Link } from 'react-router-dom'
 import { Setting, Remind } from '@icon-park/react'
 import logoBgLight from '../../../../../../../assets/logo_bg_light.svg'
 import type { ReactNode } from 'react'
+import { useTranslation } from 'react-i18next'
 
 /**
  * Placeholder fake da marca do cliente. Upload real de marca é
  * planejado em RF-019 (docs/requirements/RF-019-upload-marca-cliente.md) e
  * ainda não está implementado — aqui apenas demarcamos a área no layout.
  */
-function ClientBrandPlaceholder() {
+function ClientBrandPlaceholder({ label }: { label: string }) {
   return (
     <div className="hidden items-center gap-2 rounded-md border border-white/10 bg-white/8 px-3 py-1.5 sm:flex">
       <span
@@ -17,7 +18,7 @@ function ClientBrandPlaceholder() {
       >
         NC
       </span>
-      <span className="text-sm font-medium text-slate-100">Nome do Cliente</span>
+      <span className="text-sm font-medium text-slate-100">{label}</span>
     </div>
   )
 }
@@ -49,6 +50,7 @@ interface DashboardHeaderProps {
 }
 
 export function DashboardHeader({ actions }: DashboardHeaderProps) {
+  const { t } = useTranslation()
   return (
     <header className="sticky top-0 z-40 border-b border-slate-800 bg-slate-950 text-white shadow-sm">
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
@@ -57,20 +59,20 @@ export function DashboardHeader({ actions }: DashboardHeaderProps) {
             <img src={logoBgLight} alt="Atyno" className="h-7 w-auto" />
           </span>
           <div className="hidden min-w-0 border-l border-white/10 pl-4 md:block">
-            <p className="text-xs font-medium uppercase text-slate-400">Office</p>
-            <p className="truncate text-sm font-semibold text-slate-100">Operações e integrações</p>
+            <p className="text-xs font-medium uppercase text-slate-400">{t('layout.office')}</p>
+            <p className="truncate text-sm font-semibold text-slate-100">{t('layout.subtitle')}</p>
           </div>
-          <ClientBrandPlaceholder />
+          <ClientBrandPlaceholder label={t('layout.clientName')} />
         </div>
 
         <div className="flex items-center gap-2 sm:gap-3">
           <DecorativeIcon
             icon={<Remind theme="outline" size={20} fill="#e2e8f0" />}
-            label="Alertas (área reservada)"
+            label={t('layout.alerts')}
           />
           <Link
             to="/settings"
-            aria-label="Configurações"
+            aria-label={t('layout.settings')}
             className="flex h-9 w-9 items-center justify-center rounded-md border border-white/10 bg-white/8 text-slate-200 transition hover:bg-white/14 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-400"
           >
             <Setting theme="outline" size={20} fill="#e2e8f0" />

@@ -1,6 +1,7 @@
 import { DesignatedOrdersTable } from '../components/DesignatedOrdersTable'
 import { SummaryMonth } from '../components/SummaryMonth'
 import { useMyTenants } from '../../office/hooks/useTenants'
+import { useTranslation } from 'react-i18next'
 
 /**
  * Dashboard: home pós-login do Office.
@@ -12,27 +13,28 @@ import { useMyTenants } from '../../office/hooks/useTenants'
  * (tenantId null) até que a seleção seja resolvida em outro ponto do app.
  */
 export function DashboardPage() {
+  const { t } = useTranslation()
   const { defaultTenantId, isLoading, isError } = useMyTenants()
 
   return (
     <div className="mx-auto w-full max-w-7xl space-y-5 px-4 py-6 sm:px-6 lg:px-8">
       <div className="border-b border-slate-200 pb-5">
-        <p className="text-xs font-semibold uppercase text-sky-700">Atyno</p>
-        <h1 className="mt-1 text-2xl font-semibold text-slate-950 sm:text-3xl">Dashboard</h1>
+        <p className="text-xs font-semibold uppercase text-sky-700">{t('dashboard.eyebrow')}</p>
+        <h1 className="mt-1 text-2xl font-semibold text-slate-950 sm:text-3xl">{t('dashboard.title')}</h1>
         <p className="mt-1 max-w-2xl text-sm text-slate-600">
-          Visão geral das ordens de serviço da sua operação.
+          {t('dashboard.subtitle')}
         </p>
       </div>
 
       {isLoading && (
         <p className="rounded-md border border-slate-200 bg-white px-4 py-3 text-sm text-slate-500">
-          Carregando dados da sua empresa...
+          {t('dashboard.loadingCompany')}
         </p>
       )}
 
       {!isLoading && isError && (
         <p role="alert" className="rounded-md border-l-4 border-red-500 bg-white p-4 text-sm text-red-800 shadow-sm">
-          Não foi possível carregar os dados da sua empresa. Tente novamente mais tarde.
+          {t('dashboard.companyError')}
         </p>
       )}
 

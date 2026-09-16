@@ -1,11 +1,12 @@
 import type { ColumnDef } from '@tanstack/react-table'
+import type { TFunction } from 'i18next'
 import type { DesignatedServiceOrder } from '../../hooks/useDesignatedServiceOrders'
 
 /**
  * Formata uma data ISO 8601 no padrão brasileiro (dd/mm/aaaa hh:mm).
  */
-function formatDateTime(isoDate: string): string {
-  return new Date(isoDate).toLocaleString('pt-BR', {
+function formatDateTime(isoDate: string, locale: string): string {
+  return new Date(isoDate).toLocaleString(locale, {
     day: '2-digit',
     month: '2-digit',
     year: 'numeric',
@@ -18,27 +19,32 @@ function formatDateTime(isoDate: string): string {
  * Definição das colunas da tabela de OS designadas, usada pelo
  * `@tanstack/react-table` via `useReactTable`.
  */
-export const designatedOrdersColumns: ColumnDef<DesignatedServiceOrder>[] = [
+export function createDesignatedOrdersColumns(
+  t: TFunction,
+  locale: string,
+): ColumnDef<DesignatedServiceOrder>[] {
+  return [
   {
     accessorKey: 'id',
     header: 'OS',
   },
   {
     accessorKey: 'providerId',
-    header: 'Nº da OS no provedor',
+    header: t('common.providerOrderNumber'),
   },
   {
     accessorKey: 'status',
-    header: 'Status',
+    header: t('common.status'),
   },
   {
     accessorKey: 'createdAt',
-    header: 'Criada em',
-    cell: (info) => formatDateTime(info.getValue<string>()),
+    header: t('common.createdAt'),
+    cell: (info) => formatDateTime(info.getValue<string>(), locale),
   },
   {
     accessorKey: 'updatedAt',
-    header: 'Atualizada em',
-    cell: (info) => formatDateTime(info.getValue<string>()),
+    header: t('common.updatedAt'),
+    cell: (info) => formatDateTime(info.getValue<string>(), locale),
   },
-]
+  ]
+}

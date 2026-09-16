@@ -7,6 +7,7 @@ import {
   searchTimezones,
 } from '../../lib/timezone'
 import type { TimezoneOption } from '../../../../shared/types/timezone'
+import { useTranslation } from 'react-i18next'
 
 interface TimezonePicerProps {
   /**
@@ -58,6 +59,7 @@ export function TimezonePicker({
   isModal = false,
   onClose,
 }: TimezonePicerProps) {
+  const { t } = useTranslation()
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedTz, setSelectedTz] = useState(currentTimezone)
 
@@ -92,22 +94,22 @@ export function TimezonePicker({
       {/* Header */}
       <div className="border-b border-slate-200 p-4">
         <h2 className="mb-3 font-semibold text-slate-900">
-          Selecionar Fuso Horário
+          {t('timezone.pickerTitle')}
         </h2>
         <div className="relative">
           <input
             type="text"
-            placeholder="Pesquisar fuso horário..."
+            placeholder={t('timezone.search')}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-            aria-label="Pesquisar fuso horário"
+            aria-label={t('timezone.search')}
           />
           {searchQuery && (
             <button
               onClick={() => setSearchQuery('')}
               className="absolute right-3 top-2 text-slate-400 hover:text-slate-600"
-              aria-label="Limpar pesquisa"
+              aria-label={t('timezone.clearSearch')}
             >
               ✕
             </button>
@@ -120,7 +122,7 @@ export function TimezonePicker({
         <div className="border-b border-slate-200">
           <div className="px-4 py-2">
             <p className="text-xs font-semibold text-slate-600 uppercase tracking-wider">
-              Sugerido
+              {t('timezone.suggested')}
             </p>
           </div>
           <TimezoneSuggestedItem
@@ -137,7 +139,7 @@ export function TimezonePicker({
         <div className="border-b border-slate-200">
           <div className="px-4 py-2">
             <p className="text-xs font-semibold text-slate-600 uppercase tracking-wider">
-              Seu Fuso Atual
+              {t('timezone.currentSection')}
             </p>
           </div>
           <TimezoneSuggestedItem
@@ -153,7 +155,7 @@ export function TimezonePicker({
       <div className="max-h-96 overflow-y-auto">
         {displayedTimezones.length === 0 ? (
           <div className="px-4 py-8 text-center text-sm text-slate-500">
-            Nenhum fuso horário encontrado
+            {t('timezone.empty')}
           </div>
         ) : (
           <div className="divide-y divide-slate-100">
@@ -177,7 +179,7 @@ export function TimezonePicker({
             onClick={onClose}
             className="rounded-lg px-4 py-2 font-medium text-slate-700 hover:bg-slate-100 active:bg-slate-200"
           >
-            Cancelar
+            {t('timezone.cancel')}
           </button>
           <button
             onClick={() => {
@@ -186,7 +188,7 @@ export function TimezonePicker({
             }}
             className="rounded-lg bg-blue-600 px-4 py-2 font-medium text-white hover:bg-blue-700 active:bg-blue-800"
           >
-            Salvar
+            {t('timezone.save')}
           </button>
         </div>
       )}
@@ -210,6 +212,7 @@ function TimezoneItem({
   isCurrent,
   onSelect,
 }: TimezoneItemProps) {
+  const { t } = useTranslation()
   return (
     <button
       onClick={() => onSelect(option.timezone)}
@@ -229,7 +232,7 @@ function TimezoneItem({
           <span className="text-sm font-semibold text-slate-600">{option.offset}</span>
           {isCurrent && (
             <span className="rounded-full bg-emerald-100 px-2 py-1 text-xs font-semibold text-emerald-700">
-              Atual
+              {t('timezone.current')}
             </span>
           )}
           {isSelected && !isCurrent && (
@@ -252,6 +255,7 @@ function TimezoneSuggestedItem({
   isCurrent,
   onSelect,
 }: Omit<TimezoneItemProps, 'option'> & { timezone: string }) {
+  const { t } = useTranslation()
   const offset = formatUTCOffset(getUTCOffset(timezone))
 
   return (
@@ -273,7 +277,7 @@ function TimezoneSuggestedItem({
           <span className="text-sm font-semibold text-slate-600">{offset}</span>
           {isCurrent && (
             <span className="rounded-full bg-emerald-100 px-2 py-1 text-xs font-semibold text-emerald-700">
-              Atual
+              {t('timezone.current')}
             </span>
           )}
         </div>

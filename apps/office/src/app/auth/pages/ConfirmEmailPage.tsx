@@ -3,8 +3,10 @@ import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { toast } from 'react-toastify'
+import { useTranslation } from 'react-i18next'
 import { ApiError, apiClient } from '../../../shared/lib/apiClient'
-import { confirmEmailSchema, type ConfirmEmailFormValues } from '../schemas'
+import { AuthLanguageSelector } from '../AuthLanguageSelector'
+import { createConfirmEmailSchema, type ConfirmEmailFormValues } from '../schemas'
 import logoBgLight from '../../../../../../assets/logo_bg_light.svg'
 import logoBgDark from '../../../../../../assets/logo_bg_dark.svg'
 
@@ -14,6 +16,7 @@ interface LocationState {
 }
 
 export function ConfirmEmailPage() {
+  const { t } = useTranslation()
   const navigate = useNavigate()
   const location = useLocation()
   const locationState = (location.state ?? {}) as LocationState
@@ -28,7 +31,7 @@ export function ConfirmEmailPage() {
     getValues,
     formState: { errors, isSubmitting },
   } = useForm<ConfirmEmailFormValues>({
-    resolver: zodResolver(confirmEmailSchema),
+    resolver: zodResolver(createConfirmEmailSchema(t)),
     defaultValues: { email: knownEmail, code: '' },
   })
 
@@ -39,7 +42,7 @@ export function ConfirmEmailPage() {
   async function onResendCode() {
     const email = getValues('email') || knownEmail
     if (!email) {
-      setError('Informe o e-mail para reenviar o código.')
+      setError(t('auth.confirm.resendEmailRequired'))
       return
     }
 
@@ -48,9 +51,9 @@ export function ConfirmEmailPage() {
 
     try {
       await apiClient.post('/auth/resend-confirmation', { email })
-      toast.success('Código reenviado! Confira sua caixa de entrada.')
+      toast.success(t('auth.confirm.resendSuccess'))
     } catch {
-      toast.error('Não foi possível reenviar o código. Tente novamente mais tarde.')
+      toast.error(t('auth.confirm.resendError'))
     } finally {
       setIsResending(false)
     }
@@ -61,40 +64,40 @@ export function ConfirmEmailPage() {
 
     try {
       await apiClient.post('/auth/confirm-email', values)
-      toast.success('E-mail confirmado! Você já pode entrar.')
+      toast.success(t('auth.confirm.success'))
       void navigate('/login', {
         state: { emailConfirmed: true },
       })
     } catch (err) {
       if (err instanceof ApiError) {
         if (err.status === 400 && err.code === 'invalid_code') {
-          setError('Código inválido. Verifique o e-mail e tente novamente.')
+          setError(t('auth.confirm.invalidCode'))
         } else if (err.status === 400 && err.code === 'expired_code') {
-          setError('Código expirado. Solicite um novo código e tente novamente.')
+          setError(t('auth.confirm.expiredCode'))
         } else if (err.status === 409 && err.code === 'email_already_confirmed') {
-          setError('Este e-mail já foi confirmado. Você já pode entrar.')
+          setError(t('auth.confirm.alreadyConfirmed'))
         } else {
-          setError('Não foi possível confirmar o e-mail. Tente novamente mais tarde.')
-          toast.error('Não foi possível confirmar o e-mail. Tente novamente mais tarde.')
+          setError(t('auth.confirm.genericError'))
+          toast.error(t('auth.confirm.genericError'))
         }
       } else {
-        setError('Não foi possível confirmar o e-mail. Tente novamente mais tarde.')
-        toast.error('Não foi possível confirmar o e-mail. Tente novamente mais tarde.')
+        setError(t('auth.confirm.genericError'))
+        toast.error(t('auth.confirm.genericError'))
       }
     }
   }
 
   return (
-    <main className="flex min-h-screen w-full bg-[#f8fafc]">
+    <main className="relative flex min-h-screen w-full bg-[#f8fafc]">
+      <AuthLanguageSelector />
       {/* Coluna institucional (oculta em telas pequenas) */}
       <div className="hidden flex-1 flex-col justify-between bg-[#0f172a] p-20 lg:flex">
         <img src={logoBgDark} alt="Atyno" className="h-[70px] w-[240px]" />
 
         <div className="flex flex-col gap-6">
-          <p className="text-4xl leading-tight font-bold text-white">Só falta um passo</p>
+          <p className="text-4xl leading-tight font-bold text-white">{t('auth.confirm.sideTitle')}</p>
           <p className="text-[15px] leading-relaxed text-[#64748b]">
-            Digite o código que enviamos para o seu e-mail e comece a usar o
-            Atyno.
+            {t('auth.confirm.sideDescription')}
           </p>
         </div>
 
@@ -112,9 +115,9 @@ export function ConfirmEmailPage() {
             </svg>
           </div>
           <div>
-            <p className="text-sm font-semibold text-white">Ambiente 100% seguro</p>
+            <p className="text-sm font-semibold text-white">{t('auth.institutional.secureTitle')}</p>
             <p className="text-xs text-[#64748b]">
-              Criptografia de ponta a ponta na sua infraestrutura técnica.
+              {t('auth.institutional.secureDescription')}
             </p>
           </div>
         </div>
@@ -128,19 +131,19 @@ export function ConfirmEmailPage() {
 
           <div className="mb-8">
             <h1 className="text-[32px] leading-tight font-bold text-[#0e1a30]">
-              Confirme seu e-mail
+              {t('auth.confirm.title')}
             </h1>
             <p className="mt-2 text-base text-[#64748b]">
               {hasKnownEmail
-                ? 'Digite abaixo o código que enviamos para o seu e-mail.'
-                : 'Informe seu e-mail e o código de confirmação recebido.'}
+                ? t('auth.confirm.knownEmailSubtitle')
+                : t('auth.confirm.unknownEmailSubtitle')}
             </p>
           </div>
 
           {locationState.fromSignUp && (
             <div className="mb-6 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3">
               <p className="text-sm text-blue-800">
-                Conta criada! Verifique sua caixa de entrada e insira o código de confirmação abaixo.
+                {t('auth.confirm.accountCreated')}
               </p>
             </div>
           )}
@@ -152,14 +155,14 @@ export function ConfirmEmailPage() {
                 // informação, não como campo editável, mas o valor continua
                 // fazendo parte do formulário (enviado no POST).
                 <div>
-                  <span className="mb-2 block text-sm font-semibold text-[#0e1a30]">E-mail</span>
+                  <span className="mb-2 block text-sm font-semibold text-[#0e1a30]">{t('common.email')}</span>
                   <p className="text-base text-[#0e1a30]">{knownEmail}</p>
                   <input type="hidden" {...register('email')} />
                 </div>
               ) : (
                 <div>
                   <label htmlFor="email" className="mb-2 block text-sm font-semibold text-[#0e1a30]">
-                    E-mail
+                    {t('common.email')}
                   </label>
                   <input
                     id="email"
@@ -167,7 +170,7 @@ export function ConfirmEmailPage() {
                     autoComplete="email"
                     {...register('email')}
                     className="input input-bordered w-full border-[#e2e8f0] bg-white text-[#0e1a30] focus:border-[#3b82f6]"
-                    placeholder="seuemail@empresa.com"
+                    placeholder={t('auth.signIn.emailPlaceholder')}
                   />
                   {errors.email && (
                     <p className="mt-1.5 text-sm text-red-700">{errors.email.message}</p>
@@ -177,7 +180,7 @@ export function ConfirmEmailPage() {
 
               <div>
                 <label htmlFor="code" className="mb-2 block text-sm font-semibold text-[#0e1a30]">
-                  Código de confirmação
+                  {t('auth.confirm.code')}
                 </label>
                 <input
                   id="code"
@@ -196,7 +199,7 @@ export function ConfirmEmailPage() {
                   className="mt-2 text-sm font-semibold text-[#3b82f6] hover:underline disabled:cursor-not-allowed disabled:opacity-60"
                   aria-busy={isResending}
                 >
-                  {isResending ? 'Reenviando...' : 'Não recebeu o código? Reenviar'}
+                  {isResending ? t('auth.confirm.resending') : t('auth.confirm.resend')}
                 </button>
               </div>
 
@@ -212,25 +215,25 @@ export function ConfirmEmailPage() {
                 aria-busy={isSubmitting}
               >
                 {isSubmitting ? (
-                  <span className="loading loading-spinner loading-sm" />
+                  <><span className="loading loading-spinner loading-sm" />{t('auth.confirm.submitting')}</>
                 ) : (
-                  'Confirmar e-mail'
+                  t('auth.confirm.submit')
                 )}
               </button>
             </fieldset>
           </form>
 
           <p className="mt-6 text-center text-sm text-[#64748b]">
-            Já confirmou?{' '}
+            {t('auth.confirm.alreadyConfirmedPrompt')}{' '}
             <Link to="/login" className="font-semibold text-[#3b82f6] hover:underline">
-              Entrar
+              {t('auth.confirm.backToSignIn')}
             </Link>
           </p>
 
           <hr className="my-8 border-[#e2e8f0]" />
 
           <p className="text-center text-xs text-[#64748b]">
-            Atyno — Plataforma operacional para empresas de serviços técnicos.
+            {t('common.footer')}
           </p>
         </div>
       </div>

@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import type { TenantMembershipDTO } from '../../../../shared/types/tenant'
+import { useTranslation } from 'react-i18next'
 
 interface TenantSelectorProps {
   tenants: TenantMembershipDTO[]
@@ -14,6 +15,7 @@ interface TenantSelectorProps {
  * troca de tenant obrigatória no MVP).
  */
 export function TenantSelector({ tenants, onSelect, className = '' }: TenantSelectorProps) {
+  const { t } = useTranslation()
   const [selected, setSelected] = useState('')
 
   if (tenants.length === 0) {
@@ -22,13 +24,13 @@ export function TenantSelector({ tenants, onSelect, className = '' }: TenantSele
 
   return (
     <div className={`rounded-lg border border-slate-200 bg-white p-6 shadow-sm ${className}`}>
-      <h2 className="mb-1 text-lg font-semibold text-slate-900">Selecione uma empresa</h2>
+      <h2 className="mb-1 text-lg font-semibold text-slate-900">{t('onboarding.selectTitle')}</h2>
       <p className="mb-4 text-sm text-slate-600">
-        Você possui acesso a mais de uma empresa. Escolha qual deseja acessar.
+        {t('onboarding.selectDescription')}
       </p>
 
       <label htmlFor="tenant-select" className="sr-only">
-        Empresa
+        {t('onboarding.company')}
       </label>
       <select
         id="tenant-select"
@@ -37,7 +39,7 @@ export function TenantSelector({ tenants, onSelect, className = '' }: TenantSele
         className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
       >
         <option value="" disabled>
-          Selecione...
+          {t('onboarding.selectPlaceholder')}
         </option>
         {tenants.map((tenant) => (
           <option key={tenant.tenantId} value={tenant.tenantId}>
@@ -52,7 +54,7 @@ export function TenantSelector({ tenants, onSelect, className = '' }: TenantSele
         onClick={() => onSelect(selected)}
         className="mt-4 w-full rounded-lg bg-blue-600 px-4 py-2 font-semibold text-white transition-colors hover:bg-blue-700 active:bg-blue-800 disabled:cursor-not-allowed disabled:bg-slate-300"
       >
-        Acessar
+        {t('common.access')}
       </button>
     </div>
   )

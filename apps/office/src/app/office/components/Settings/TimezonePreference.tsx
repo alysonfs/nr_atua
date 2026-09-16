@@ -2,6 +2,7 @@ import { useCallback, useState } from 'react'
 import { useTimezone } from '../../hooks/useTimezone'
 import { formatUTCOffset, getUTCOffset, formatTimezoneDisplayName, getSuggestedTimezone } from '../../lib/timezone'
 import TimezonePicker from './TimezonePicker'
+import { useTranslation } from 'react-i18next'
 
 interface TimezonePreferenceProps {
   /**
@@ -38,6 +39,7 @@ export function TimezonePreference({
   showCard = true,
   onTimezoneUpdated,
 }: TimezonePreferenceProps) {
+  const { t } = useTranslation()
   const { currentTimezone, updateTimezone, isLoading, error } = useTimezone()
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [updateError, setUpdateError] = useState<string | null>(null)
@@ -51,11 +53,11 @@ export function TimezonePreference({
         setIsModalOpen(false)
         onTimezoneUpdated?.(newTimezone)
       } catch (err) {
-        const errorMessage = err instanceof Error ? err.message : 'Falha ao atualizar fuso horário'
+        const errorMessage = err instanceof Error ? err.message : t('timezone.updateError')
         setUpdateError(errorMessage)
       }
     },
-    [updateTimezone, onTimezoneUpdated]
+    [onTimezoneUpdated, t, updateTimezone]
   )
 
   const offset = formatUTCOffset(getUTCOffset(currentTimezone))
@@ -65,9 +67,9 @@ export function TimezonePreference({
   const content = (
     <div className={`space-y-3 ${className}`}>
       <div>
-        <h3 className="text-sm font-semibold text-slate-900">Fuso Horário</h3>
+        <h3 className="text-sm font-semibold text-slate-900">{t('timezone.title')}</h3>
         <p className="text-xs text-slate-600">
-          Todas as datas são armazenadas em UTC e exibidas no seu fuso horário selecionado.
+          {t('timezone.description')}
         </p>
       </div>
 
@@ -83,9 +85,9 @@ export function TimezonePreference({
           onClick={() => setIsModalOpen(true)}
           disabled={isLoading}
           className="rounded-lg bg-blue-600 px-4 py-2 font-medium text-white transition-colors hover:bg-blue-700 disabled:bg-slate-400 disabled:cursor-not-allowed active:bg-blue-800"
-          aria-label="Alterar fuso horário"
+          aria-label={t('timezone.changeAria')}
         >
-          {isLoading ? 'Salvando...' : 'Alterar'}
+          {isLoading ? t('common.saving') : t('common.change')}
         </button>
       </div>
 
@@ -93,7 +95,7 @@ export function TimezonePreference({
       {(error || updateError) && (
         <div className="rounded-lg border border-red-200 bg-red-50 p-3">
           <p className="text-sm text-red-800">
-            {updateError || error || 'Falha ao atualizar fuso horário'}
+            {updateError || error || t('timezone.updateError')}
           </p>
         </div>
       )}
