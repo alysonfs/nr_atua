@@ -23,7 +23,10 @@ public sealed class WorkOrderListByStatusQueryHandler(AtuaDbContext dbContext) :
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
             .Select(workOrder => new WorkOrderListItemResult(workOrder.Id, workOrder.ProviderId,
-                workOrder.Status, workOrder.CreatedAt, workOrder.UpdatedAt))
+                workOrder.Status, workOrder.CreatedAt, workOrder.UpdatedAt,
+                workOrder.ProviderCreatedAt, workOrder.ProviderUpdatedAt,
+                workOrder.ProductModel, workOrder.ProductBrand, workOrder.CustomerName,
+                workOrder.CityName))
             .ToListAsync(cancellationToken);
 
         return new WorkOrderListResult(status, page, pageSize, totalCount, items);

@@ -1,7 +1,11 @@
-import { DesignatedOrdersTable } from '../components/DesignatedOrdersTable'
+import { useState } from 'react'
+import { ServiceOrdersTable } from '../components/ServiceOrdersTable'
 import { StatusSummary } from '../components/StatusSummary'
 import { useMyTenants } from '../../office/hooks/useTenants'
 import { useTranslation } from 'react-i18next'
+
+/** Status inicial exibido na tabela de OS ao carregar o Dashboard (RN do card padrão). */
+const DEFAULT_STATUS = 'Designado'
 
 /**
  * Dashboard: home pós-login do Office.
@@ -15,6 +19,7 @@ import { useTranslation } from 'react-i18next'
 export function DashboardPage() {
   const { t } = useTranslation()
   const { defaultTenantId, isLoading, isError } = useMyTenants()
+  const [selectedStatus, setSelectedStatus] = useState(DEFAULT_STATUS)
 
   return (
     <div className="mx-auto w-full max-w-7xl space-y-5 px-4 py-6 sm:px-6 lg:px-8">
@@ -40,8 +45,8 @@ export function DashboardPage() {
 
       {!isLoading && !isError && (
         <>
-          <StatusSummary tenantId={defaultTenantId} />
-          <DesignatedOrdersTable tenantId={defaultTenantId} />
+          <StatusSummary tenantId={defaultTenantId} selectedStatus={selectedStatus} onSelectStatus={setSelectedStatus} />
+          <ServiceOrdersTable tenantId={defaultTenantId} status={selectedStatus} />
         </>
       )}
     </div>

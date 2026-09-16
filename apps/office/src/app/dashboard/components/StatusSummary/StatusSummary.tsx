@@ -6,6 +6,10 @@ import { getProviderStatusAccentColor, translateProviderStatus } from '../../lib
 interface StatusSummaryProps {
   /** Tenant ativo do usuário (ver useMyTenants().defaultTenantId). */
   tenantId: string | null
+  /** Status atualmente selecionado (raw, sem tradução) para destacar o card correspondente. */
+  selectedStatus: string
+  /** Disparado ao clicar em um card, com o status raw (sem tradução). */
+  onSelectStatus: (status: string) => void
 }
 
 /**
@@ -13,9 +17,10 @@ interface StatusSummaryProps {
  * pelo status ATUAL (RF-017), sem recorte de mês/série diária (ADR-027).
  *
  * Integra com GET /api/tenants/{tenantId}/work-orders/status-summary (ver
- * useWorkOrderStatusSummary).
+ * useWorkOrderStatusSummary). Cada card é clicável e filtra a tabela de OS
+ * abaixo pelo status selecionado.
  */
-export function StatusSummary({ tenantId }: StatusSummaryProps) {
+export function StatusSummary({ tenantId, selectedStatus, onSelectStatus }: StatusSummaryProps) {
   const { t } = useTranslation()
   const { summary, isLoading, isError } = useWorkOrderStatusSummary(tenantId)
 
@@ -45,6 +50,8 @@ export function StatusSummary({ tenantId }: StatusSummaryProps) {
               status={translateProviderStatus(status, t)}
               total={total}
               accentColor={getProviderStatusAccentColor(status)}
+              isSelected={status.toLocaleLowerCase() === selectedStatus.toLocaleLowerCase()}
+              onSelect={() => onSelectStatus(status)}
             />
           ))}
         </div>

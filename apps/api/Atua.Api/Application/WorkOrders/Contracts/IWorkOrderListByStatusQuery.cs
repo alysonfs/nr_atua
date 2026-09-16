@@ -25,4 +25,10 @@ public sealed record WorkOrderListItemResult(
     string ProviderId,
     string Status,
     DateTimeOffset CreatedAt,
-    DateTimeOffset UpdatedAt);
+    DateTimeOffset UpdatedAt,
+    DateTimeOffset? ProviderCreatedAt,
+    DateTimeOffset? ProviderUpdatedAt,
+    string? ProductModel,
+    string? ProductBrand,
+    string? CustomerName,
+    string? CityName);

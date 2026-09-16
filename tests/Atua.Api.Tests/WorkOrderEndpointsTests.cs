@@ -139,6 +139,43 @@ public class WorkOrderEndpointsTests
     }
 
     [Fact]
+    public async Task GetListByStatusRetornaCamposDescritivosDoProvedor()
+    {
+        var (app, databaseName) = await CreateApplicationAsync();
+        await using var appDisposable = app;
+        var userId = Guid.CreateVersion7();
+        var tenantId = await SeedTenantWithMembershipAsync(databaseName, userId);
+
+        await using (var context = CreateContext(databaseName))
+        {
+            var order = new WorkOrder(Guid.CreateVersion7(), tenantId, "OS-1", "Designado", DateTimeOffset.UtcNow);
+            order.UpdateDetails(new WorkOrderDetails(
+                ProviderCreatedAt: new DateTimeOffset(2026, 9, 1, 9, 0, 0, TimeSpan.Zero),
+                ProviderUpdatedAt: new DateTimeOffset(2026, 9, 2, 9, 0, 0, TimeSpan.Zero),
+                CustomerType: null, CustomerName: "Maria Souza", CustomerCpf: null,
+                ContactEmail: null, ContactPhone: null, ContactName: null,
+                Address: null, ZipCode: null, CountryName: null, StateName: null, CityName: "Natal",
+                ProductBrand: "Consul", PdCode: null, CategoryId: null, ProductCategoryCode: null,
+                ProductCode: null, ProductModel: "CRM43", ProductStatus: null, Symptom: null),
+                DateTimeOffset.UtcNow);
+            context.WorkOrders.Add(order);
+            await context.SaveChangesAsync();
+        }
+
+        var client = CreateAuthenticatedClient(app, userId);
+        var response = await client.GetAsync($"/api/tenants/{tenantId}/work-orders?status=Designado");
+        var body = await response.Content.ReadFromJsonAsync<WorkOrderListResponse>();
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var item = body!.Items.Single();
+        Assert.Equal("Maria Souza", item.CustomerName);
+        Assert.Equal("CRM43", item.ProductModel);
+        Assert.Equal("Consul", item.ProductBrand);
+        Assert.Equal("Natal", item.CityName);
+        Assert.Equal(new DateTimeOffset(2026, 9, 1, 9, 0, 0, TimeSpan.Zero), item.ProviderCreatedAt);
+    }
+
+    [Fact]
     public async Task GetStatusSummaryRetorna403QuandoUsuarioNaoEMembroDoTenant()
     {
         var (app, databaseName) = await CreateApplicationAsync();

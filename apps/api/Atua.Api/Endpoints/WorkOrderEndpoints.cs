@@ -80,7 +80,8 @@ public static class WorkOrderEndpoints
             result.TotalCount,
             result.Items
                 .Select(item => new WorkOrderListItem(item.Id, item.ProviderId, item.Status, item.CreatedAt,
-                    item.UpdatedAt))
+                    item.UpdatedAt, item.ProviderCreatedAt, item.ProviderUpdatedAt, item.ProductModel,
+                    item.ProductBrand, item.CustomerName, item.CityName))
                 .ToArray());
 
         return Results.Ok(response);
@@ -138,7 +139,9 @@ public sealed record WorkOrderListResponse(string Status, int Page, int PageSize
     IReadOnlyList<WorkOrderListItem> Items);
 
 public sealed record WorkOrderListItem(Guid Id, string ProviderId, string Status,
-    DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt);
+    DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt,
+    DateTimeOffset? ProviderCreatedAt, DateTimeOffset? ProviderUpdatedAt,
+    string? ProductModel, string? ProductBrand, string? CustomerName, string? CityName);
 
 public sealed record WorkOrderStatusSummaryResponse(IReadOnlyList<WorkOrderStatusCount> Statuses);
 

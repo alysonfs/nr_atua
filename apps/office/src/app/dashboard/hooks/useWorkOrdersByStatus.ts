@@ -3,32 +3,37 @@ import { apiClient } from '../../../shared/lib/apiClient'
 
 /**
  * RF-017: status de OS é uma string livre (sem enum fixo). Este hook expõe
- * as ordens de serviço atualmente com status "Designado" para exibição na
- * tabela do Dashboard.
+ * a listagem paginada de ordens de serviço filtradas por um status
+ * qualquer (card selecionado no resumo do Dashboard).
  *
- * GET /api/tenants/{tenantId}/work-orders?status=Designado&page=1&pageSize=100
+ * GET /api/tenants/{tenantId}/work-orders?status=&page=&pageSize=
  *
  * Ver docs/architecture/dashboard-work-order-queries.md (Endpoint 2) para o
- * contrato completo. Decisão: sem paginação visual por ora, usamos
- * `pageSize=100` (o máximo aceito pela API) numa única página — o volume
- * esperado de OS designadas simultaneamente é baixo no MVP; se isso mudar,
- * a UI de paginação deve ser adicionada em etapa futura.
- *
- * `providerId` é o identificador EXTERNO da própria OS no sistema de
- * origem (não o nome/empresa do provedor) — por isso não existe
- * `providerName` no contrato real.
+ * contrato completo.
  */
-export interface DesignatedServiceOrder {
+export interface WorkOrderListItem {
   /** Identificador da OS (Atua). */
   id: string
   /** Identificador externo da OS no sistema de origem do provedor. */
   providerId: string
-  /** Status cru da OS (RF-017). Nesta tabela, sempre "Designado". */
+  /** Status cru da OS (RF-017). */
   status: string
-  /** Data/hora de criação da OS (ISO 8601). */
+  /** Data/hora de criação da OS no Atua (ISO 8601). */
   createdAt: string
-  /** Data/hora da última atualização da OS (ISO 8601). */
+  /** Data/hora da última atualização da OS no Atua (ISO 8601). */
   updatedAt: string
+  /** Data de criação da OS informada pelo provedor (ISO 8601). */
+  providerCreatedAt: string | null
+  /** Data da última atualização da OS informada pelo provedor (ISO 8601). */
+  providerUpdatedAt: string | null
+  /** Modelo do equipamento. */
+  productModel: string | null
+  /** Marca do equipamento. */
+  productBrand: string | null
+  /** Nome do consumidor. */
+  customerName: string | null
+  /** Cidade do endereço do consumidor. */
+  cityName: string | null
 }
 
 interface WorkOrderListResponse {
@@ -36,21 +41,24 @@ interface WorkOrderListResponse {
   page: number
   pageSize: number
   totalCount: number
-  items: DesignatedServiceOrder[]
+  items: WorkOrderListItem[]
 }
 
-const DESIGNATED_STATUS = 'Designado'
-const PAGE_SIZE = 100
-
 /**
- * Busca a lista de OS com status "Designado" do tenant ativo.
+ * Busca a lista paginada de OS filtradas por status para o tenant ativo.
  *
  * `tenantId` deve vir do tenant ativo do usuário (ver useMyTenants(), no
  * padrão já usado por SettingsPage.tsx). Enquanto `tenantId` for `null`
  * (tenant ainda não resolvido), nenhuma requisição é disparada.
  */
-export function useDesignatedServiceOrders(tenantId: string | null) {
-  const [orders, setOrders] = useState<DesignatedServiceOrder[]>([])
+export function useWorkOrdersByStatus(
+  tenantId: string | null,
+  status: string,
+  page: number,
+  pageSize: number,
+) {
+  const [orders, setOrders] = useState<WorkOrderListItem[]>([])
+  const [totalCount, setTotalCount] = useState(0)
   const [isLoading, setIsLoading] = useState(true)
   const [isError, setIsError] = useState(false)
 
@@ -63,6 +71,7 @@ export function useDesignatedServiceOrders(tenantId: string | null) {
       if (!tenantId) {
         setIsLoading(false)
         setOrders([])
+        setTotalCount(0)
         return
       }
 
@@ -71,14 +80,16 @@ export function useDesignatedServiceOrders(tenantId: string | null) {
 
       try {
         const response = await apiClient.get<WorkOrderListResponse>(
-          `/api/tenants/${tenantId}/work-orders?status=${DESIGNATED_STATUS}&page=1&pageSize=${PAGE_SIZE}`,
+          `/api/tenants/${tenantId}/work-orders?status=${encodeURIComponent(status)}&page=${page}&pageSize=${pageSize}`,
         )
         if (isCancelled) return
         setOrders(response?.items ?? [])
+        setTotalCount(response?.totalCount ?? 0)
       } catch {
         if (isCancelled) return
         setIsError(true)
         setOrders([])
+        setTotalCount(0)
       } finally {
         if (!isCancelled) setIsLoading(false)
       }
@@ -87,7 +98,7 @@ export function useDesignatedServiceOrders(tenantId: string | null) {
     return () => {
       isCancelled = true
     }
-  }, [tenantId])
+  }, [tenantId, status, page, pageSize])
 
-  return { orders, isLoading, isError }
+  return { orders, totalCount, isLoading, isError }
 }
