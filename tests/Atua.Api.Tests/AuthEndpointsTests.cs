@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 namespace Atua.Api.Tests;
 
@@ -69,12 +70,17 @@ public class AuthEndpointsTests
             options.UseInMemoryDatabase(databaseName));
         builder.Services.AddSingleton<TimeProvider>(TimeProvider.System);
         builder.Services.AddSingleton<ISecretHasher, FakeSecretHasher>();
+        builder.Services.AddSingleton<ITokenHashService, TokenHashService>();
+        builder.Services.AddScoped<IRefreshTokenStore, RefreshTokenStore>();
+        builder.Services.Configure<AuthOptions>(options =>
+            options.SigningKey = "01234567890123456789012345678901");
         builder.Services.AddSingleton<IEmailConfirmationCodeGenerator,
             FixedEmailConfirmationCodeGenerator>();
         builder.Services.AddSingleton<IEmailConfirmationSender,
             FakeEmailConfirmationSender>();
         builder.Services.AddScoped<SignUpService>();
         builder.Services.AddScoped<ConfirmEmailService>();
+        builder.Services.AddScoped<AuthService>();
 
         var app = builder.Build();
         app.MapAuthEndpoints();

@@ -1,0 +1,135 @@
+{
+  "info": {
+    "name": "ATUA Collector - estudo do fluxo",
+    "_postman_id": "a4f4f4b4-3a3e-4f5f-9b9b-collector-study",
+    "description": "Colecao para estudar e validar o fluxo entre o Worker Collector e a API ATUA. Ordem recomendada: 01 Health -> 02 Claim -> 03 Eligibility -> 04 Complete. O Collector chama a API durante o polling; depois da coleta, persiste no MongoDB e envia Complete. Nunca compartilhe respostas de Claim: elas podem conter credenciais em claro.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:5240", "type": "string" },
+    { "key": "claimToken", "value": "REPLACE_WITH_CLAIM_TOKEN", "type": "string" },
+    { "key": "eligibilityToken", "value": "REPLACE_WITH_ELIGIBILITY_TOKEN", "type": "string" },
+    { "key": "completeToken", "value": "REPLACE_WITH_COMPLETE_TOKEN", "type": "string" },
+    { "key": "commandId", "value": "REPLACE_WITH_COMMAND_ID", "type": "string" },
+    { "key": "lastClaimStatus", "value": "", "type": "string" },
+    { "key": "lastClaimAt", "value": "", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "01 - API health",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "description": "Checa apenas se a API esta viva. Nao verifica se o Collector esta vivo nem se o Postgres/MongoDB estao saudaveis.",
+        "url": { "raw": "{{baseUrl}}/health", "host": [ "{{baseUrl}}" ], "path": [ "health" ] }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": { "type": "text/javascript", "exec": [
+            "pm.test('API responde 200', function () { pm.response.to.have.status(200); });",
+            "pm.test('API informa healthy', function () { pm.expect(pm.response.json().status).to.eql('healthy'); });"
+          ] }
+        }
+      ]
+    },
+    {
+      "name": "02 - Collector claim",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{claimToken}}" }
+        ],
+        "description": "Simula o polling do Collector. 204 significa que nao ha comando. 200 entrega um comando e credenciais em claro. O Worker segue para eligibility antes de acessar o iService.",
+        "url": { "raw": "{{baseUrl}}/api/internal/collector/commands/claim", "host": [ "{{baseUrl}}" ], "path": [ "api", "internal", "collector", "commands", "claim" ] }
+      },
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": { "type": "text/javascript", "exec": [
+            "pm.variables.set('lastClaimAt', new Date().toISOString());",
+            "if (pm.variables.get('claimToken').startsWith('REPLACE_')) { console.warn('Configure claimToken antes de executar.'); }"
+          ] }
+        },
+        {
+          "listen": "test",
+          "script": { "type": "text/javascript", "exec": [
+            "pm.variables.set('lastClaimStatus', String(pm.response.code));",
+            "pm.test('Claim retorna 200 ou 204', function () { pm.expect([200, 204]).to.include(pm.response.code); });",
+            "if (pm.response.code === 200) {",
+            "  const body = pm.response.json();",
+            "  pm.test('Claim possui commandId', function () { pm.expect(body.commandId).to.be.a('string').and.not.empty; });",
+            "  pm.variables.set('commandId', body.commandId);",
+            "  console.warn('Claim 200: resposta contem credenciais. Nao exporte nem compartilhe este body.');",
+            "} else {",
+            "  console.info('Claim 204: fila sem comando; o Worker aguarda o PollingIntervalSeconds.');",
+            "}"
+          ] }
+        }
+      ]
+    },
+    {
+      "name": "03 - Collector eligibility",
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{eligibilityToken}}" }
+        ],
+        "description": "Consulta se o tenant/integracao pode coletar. O Worker chama este endpoint depois de Claim 200 e cancela o comando quando eligible=false.",
+        "url": { "raw": "{{baseUrl}}/api/internal/collector/eligibility", "host": [ "{{baseUrl}}" ], "path": [ "api", "internal", "collector", "eligibility" ] }
+      },
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": { "type": "text/javascript", "exec": [
+            "if (pm.variables.get('eligibilityToken').startsWith('REPLACE_')) { console.warn('Configure eligibilityToken antes de executar.'); }"
+          ] }
+        },
+        {
+          "listen": "test",
+          "script": { "type": "text/javascript", "exec": [
+            "pm.test('Eligibility retorna 200', function () { pm.response.to.have.status(200); });",
+            "const body = pm.response.json();",
+            "pm.test('Resposta possui Eligible booleano', function () { pm.expect(body.eligible).to.be.a('boolean'); });",
+            "if (body.eligible === false) { console.info('Tenant nao elegivel: o Worker deve completar o comando como Cancelled sem coletar.'); } else { console.info('Tenant elegivel: o Worker pode executar a coleta.'); }"
+          ] }
+        }
+      ]
+    },
+    {
+      "name": "04 - Collector complete",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{completeToken}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"outcome\": \"Succeeded\",\n  \"failureReason\": null,\n  \"completedAtUtc\": \"{{$isoTimestamp}}\"\n}"
+        },
+        "description": "Fecha o comando. No fluxo real, o Worker chama Complete depois de persistir a coleta no MongoDB. Para testar falha, use outcome Failed e uma failureReason valida; para cancelamento, use Cancelled.",
+        "url": { "raw": "{{baseUrl}}/api/internal/collector/commands/{{commandId}}/complete", "host": [ "{{baseUrl}}" ], "path": [ "api", "internal", "collector", "commands", "{{commandId}}", "complete" ] }
+      },
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": { "type": "text/javascript", "exec": [
+            "if (pm.variables.get('commandId').startsWith('REPLACE_')) { throw new Error('Execute Claim 200 primeiro ou informe commandId manualmente.'); }",
+            "if (pm.variables.get('completeToken').startsWith('REPLACE_')) { console.warn('Configure completeToken antes de executar.'); }"
+          ] }
+        },
+        {
+          "listen": "test",
+          "script": { "type": "text/javascript", "exec": [
+            "pm.test('Complete retorna 200', function () { pm.response.to.have.status(200); });",
+            "const body = pm.response.json();",
+            "pm.test('Complete confirma commandId', function () { pm.expect(body.commandId).to.eql(pm.variables.get('commandId')); });",
+            "pm.test('Complete possui status', function () { pm.expect(body.status).to.be.a('string'); });",
+            "console.info('Comando concluido com status: ' + body.status);"
+          ] }
+        }
+      ]
+    }
+  ]
+}

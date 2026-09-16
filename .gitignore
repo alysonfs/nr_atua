@@ -30,7 +30,6 @@ node_modules/
 .turbo/
 dist/
 build/
-lib/
 *.tsbuildinfo
 npm-debug.log*
 yarn-debug.log*
@@ -40,11 +39,20 @@ pnpm-debug.log*
 .yarn/
 .pnp.*
 
+# Log de diagnóstico local do Collector (iService) — nunca deve ser versionado,
+# pode conter payloads brutos de OS.
+apps/collector/Atua.Collector/logs/
+
 # Environment files
 .env
 .env.*
 !.env.example
 *.local
+
+# Resultados de testes manuais colados pelo usuário (podem conter usuário/
+# senha/URLs internas do provedor) — nunca versionar, o guia versionado
+# (docs/guides/*.md) fica como template limpo.
+docs/guides/*.resultados.local.md
 
 # AWS CLI / SAM / CDK
 .aws/

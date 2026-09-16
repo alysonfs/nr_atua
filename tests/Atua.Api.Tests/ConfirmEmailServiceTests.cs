@@ -112,7 +112,11 @@ public class ConfirmEmailServiceTests
 
     private static ConfirmEmailService CreateService(AtuaDbContext context, DateTimeOffset now)
     {
-        return new ConfirmEmailService(context, new FakeSecretHasher(), new FixedTimeProvider(now));
+        var timeProvider = new FixedTimeProvider(now);
+        return new ConfirmEmailService(
+            context,
+            new FakeSecretHasher(),
+            timeProvider);
     }
 
     private sealed class FakeSecretHasher : ISecretHasher

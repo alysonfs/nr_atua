@@ -1,0 +1,145 @@
+using Atua.Api.Application.Tenants;
+using Atua.Api.Domain.Billing;
+using Atua.Api.Domain.Identity;
+using Atua.Api.Domain.Integrations;
+using Atua.Api.Domain.Tenants;
+using Atua.Api.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
+
+namespace Atua.Api.Tests;
+
+public class AddTenantUseCaseTests
+{
+    private static Plan CreateTrialPlan() => new(WellKnownPlans.TrialPlanId, WellKnownPlans.TrialCode,
+        "Trial", isFree: true, value: 0m, durationDays: 7, maxIntegrations: 2, maxUsers: 5, isActive: true);
+
+    [Fact]
+    public async Task CriaTenantMembershipOwnerEAssociaPlanoTrialEmTransacaoUnica()
+    {
+        await using var context = CreateContext();
+        context.Plans.Add(CreateTrialPlan());
+        var user = new User(Guid.CreateVersion7(), null, "owner@atua.com", "hash");
+        user.ConfirmEmail(DateTimeOffset.UtcNow);
+        context.Users.Add(user);
+        await context.SaveChangesAsync();
+
+        var result = await new AddTenantUseCase(context).ExecuteAsync(user.Id, "Atua Refrigeração",
+            "11122233000183", CancellationToken.None);
+
+        Assert.Equal(ECreateTenantStatus.Success, result.Status);
+        Assert.NotNull(result.TenantId);
+
+        var membership = await context.TenantMemberships.SingleAsync();
+        Assert.Equal(result.TenantId, membership.TenantId);
+        Assert.Equal(user.Id, membership.UserId);
+        Assert.Equal(ETenantMembershipRole.Owner, membership.Role);
+
+        var tenantPlan = await context.TenantPlans.SingleAsync();
+        Assert.Equal(result.TenantId, tenantPlan.TenantId);
+        Assert.Equal(WellKnownPlans.TrialPlanId, tenantPlan.PlanId);
+        Assert.Equal(EBillingStatus.Active, tenantPlan.Status);
+    }
+
+    [Fact]
+    public async Task CriaIntegrationIServiceDesabilitadaAoCriarTenant()
+    {
+        // Emenda ADR-018 ("Resolução de integrationId"): a criação do Tenant
+        // deve criar automaticamente a Integration do provedor iService,
+        // não habilitada por padrão (RF-008/ativação do coletor fora de
+        // escopo do MVP).
+        await using var context = CreateContext();
+        context.Plans.Add(CreateTrialPlan());
+        var user = new User(Guid.CreateVersion7(), null, "owner@atua.com", "hash");
+        user.ConfirmEmail(DateTimeOffset.UtcNow);
+        context.Users.Add(user);
+        await context.SaveChangesAsync();
+
+        var result = await new AddTenantUseCase(context).ExecuteAsync(user.Id, "Atua Refrigeração",
+            "11122233000183", CancellationToken.None);
+
+        Assert.Equal(ECreateTenantStatus.Success, result.Status);
+        Assert.NotNull(result.IntegrationId);
+        Assert.NotEqual(Guid.Empty, result.IntegrationId!.Value);
+
+        var integration = await context.Integrations.SingleAsync();
+        Assert.Equal(result.IntegrationId, integration.Id);
+        Assert.Equal(result.TenantId, integration.TenantId);
+        Assert.Equal(WellKnownIntegrationProviders.IServiceProviderId, integration.ProviderId);
+        Assert.False(integration.IsEnabled);
+    }
+
+    [Fact]
+    public async Task RejeitaCnpjComFormatoInvalido()
+    {
+        await using var context = CreateContext();
+        context.Plans.Add(CreateTrialPlan());
+        var user = new User(Guid.CreateVersion7(), null, "owner@atua.com", "hash");
+        user.ConfirmEmail(DateTimeOffset.UtcNow);
+        context.Users.Add(user);
+        await context.SaveChangesAsync();
+
+        var result = await new AddTenantUseCase(context).ExecuteAsync(user.Id, "Atua",
+            "123", CancellationToken.None);
+
+        Assert.Equal(ECreateTenantStatus.InvalidCnpj, result.Status);
+        Assert.Empty(context.Tenants);
+    }
+
+    [Fact]
+    public async Task RejeitaCnpjJaAssociadoAOutroTenant()
+    {
+        await using var context = CreateContext();
+        context.Plans.Add(CreateTrialPlan());
+        var existingTenant = new Tenant(Guid.CreateVersion7(), "Outra Empresa", "11122233000183",
+            "America/Sao_Paulo");
+        context.Tenants.Add(existingTenant);
+        var user = new User(Guid.CreateVersion7(), null, "owner@atua.com", "hash");
+        user.ConfirmEmail(DateTimeOffset.UtcNow);
+        context.Users.Add(user);
+        await context.SaveChangesAsync();
+
+        var result = await new AddTenantUseCase(context).ExecuteAsync(user.Id, "Minha Empresa",
+            "11122233000183", CancellationToken.None);
+
+        Assert.Equal(ECreateTenantStatus.CnpjAlreadyRegistered, result.Status);
+    }
+
+    [Fact]
+    public async Task RejeitaQuandoUsuarioJaEOwnerDeOutroTenant()
+    {
+        await using var context = CreateContext();
+        context.Plans.Add(CreateTrialPlan());
+        var existingTenant = new Tenant(Guid.CreateVersion7(), "Empresa A", "11122233000183",
+            "America/Sao_Paulo");
+        context.Tenants.Add(existingTenant);
+        var user = new User(Guid.CreateVersion7(), null, "owner@atua.com", "hash");
+        user.ConfirmEmail(DateTimeOffset.UtcNow);
+        context.Users.Add(user);
+        context.TenantMemberships.Add(new TenantMembership(existingTenant.Id, user.Id,
+            ETenantMembershipRole.Owner));
+        await context.SaveChangesAsync();
+
+        var result = await new AddTenantUseCase(context).ExecuteAsync(user.Id, "Empresa B",
+            "11122233000264", CancellationToken.None);
+
+        Assert.Equal(ECreateTenantStatus.UserAlreadyHasTenant, result.Status);
+    }
+
+    [Fact]
+    public async Task RejeitaQuandoEmailNaoConfirmado()
+    {
+        await using var context = CreateContext();
+        context.Plans.Add(CreateTrialPlan());
+        var user = new User(Guid.CreateVersion7(), null, "owner@atua.com", "hash");
+        context.Users.Add(user);
+        await context.SaveChangesAsync();
+
+        var result = await new AddTenantUseCase(context).ExecuteAsync(user.Id, "Atua",
+            "11122233000183", CancellationToken.None);
+
+        Assert.Equal(ECreateTenantStatus.EmailNotConfirmed, result.Status);
+    }
+
+    private static AtuaDbContext CreateContext() => new(new DbContextOptionsBuilder<AtuaDbContext>()
+        .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
+}

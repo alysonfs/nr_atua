@@ -49,6 +49,10 @@ public sealed class ConfirmEmailService(
 
         user.ConfirmEmail(now);
 
+        // ADR-024: EmailConfirmedAt do usuário passa a ser a única fonte de
+        // verdade para o início do prazo do plano trial (RF-020.2), atribuído
+        // somente na criação do tenant (AddTenantUseCase). Nenhuma entidade
+        // de Trial é criada aqui.
         await dbContext.SaveChangesAsync(cancellationToken);
 
         return new ConfirmEmailResult(EConfirmEmailStatus.Success);

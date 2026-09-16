@@ -45,6 +45,70 @@ public class PersistenceMappingTests
             property => Assert.Equal(nameof(TenantMembership.UserId), property.Name));
     }
 
+    [Fact]
+    public void TenantPlanPossuiIndiceUnicoParaPlanoAtivoPorTenant()
+    {
+        using var context = CreateContext();
+        var tenantPlan = context.Model.FindEntityType(typeof(Domain.Billing.TenantPlan))!;
+
+        var tenantIndex = tenantPlan.GetIndexes().Single(index =>
+            index.Properties.Single().Name == nameof(Domain.Billing.TenantPlan.TenantId));
+
+        Assert.True(tenantIndex.IsUnique);
+    }
+
+    [Fact]
+    public void AuthSessionPersisteOverrideOpcionalDeFusoHorario()
+    {
+        using var context = CreateContext();
+        var session = context.Model.FindEntityType(typeof(Domain.Identity.AuthSession))!;
+
+        Assert.True(session.FindProperty(nameof(Domain.Identity.AuthSession.TimeZoneOverrideId))!
+            .IsNullable);
+    }
+
+    [Fact]
+    public void ComandoImediatoPossuiIndiceUnicoParcialParaPending()
+    {
+        // ADR-020/RN-008.4: no máximo um comando Pending por integração.
+        using var context = CreateContext();
+        var command = context.Model.FindEntityType(
+            typeof(Domain.Integrations.CollectorControl.ImmediateCollectionCommand))!;
+
+        var pendingIndex = command.GetIndexes().Single(index =>
+            index.GetDatabaseName() == "IX_immediate_collection_commands_IntegrationId_Pending");
+
+        Assert.True(pendingIndex.IsUnique);
+        Assert.Equal("\"Status\" = 'Pending'", pendingIndex.GetFilter());
+    }
+
+    [Fact]
+    public void AtivacaoDoColetorPossuiIndiceUnicoPorIntegracao()
+    {
+        using var context = CreateContext();
+        var activation = context.Model.FindEntityType(
+            typeof(Domain.Integrations.CollectorControl.CollectorActivation))!;
+
+        var index = activation.GetIndexes().Single(item =>
+            item.Properties.Count == 1 && item.Properties.Single().Name == "IntegrationId");
+
+        Assert.True(index.IsUnique);
+    }
+
+    [Fact]
+    public void IdempotenciaDoColetorPossuiIndiceUnicoComposto()
+    {
+        using var context = CreateContext();
+        var record = context.Model.FindEntityType(
+            typeof(Domain.Integrations.CollectorControl.CollectorControlIdempotency))!;
+
+        var index = record.GetIndexes().Single(item => item.Properties.Count == 3);
+
+        Assert.True(index.IsUnique);
+        Assert.Equal(["IntegrationId", "Operation", "IdempotencyKey"],
+            index.Properties.Select(property => property.Name));
+    }
+
     private static AtuaDbContext CreateContext()
     {
         var options = new DbContextOptionsBuilder<AtuaDbContext>()

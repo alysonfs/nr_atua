@@ -1,2 +1,41 @@
 @import "tailwindcss";
-@plugin "daisyui";
+@plugin "daisyui" {
+	themes: light --default;
+}
+
+@theme {
+	--font-sans: "Aptos", "Helvetica Neue", sans-serif;
+	--color-atua-navy: #0f172a;
+	--color-atua-navy-deep: #0e1a30;
+	--color-atua-blue: #3b82f6;
+	--color-atua-blue-dark: #2563eb;
+}
+
+@layer base {
+	html {
+		background: #f8fafc;
+	}
+
+	body {
+		min-width: 320px;
+		background:
+			linear-gradient(180deg, rgba(15, 23, 42, 0.04), rgba(248, 250, 252, 0) 280px),
+			#f8fafc;
+		color: #0f172a;
+		font-family: var(--font-sans);
+	}
+
+	button,
+	input,
+	select,
+	textarea {
+		font: inherit;
+	}
+}
+
+@layer components {
+	.card,
+	[class*="rounded-lg"][class*="bg-white"] {
+		border-radius: 0.5rem;
+	}
+}

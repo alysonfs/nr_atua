@@ -1,0 +1,29 @@
+# atua-api.service — unit systemd da API Master (ATUA)
+#
+# ATENÇÃO: este arquivo é a FONTE DE VERDADE documentada/legível do unit.
+# Ele NÃO deve ser editado manualmente na instância EC2.
+# O conteúdo é copiado para /etc/systemd/system/atua-api.service
+# pelo user-data da AtuaComputeStack (infra/lib/atua-compute-stack.ts)
+# a cada recriação da instância efêmera (ciclo make up/down).
+# Qualquer alteração deve ser feita aqui e propagada via make up.
+
+[Unit]
+Description=ATUA Master API
+After=network.target
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/atua-api.env
+WorkingDirectory=/opt/atua-api
+ExecStart=/usr/bin/dotnet /opt/atua-api/Atua.Api.dll
+Restart=always
+RestartSec=10
+User=ec2-user
+# CAP_NET_BIND_SERVICE: permite ao processo (rodando como ec2-user, não-root)
+# bindar na porta 80 (< 1024). Sem essa capability, o Kestrel falha com
+# "SocketException: Permission denied" ao tentar abrir o listener.
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+Environment=ASPNETCORE_URLS=http://0.0.0.0:80
+
+[Install]
+WantedBy=multi-user.target

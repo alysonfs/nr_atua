@@ -4,6 +4,11 @@ public sealed class Tenant
 {
     public Tenant(Guid id, string name, string cnpj, string timeZoneId)
     {
+        if (!IanaTimeZone.IsValid(timeZoneId))
+        {
+            throw new ArgumentException("Identificador de fuso horário IANA inválido.", nameof(timeZoneId));
+        }
+
         Id = id;
         Name = name;
         Cnpj = cnpj;
@@ -16,5 +21,15 @@ public sealed class Tenant
 
     public string Cnpj { get; }
 
-    public string TimeZoneId { get; }
+    public string TimeZoneId { get; private set; }
+
+    public void SetTimeZone(string timeZoneId)
+    {
+        if (!IanaTimeZone.IsValid(timeZoneId))
+        {
+            throw new ArgumentException("Identificador de fuso horário IANA inválido.", nameof(timeZoneId));
+        }
+
+        TimeZoneId = timeZoneId;
+    }
 }

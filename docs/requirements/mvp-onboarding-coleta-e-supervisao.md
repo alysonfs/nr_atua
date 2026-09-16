@@ -43,6 +43,12 @@ Cada requisito funcional possui um status de entrega:
 - `Implementado`: codigo e testes do requisito foram concluidos.
 - `Validado`: o `qa-engineer` aprovou os criterios de aceite aplicaveis.
 
+Nota de validacao (2026-08-29): RF-003 e RF-004 foram validados pelo
+`qa-engineer` com 41 testes de frontend e 54 testes de backend cobrindo o
+ciclo de vida do Trial (ADR-015) e a precedencia de fuso horario
+(sessao -> Tenant -> sugestao por idioma -> UTC). Ver ADR-015 e ADR-017 para
+o contrato tecnico correspondente.
+
 ### Cadastro e Trial
 
 #### RF-001 - Cadastro de cliente
@@ -64,7 +70,7 @@ valido por 15 minutos.
 
 #### RF-003 - Plano Trial
 
-Status: `Pendente`
+Status: `Validado`
 
 Ao confirmar o codigo recebido por e-mail, o cliente deve receber o plano Trial
 com validade ate o fim do setimo dia contado em UTC. Enquanto o e-mail nao for
@@ -73,7 +79,7 @@ Trial em andamento deve ser associado a ele sem alterar sua validade.
 
 #### RF-004 - Preferencia de fuso horario
 
-Status: `Pendente`
+Status: `Validado`
 
 O cliente deve possuir um fuso horario no formato IANA. O valor inicial deve
 ser sugerido pelo idioma selecionado e o usuario deve poder altera-lo nas
@@ -119,10 +125,13 @@ minutos.
 
 #### RF-009 - Coleta inicial
 
-Status: `Pendente`
+Status: `Entregue (lado API) — D7 resolvido; Worker pendente`
 
-A primeira coleta deve registrar o estado atual de todas as OS retornadas nos
-status suportados pelo iService e iniciar o historico observado pelo ATUA.
+**Data de entrega (lado API):** 2026-08-30, commit `44fdbef`. QA aprovada (148 testes passando).
+
+A primeira coleta é iniciada via `POST /api/internal/collector/commands/claim` (Master API). O Worker ainda não está implementado. A API decifra credenciais do iService via variante B (ADR-021) e as entrega em claro ao Worker via TLS. Decisões D1–D9 foram resolvidas (D7 resolvido em 2026-08-31 com evidência empírica real).
+
+Ver `docs/requirements/RF-009-coleta-inicial.md` e `docs/decisions/ADR-021-coleta-inicial-credenciais-timeout-e-falha-de-credencial.md` para detalhes técnicos.
 
 #### RF-010 - Historico observado
 
@@ -177,7 +186,7 @@ usuarios com essa permissao `ROOT` podem acessar a lista de clientes.
 Status: `Pendente`
 
 O Manager deve permitir ao superadministrador visualizar, para cada cliente,
-o plano Trial e sua validade, o resultado e instante da ultima validacao do
+o plano e sua validade, o resultado e instante da ultima validacao do
 iService e o estado atual do Agente Coletor.
 
 #### RF-016 - Gestao do plano pelo superadministrador
@@ -204,6 +213,8 @@ Status: `Pendente`
 
 A Landing deve apresentar o ATUA e disponibilizar navegacao para login e
 cadastro no Office.
+
+**Nota sobre publicação (2026-08-30):** Os aplicativos Landing, Office, Manager e Tecnica foram publicados no bucket S3 `atua-462991286554-frontends` (região `sa-east-1`). Contêm scaffold do Vite; conteúdo funcional (jornada pública, telas do Office, etc.) ainda é pendência de desenvolvimento (RF-005, RF-006, RF-018, etc.). URLs de acesso em `docs/architecture/aws-ambiente-mvp.md` §5.1.
 
 ## Requisitos de seguranca
 
@@ -281,5 +292,3 @@ a conta permanecer inativa por mais de cinco anos.
 - A garantia de que a consulta do iService retorna todas as OS sem filtros ou
    limites implicitos, incluindo a paginacao por status e o comportamento acima
    de 10.000 OS por status.
-- A estabilidade do par `workOrderNo` e `workOrderId` em reaberturas,
-   reatribuicoes ou alteracoes feitas no iService.

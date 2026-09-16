@@ -1,0 +1,153 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "build Atua.Api",
+      "type": "process",
+      "command": "dotnet",
+      "args": [
+        "build",
+        "${workspaceFolder}/apps/api/Atua.Api/Atua.Api.csproj"
+      ],
+      "problemMatcher": "$msCompile",
+      "group": {
+        "kind": "build",
+        "isDefault": false
+      }
+    },
+    {
+      "label": "build Atua.Collector",
+      "type": "process",
+      "command": "dotnet",
+      "args": [
+        "build",
+        "${workspaceFolder}/apps/collector/Atua.Collector/Atua.Collector.csproj"
+      ],
+      "problemMatcher": "$msCompile",
+      "group": {
+        "kind": "build",
+        "isDefault": false
+      }
+    },
+    {
+      "label": "build Atua.Api + Atua.Collector",
+      "dependsOn": [
+        "build Atua.Api",
+        "build Atua.Collector"
+      ],
+      "dependsOrder": "parallel",
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      }
+    },
+    {
+      "label": "dev landing",
+      "type": "process",
+      "command": "pnpm",
+      "args": [
+        "--dir",
+        "${workspaceFolder}/apps/landing",
+        "exec",
+        "vite",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "5173"
+      ],
+      "isBackground": true,
+      "problemMatcher": {
+        "owner": "vite",
+        "pattern": {
+          "regexp": ".*"
+        },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": ".*",
+          "endsPattern": ".*Local:.*"
+        }
+      }
+    },
+    {
+      "label": "dev manager",
+      "type": "process",
+      "command": "pnpm",
+      "args": [
+        "--dir",
+        "${workspaceFolder}/apps/manager",
+        "exec",
+        "vite",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "5174"
+      ],
+      "isBackground": true,
+      "problemMatcher": {
+        "owner": "vite",
+        "pattern": {
+          "regexp": ".*"
+        },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": ".*",
+          "endsPattern": ".*Local:.*"
+        }
+      }
+    },
+    {
+      "label": "dev office",
+      "type": "process",
+      "command": "pnpm",
+      "args": [
+        "--dir",
+        "${workspaceFolder}/apps/office",
+        "exec",
+        "vite",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "5175"
+      ],
+      "isBackground": true,
+      "problemMatcher": {
+        "owner": "vite",
+        "pattern": {
+          "regexp": ".*"
+        },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": ".*",
+          "endsPattern": ".*Local:.*"
+        }
+      }
+    },
+    {
+      "label": "dev tecnica",
+      "type": "process",
+      "command": "pnpm",
+      "args": [
+        "--dir",
+        "${workspaceFolder}/apps/tecnica",
+        "exec",
+        "vite",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "5176"
+      ],
+      "isBackground": true,
+      "problemMatcher": {
+        "owner": "vite",
+        "pattern": {
+          "regexp": ".*"
+        },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": ".*",
+          "endsPattern": ".*Local:.*"
+        }
+      }
+    }
+  ]
+}
