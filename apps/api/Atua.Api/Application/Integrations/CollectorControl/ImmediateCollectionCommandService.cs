@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using Atua.Api.Domain.Integrations;
 using Atua.Api.Domain.Integrations.CollectorControl;
 using Atua.Api.Infrastructure.Persistence;
@@ -94,7 +95,23 @@ public sealed class ImmediateCollectionCommandService(
             return null;
         }
 
-        var (username, password, baseUrl) = await DecryptCredentialsAsync(credential, cancellationToken);
+        string username;
+        string password;
+        string? baseUrl;
+        try
+        {
+            (username, password, baseUrl) = await DecryptCredentialsAsync(credential, cancellationToken);
+        }
+        catch (Exception exception) when (exception is CryptographicException or FormatException)
+        {
+            // Chave mestra/DEK divergente da usada para cifrar a credencial:
+            // trata como CredentialRejected em vez de propagar 500 ao Worker
+            // (mesmo padrão de IServiceCredentialValidationService.ValidateAsync).
+            command.TryFail(ECommandFailureReason.CredentialRejected, now);
+            await InvalidateCredentialAndReconcileAsync(
+                command.TenantId, integrationId, now, cancellationToken);
+            return null;
+        }
 
         return new ClaimCommandResult(
             command.Id,
