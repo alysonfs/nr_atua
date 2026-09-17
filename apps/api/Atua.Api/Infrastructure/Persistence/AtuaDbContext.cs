@@ -259,6 +259,9 @@ public sealed class AtuaDbContext(DbContextOptions<AtuaDbContext> options) : DbC
             .HasForeignKey(integration => integration.ProviderId)
             .OnDelete(DeleteBehavior.Restrict);
         builder.HasIndex(integration => integration.TenantId);
+        // RF-025.1/RN-025.2: padrão de 15 minutos quando não persistido.
+        builder.Property(integration => integration.RecurrentCollectionIntervalMinutes)
+            .HasDefaultValue(Integration.DefaultRecurrentCollectionIntervalMinutes);
     }
 
     private static void ConfigureIServiceCredential(EntityTypeBuilder<IServiceCredential> builder)
@@ -323,6 +326,10 @@ public sealed class AtuaDbContext(DbContextOptions<AtuaDbContext> options) : DbC
         // ADR-021/D2: indice para varredura eficiente pelo ClaimTimeoutJob.
         builder.HasIndex(command => new { command.Status, command.ClaimExpiresAtUtc })
             .HasDatabaseName("IX_immediate_collection_commands_Status_ClaimExpiresAtUtc");
+        // ADR-029: indice para o RecurrentCollectionSchedulerJob localizar o
+        // ultimo comando de cada integracao sem varrer a tabela inteira.
+        builder.HasIndex(command => new { command.IntegrationId, command.RequestedAtUtc })
+            .HasDatabaseName("IX_immediate_collection_commands_IntegrationId_RequestedAtUtc");
         builder.HasOne<Tenant>().WithMany().HasForeignKey(command => command.TenantId)
             .OnDelete(DeleteBehavior.Cascade);
         builder.HasOne<Integration>().WithMany().HasForeignKey(command => command.IntegrationId)

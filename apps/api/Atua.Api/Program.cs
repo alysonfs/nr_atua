@@ -157,6 +157,9 @@ builder.Services.Configure<ImmediateCollectionOptions>(
     builder.Configuration.GetSection(ImmediateCollectionOptions.SectionName));
 builder.Services.AddScoped<ImmediateCollectionCommandService>();
 builder.Services.AddHostedService<ClaimTimeoutJob>();
+builder.Services.AddScoped<RecurrentCollectionIntervalService>();
+builder.Services.AddScoped<RecurrentCollectionSchedulerService>();
+builder.Services.AddHostedService<RecurrentCollectionSchedulerJob>();
 
 // CORS: as origens de produção são injetadas pelo user-data da EC2 via
 // Cors__AllowedOrigins__*. O fallback aberto abaixo existe apenas para
@@ -222,6 +225,7 @@ app.MapUserLocaleEndpoints();
 app.MapCollectorActivationEndpoints();
 app.MapCollectorEligibilityEndpoints();
 app.MapCollectorCommandEndpoints();
+app.MapRecurrentCollectionIntervalEndpoints();
 app.MapWorkOrderEndpoints();
 
 app.Run();
