@@ -307,6 +307,31 @@ Implementações futuras que dependem de gate explícito do usuário:
 
 Ver [`docs/requirements/RF-008-ativacao-agente-coletor.md#gate-de-aprovação-explícito-para-fases-futuras`](../requirements/RF-008-ativacao-agente-coletor.md#gate-de-aprovação-explícito-para-fases-futuras).
 
+## Revisão (2026-09-17)
+
+Feita durante a implementação da UI de integração/ativação no Office
+([apps/office/src/app/office/components/Integrations](../../apps/office/src/app/office/components/Integrations)).
+Achados:
+
+1. **Elegibilidade não depende mais da validação de credencial.** A
+   descrição original deste documento ("Credencial iService... com
+   `ValidationStatus == Succeeded`" na seção Contexto) está desatualizada
+   pela ADR-024: `CollectorEligibilityEvaluator` hoje só verifica
+   `TenantPlan` ativo/não expirado; `ValidationStatus` é lido apenas para
+   fins informativos no DTO (`CredentialValidationStatus`), sem bloquear a
+   ativação.
+2. **`Integration.LastCollectionAtUtc` está órfão.** O campo e o método
+   `RecordCollection(now)` existem em
+   [`Integration.cs`](../../apps/api/Atua.Api/Domain/Integrations/Integration.cs)
+   desde a ADR-024, mas nenhum código do repositório chama
+   `RecordCollection` — não há, hoje, nenhuma "data da última coleta com
+   sucesso" sendo gravada ou exposta por nenhum endpoint. Isso é esperado
+   dado que o Worker ainda não consome comandos (ver "Limitações
+   Intencionais" acima), mas fica registrado para quando a coleta real for
+   habilitada: será necessário (a) chamar `RecordCollection` ao concluir um
+   `ImmediateCollectionCommand` com sucesso e (b) expor esse timestamp no
+   `CollectorActivationView`/Office.
+
 ## Referências
 
 - [`docs/requirements/RF-008-ativacao-agente-coletor.md`](../requirements/RF-008-ativacao-agente-coletor.md) — Requisito funcional

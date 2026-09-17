@@ -39,3 +39,37 @@ export type ValidateCredentialsErrorCode =
   | 'credentials_not_configured'
   | 'forbidden'
   | 'unknown_error'
+
+/**
+ * RF-008 (ADR-020/ADR-024): estado de ativação do Agente Coletor.
+ *
+ * GET/PUT /api/tenants/{tenantId}/integrations/{integrationId}/collector-activation
+ *
+ * `canActivate` já reflete a elegibilidade do plano (ADR-024); a validação
+ * de credenciais é apenas informativa e não bloqueia a ativação.
+ */
+export type ECollectorActivationStatus = 'Inactive' | 'Active'
+
+export interface ImmediateCommandView {
+  commandId: string
+  status: string
+  requestedAtUtc: string
+}
+
+export interface CollectorActivationView {
+  status: ECollectorActivationStatus
+  canActivate: boolean
+  activationBlockReason: string
+  credentialValidationStatus: EIServiceValidationStatus
+  activatedAtUtc: string | null
+  deactivatedAtUtc: string | null
+  lastImmediateCommand: ImmediateCommandView | null
+}
+
+export type ActivateCollectorErrorCode =
+  | 'integration_not_found'
+  | 'forbidden'
+  | 'activation_not_eligible'
+  | 'missing_idempotency_key'
+  | 'idempotency_key_conflict'
+  | 'unknown_error'

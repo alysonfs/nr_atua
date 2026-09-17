@@ -1,3 +1,7 @@
 export { IServiceCredentialsForm } from './IServiceCredentialsForm'
 export { IServiceValidationStatus } from './IServiceValidationStatus'
 export { IServiceIntegrationPanel } from './IServiceIntegrationPanel'
+export { CollectorActivationPanel } from './CollectorActivationPanel'
+export { ProviderSelector } from './ProviderSelector'
+export type { EIntegrationProvider } from './ProviderSelector'
+export { ProviderIntegrationSection } from './ProviderIntegrationSection'

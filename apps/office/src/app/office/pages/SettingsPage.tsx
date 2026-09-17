@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { TimezonePreference } from '../components/Settings'
 import { TrialCard, TrialExpiryAlert } from '../components/Trial'
 import { CreateTenantForm, TenantSelector } from '../components/Onboarding'
-import { IServiceIntegrationPanel } from '../components/Integrations'
+import { ProviderIntegrationSection } from '../components/Integrations'
 import { useMyTenants } from '../hooks/useTenants'
 import { useTranslation } from 'react-i18next'
 
@@ -108,9 +108,9 @@ export function SettingsPage() {
         <section aria-labelledby="integration-heading" className="space-y-3">
           <div>
             <h2 id="integration-heading" className="text-sm font-semibold uppercase text-slate-500">
-              {t('settings.iserviceTitle')}
+              {t('settings.providerIntegrationTitle')}
             </h2>
-            <p className="text-sm text-slate-700">{t('settings.iserviceDescription')}</p>
+            <p className="text-sm text-slate-700">{t('settings.providerIntegrationDescription')}</p>
           </div>
 
           {isLoading && <p className="rounded-md border border-slate-200 bg-white px-4 py-3 text-sm text-slate-500">{t('settings.loadingCompanies')}</p>}
@@ -132,7 +132,7 @@ export function SettingsPage() {
           )}
 
           {!isLoading && !isError && !hasNoTenant && activeTenantId && integrationId && (
-            <IServiceIntegrationPanel tenantId={activeTenantId} integrationId={integrationId} />
+            <ProviderIntegrationSection tenantId={activeTenantId} integrationId={integrationId} />
           )}
 
           {!isLoading &&

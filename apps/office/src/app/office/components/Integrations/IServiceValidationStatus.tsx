@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next'
 interface IServiceValidationStatusProps {
   tenantId: string
   integrationId: string
+  onValidated?: () => void
   className?: string
 }
 
@@ -22,6 +23,7 @@ interface IServiceValidationStatusProps {
 export function IServiceValidationStatus({
   tenantId,
   integrationId,
+  onValidated,
   className = '',
 }: IServiceValidationStatusProps) {
   const { i18n, t } = useTranslation()
@@ -38,6 +40,7 @@ export function IServiceValidationStatus({
     if (result.status === 'success' && result.validationStatus) {
       setLastResult(result.validationStatus)
       await refetch()
+      onValidated?.()
       return
     }
 
