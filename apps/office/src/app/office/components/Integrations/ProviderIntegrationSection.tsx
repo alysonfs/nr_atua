@@ -5,6 +5,7 @@ import { IServiceIntegrationPanel } from './IServiceIntegrationPanel'
 interface ProviderIntegrationSectionProps {
   tenantId: string
   integrationId: string
+  canManage?: boolean
   className?: string
 }
 
@@ -19,6 +20,7 @@ interface ProviderIntegrationSectionProps {
 export function ProviderIntegrationSection({
   tenantId,
   integrationId,
+  canManage = true,
   className = '',
 }: ProviderIntegrationSectionProps) {
   const [selectedProvider, setSelectedProvider] = useState<EIntegrationProvider | null>(null)
@@ -32,7 +34,7 @@ export function ProviderIntegrationSection({
     <div className={className}>
       <ProviderSelector selectedProvider={selectedProvider} onSelect={handleSelect}>
         {selectedProvider === 'iservice' && (
-          <IServiceIntegrationPanel tenantId={tenantId} integrationId={integrationId} />
+          <IServiceIntegrationPanel tenantId={tenantId} integrationId={integrationId} canManage={canManage} />
         )}
       </ProviderSelector>
     </div>

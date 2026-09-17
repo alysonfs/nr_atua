@@ -2,10 +2,12 @@ import { useState } from 'react'
 import { IServiceCredentialsForm } from './IServiceCredentialsForm'
 import { IServiceValidationStatus } from './IServiceValidationStatus'
 import { CollectorActivationPanel } from './CollectorActivationPanel'
+import { RecurrentCollectionIntervalControl } from './RecurrentCollectionIntervalControl'
 
 interface IServiceIntegrationPanelProps {
   tenantId: string
   integrationId: string
+  canManage?: boolean
   className?: string
 }
 
@@ -21,6 +23,7 @@ interface IServiceIntegrationPanelProps {
 export function IServiceIntegrationPanel({
   tenantId,
   integrationId,
+  canManage = true,
   className = '',
 }: IServiceIntegrationPanelProps) {
   const [statusKey, setStatusKey] = useState(0)
@@ -46,6 +49,11 @@ export function IServiceIntegrationPanel({
         key={`activation-${activationKey}`}
         tenantId={tenantId}
         integrationId={integrationId}
+      />
+      <RecurrentCollectionIntervalControl
+        tenantId={tenantId}
+        integrationId={integrationId}
+        canManage={canManage}
       />
     </div>
   )

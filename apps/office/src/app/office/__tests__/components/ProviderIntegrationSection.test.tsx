@@ -20,6 +20,16 @@ vi.mock('../../hooks/useCollectorActivation', () => ({
   useDeactivateCollector: () => ({ deactivate: vi.fn(), isDeactivating: false }),
 }))
 
+vi.mock('../../hooks/useRecurrentCollectionInterval', () => ({
+  useRecurrentCollectionInterval: () => ({
+    interval: { recurrentCollectionIntervalMinutes: 15 },
+    isLoading: false,
+    isError: false,
+    refetch: vi.fn(),
+  }),
+  useUpdateRecurrentCollectionInterval: () => ({ update: vi.fn(), isSaving: false }),
+}))
+
 describe('ProviderIntegrationSection', () => {
   it('não exibe o formulário de credenciais antes de escolher um provedor', () => {
     render(<ProviderIntegrationSection tenantId="tenant-1" integrationId="integration-1" />)

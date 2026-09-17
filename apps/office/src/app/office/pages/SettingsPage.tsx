@@ -31,6 +31,13 @@ export function SettingsPage() {
     return activeTenant?.integrationId ?? null
   }, [activeTenantId, createdTenant, tenants])
 
+  // RF-025.3/RF-008: quem acabou de criar o tenant é sempre OWNER.
+  const canManageIntegration = useMemo(() => {
+    if (createdTenant && createdTenant.tenantId === activeTenantId) return true
+    const activeTenantRole = tenants.find((tenant) => tenant.tenantId === activeTenantId)?.role
+    return activeTenantRole === 'OWNER' || activeTenantRole === 'ADMIN'
+  }, [activeTenantId, createdTenant, tenants])
+
   const handleTenantCreated = (tenantId: string, newIntegrationId: string) => {
     setCreatedTenant({ tenantId, integrationId: newIntegrationId })
     setSelectedTenantId(tenantId)
@@ -132,7 +139,11 @@ export function SettingsPage() {
           )}
 
           {!isLoading && !isError && !hasNoTenant && activeTenantId && integrationId && (
-            <ProviderIntegrationSection tenantId={activeTenantId} integrationId={integrationId} />
+            <ProviderIntegrationSection
+              tenantId={activeTenantId}
+              integrationId={integrationId}
+              canManage={canManageIntegration}
+            />
           )}
 
           {!isLoading &&

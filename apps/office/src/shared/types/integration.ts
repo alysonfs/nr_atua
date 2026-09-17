@@ -81,3 +81,18 @@ export type DeactivateCollectorErrorCode =
   | 'missing_idempotency_key'
   | 'idempotency_key_conflict'
   | 'unknown_error'
+
+/**
+ * RF-025: intervalo de coleta recorrente configurável (em minutos, 5-1440).
+ *
+ * GET/PUT /api/tenants/{tenantId}/integrations/{integrationId}/recurrent-collection-interval
+ */
+export interface RecurrentCollectionIntervalView {
+  recurrentCollectionIntervalMinutes: number
+}
+
+export type RecurrentCollectionIntervalErrorCode =
+  | 'integration_not_found'
+  | 'invalid_recurrent_collection_interval'
+  | 'forbidden'
+  | 'unknown_error'
