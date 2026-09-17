@@ -13,7 +13,8 @@ public sealed class WorkOrderHistory
         Guid workOrderId,
         Guid workOrderSnapshotId,
         Guid tenantId,
-        string providerId,
+        Guid integrationId,
+        string workOrderProviderId,
         string status,
         DateTimeOffset createdAt)
     {
@@ -21,7 +22,8 @@ public sealed class WorkOrderHistory
         WorkOrderId = workOrderId;
         WorkOrderSnapshotId = workOrderSnapshotId;
         TenantId = tenantId;
-        ProviderId = providerId;
+        IntegrationId = integrationId;
+        WorkOrderProviderId = workOrderProviderId;
         Status = status;
         CreatedAt = createdAt;
         UpdatedAt = createdAt;
@@ -42,7 +44,20 @@ public sealed class WorkOrderHistory
     /// <summary>Redundante para isolamento multi-tenant (RN-017.6).</summary>
     public Guid TenantId { get; private set; }
 
-    public string ProviderId { get; private set; } = string.Empty;
+    /// <summary>FK para <see cref="Atua.Api.Domain.Integrations.Integration"/> no momento desta entrada.</summary>
+    public Guid IntegrationId { get; private set; }
+
+    /// <summary>Identificador serial externo da OS no provedor — ver <see cref="WorkOrder.WorkOrderProviderId"/>.</summary>
+    public string WorkOrderProviderId { get; private set; } = string.Empty;
+
+    /// <summary>Número visível da OS no provedor no momento desta entrada — ver <see cref="WorkOrder.WorkOrderProviderNo"/>.</summary>
+    public string? WorkOrderProviderNo { get; private set; }
+
+    /// <summary>Identificador do Service Request (SR) no momento desta entrada — ver <see cref="WorkOrder.ServiceRequestId"/>.</summary>
+    public string? ServiceRequestId { get; private set; }
+
+    /// <summary>Valor total da OS no momento desta entrada — ver <see cref="WorkOrder.Amount"/>.</summary>
+    public decimal? Amount { get; private set; }
 
     /// <summary>Status observado no momento desta entrada — string crua (DP-017.2).</summary>
     public string Status { get; private set; } = string.Empty;
@@ -117,6 +132,9 @@ public sealed class WorkOrderHistory
     /// <summary>Preenche os campos descritivos desta entrada de histórico (imutável após criação).</summary>
     public void ApplyDetails(WorkOrderDetails details)
     {
+        WorkOrderProviderNo = details.WorkOrderProviderNo;
+        ServiceRequestId = details.ServiceRequestId;
+        Amount = details.Amount;
         ProviderCreatedAt = details.ProviderCreatedAt;
         ProviderUpdatedAt = details.ProviderUpdatedAt;
         CustomerType = details.CustomerType;

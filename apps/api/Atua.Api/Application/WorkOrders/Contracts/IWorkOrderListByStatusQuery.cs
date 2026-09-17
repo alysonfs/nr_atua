@@ -22,7 +22,10 @@ public sealed record WorkOrderListResult(
 /// <summary>Item de OS retornado pela listagem por status.</summary>
 public sealed record WorkOrderListItemResult(
     Guid Id,
-    string ProviderId,
+    string WorkOrderProviderId,
+    string? WorkOrderProviderNo,
+    string? ServiceRequestId,
+    decimal? Amount,
     string Status,
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt,
@@ -31,4 +34,5 @@ public sealed record WorkOrderListItemResult(
     string? ProductModel,
     string? ProductBrand,
     string? CustomerName,
-    string? CityName);
+    string? CityName,
+    string ProviderName);

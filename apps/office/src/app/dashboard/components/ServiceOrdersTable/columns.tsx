@@ -24,8 +24,9 @@ export function createServiceOrdersColumns(
 ): ColumnDef<WorkOrderListItem>[] {
   return [
     {
-      accessorKey: 'providerId',
+      accessorKey: 'workOrderProviderNo',
       header: t('common.providerOrderNumber'),
+      cell: (info) => info.getValue<string | null>() ?? '—',
     },
     {
       accessorKey: 'status',
@@ -47,19 +48,8 @@ export function createServiceOrdersColumns(
       cell: (info) => info.getValue<string | null>() ?? '—',
     },
     {
-      accessorKey: 'productBrand',
-      header: t('common.equipmentBrand'),
-      cell: (info) => info.getValue<string | null>() ?? '—',
-    },
-    {
-      accessorKey: 'customerName',
-      header: t('common.consumerName'),
-      cell: (info) => info.getValue<string | null>() ?? '—',
-    },
-    {
-      accessorKey: 'cityName',
-      header: t('common.city'),
-      cell: (info) => info.getValue<string | null>() ?? '—',
+      accessorKey: 'providerName',
+      header: t('common.provider'),
     },
   ]
 }

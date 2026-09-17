@@ -39,15 +39,19 @@ public sealed class WorkOrderPgRepository(
 
         try
         {
+            var integrationId = await ResolveIntegrationIdAsync(conn, tx, tenantId, cancellationToken)
+                ?? throw new InvalidOperationException(
+                    $"Tenant {tenantId} não possui Integration cadastrada — IntegrationId é obrigatório em work_orders/work_order_histories.");
+
             foreach (var order in orders)
             {
                 var (workOrderId, previousStatus, isNew) =
-                    await UpsertWorkOrderAsync(conn, tx, tenantId, order, cancellationToken);
+                    await UpsertWorkOrderAsync(conn, tx, tenantId, integrationId, order, cancellationToken);
 
                 if (isNew || !string.Equals(previousStatus, order.Status, StringComparison.Ordinal))
                 {
                     await InsertWorkOrderHistoryAsync(conn, tx,
-                        workOrderId, interactionId, tenantId, order, cancellationToken);
+                        workOrderId, interactionId, tenantId, integrationId, order, cancellationToken);
                 }
             }
 
@@ -150,6 +154,7 @@ public sealed class WorkOrderPgRepository(
     /// </summary>
     private static readonly string[] DetailColumns =
     [
+        "WorkOrderProviderNo", "ServiceRequestId", "Amount",
         "ProviderCreatedAt", "ProviderUpdatedAt",
         "CustomerType", "CustomerName", "CustomerCpf",
         "ContactEmail", "ContactPhone", "ContactName",
@@ -166,6 +171,7 @@ public sealed class WorkOrderPgRepository(
     {
         object?[] values =
         [
+            order.WorkOrderProviderNo, order.ServiceRequestId, order.Amount,
             order.ProviderCreatedAt, order.ProviderUpdatedAt,
             order.CustomerType, order.CustomerName, order.CustomerCpf,
             order.ContactEmail, order.ContactPhone, order.ContactName,
@@ -186,25 +192,48 @@ public sealed class WorkOrderPgRepository(
         string.Join(", ", DetailColumns.Select((c, i) => $"\"{c}\" = @d{i}"));
 
     /// <summary>
+    /// Resolve o <c>IntegrationId</c> do tenant para popular a FK em work_orders/
+    /// work_order_histories (traço até Tenant/Provider). No MVP existe exatamente uma
+    /// integração (iService) por tenant (ADR-018), então basta a primeira encontrada.
+    /// Retorna null se o tenant ainda não tiver integração — nesse caso o chamador deve
+    /// falhar o processamento, pois a coluna é obrigatória.
+    /// </summary>
+    private static async Task<Guid?> ResolveIntegrationIdAsync(
+        NpgsqlConnection conn,
+        NpgsqlTransaction tx,
+        Guid tenantId,
+        CancellationToken cancellationToken)
+    {
+        await using var cmd = conn.CreateCommand();
+        cmd.Transaction = tx;
+        cmd.CommandText = "SELECT \"Id\" FROM integrations WHERE \"TenantId\" = @tid LIMIT 1";
+        cmd.Parameters.AddWithValue("@tid", tenantId);
+
+        var result = await cmd.ExecuteScalarAsync(cancellationToken);
+        return result is Guid id ? id : null;
+    }
+
+    /// <summary>
     /// UPSERT em work_orders. Retorna (id, statusAnterior, isNew).
     /// </summary>
     private static async Task<(Guid WorkOrderId, string? PreviousStatus, bool IsNew)> UpsertWorkOrderAsync(
         NpgsqlConnection conn,
         NpgsqlTransaction tx,
         Guid tenantId,
+        Guid integrationId,
         ProviderWorkOrderData order,
         CancellationToken cancellationToken)
     {
-        var providerId = order.ProviderId;
+        var workOrderProviderId = order.WorkOrderProviderId;
         var newStatus = order.Status;
 
         // Primeiro tenta ler o estado atual
         await using var selectCmd = conn.CreateCommand();
         selectCmd.Transaction = tx;
         selectCmd.CommandText =
-            "SELECT \"Id\", \"Status\" FROM work_orders WHERE \"TenantId\" = @tid AND \"ProviderId\" = @pid";
+            "SELECT \"Id\", \"Status\" FROM work_orders WHERE \"TenantId\" = @tid AND \"WorkOrderProviderId\" = @pid";
         selectCmd.Parameters.AddWithValue("@tid", tenantId);
-        selectCmd.Parameters.AddWithValue("@pid", providerId);
+        selectCmd.Parameters.AddWithValue("@pid", workOrderProviderId);
 
         await using var reader = await selectCmd.ExecuteReaderAsync(cancellationToken);
 
@@ -218,9 +247,10 @@ public sealed class WorkOrderPgRepository(
             await using var updateCmd = conn.CreateCommand();
             updateCmd.Transaction = tx;
             updateCmd.CommandText =
-                $"UPDATE work_orders SET \"Status\" = @status, \"UpdatedAt\" = @now, {DetailAssignmentList()} WHERE \"Id\" = @id";
+                $"UPDATE work_orders SET \"Status\" = @status, \"UpdatedAt\" = @now, \"IntegrationId\" = @iid, {DetailAssignmentList()} WHERE \"Id\" = @id";
             updateCmd.Parameters.AddWithValue("@status", newStatus);
             updateCmd.Parameters.AddWithValue("@now", DateTimeOffset.UtcNow);
+            updateCmd.Parameters.AddWithValue("@iid", integrationId);
             updateCmd.Parameters.AddWithValue("@id", existingId);
             AddDetailParameters(updateCmd, order);
             await updateCmd.ExecuteNonQueryAsync(cancellationToken);
@@ -238,12 +268,13 @@ public sealed class WorkOrderPgRepository(
         insertCmd.Transaction = tx;
         insertCmd.CommandText =
             $"""
-            INSERT INTO work_orders ("Id", "TenantId", "ProviderId", "Status", "CreatedAt", "UpdatedAt", {DetailColumnList()})
-            VALUES (@id, @tid, @pid, @status, @now, @now, {DetailParamList()})
+            INSERT INTO work_orders ("Id", "TenantId", "IntegrationId", "WorkOrderProviderId", "Status", "CreatedAt", "UpdatedAt", {DetailColumnList()})
+            VALUES (@id, @tid, @iid, @pid, @status, @now, @now, {DetailParamList()})
             """;
         insertCmd.Parameters.AddWithValue("@id", newId);
         insertCmd.Parameters.AddWithValue("@tid", tenantId);
-        insertCmd.Parameters.AddWithValue("@pid", providerId);
+        insertCmd.Parameters.AddWithValue("@iid", integrationId);
+        insertCmd.Parameters.AddWithValue("@pid", workOrderProviderId);
         insertCmd.Parameters.AddWithValue("@status", newStatus);
         insertCmd.Parameters.AddWithValue("@now", now);
         AddDetailParameters(insertCmd, order);
@@ -264,6 +295,7 @@ public sealed class WorkOrderPgRepository(
         Guid workOrderId,
         Guid interactionId,
         Guid tenantId,
+        Guid integrationId,
         ProviderWorkOrderData order,
         CancellationToken cancellationToken)
     {
@@ -274,14 +306,15 @@ public sealed class WorkOrderPgRepository(
         cmd.CommandText =
             $"""
             INSERT INTO work_order_histories
-                ("Id", "WorkOrderId", "WorkOrderSnapshotId", "TenantId", "ProviderId", "Status", "CreatedAt", "UpdatedAt", {DetailColumnList()})
-            VALUES (@id, @woid, @snid, @tid, @pid, @status, @now, @now, {DetailParamList()})
+                ("Id", "WorkOrderId", "WorkOrderSnapshotId", "TenantId", "IntegrationId", "WorkOrderProviderId", "Status", "CreatedAt", "UpdatedAt", {DetailColumnList()})
+            VALUES (@id, @woid, @snid, @tid, @iid, @pid, @status, @now, @now, {DetailParamList()})
             """;
         cmd.Parameters.AddWithValue("@id", Guid.CreateVersion7());
         cmd.Parameters.AddWithValue("@woid", workOrderId);
         cmd.Parameters.AddWithValue("@snid", interactionId);
         cmd.Parameters.AddWithValue("@tid", tenantId);
-        cmd.Parameters.AddWithValue("@pid", order.ProviderId);
+        cmd.Parameters.AddWithValue("@iid", integrationId);
+        cmd.Parameters.AddWithValue("@pid", order.WorkOrderProviderId);
         cmd.Parameters.AddWithValue("@status", order.Status);
         cmd.Parameters.AddWithValue("@now", now);
         AddDetailParameters(cmd, order);

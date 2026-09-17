@@ -50,25 +50,28 @@ public sealed class IServiceProviderInteractionOrderAdapter : IProviderInteracti
         {
             if (item is not BsonDocument order) continue;
 
-            var providerId = ExtractProviderId(order);
+            var workOrderProviderId = ExtractWorkOrderProviderId(order);
             var status = ExtractStatus(order);
 
-            if (string.IsNullOrWhiteSpace(providerId) || string.IsNullOrWhiteSpace(status))
+            if (string.IsNullOrWhiteSpace(workOrderProviderId) || string.IsNullOrWhiteSpace(status))
                 continue;
 
-            result.Add(BuildOrderData(order, providerId, status));
+            result.Add(BuildOrderData(order, workOrderProviderId, status));
         }
 
         return result;
     }
 
-    private static ProviderWorkOrderData BuildOrderData(BsonDocument order, string providerId, string status)
+    private static ProviderWorkOrderData BuildOrderData(BsonDocument order, string workOrderProviderId, string status)
     {
         var customerName = ExtractCustomerName(order);
 
         return new ProviderWorkOrderData(
-            ProviderId: providerId,
+            WorkOrderProviderId: workOrderProviderId,
             Status: status,
+            WorkOrderProviderNo: ExtractString(order, "workOrderNo"),
+            ServiceRequestId: ExtractString(order, "serviceRequestId"),
+            Amount: ExtractDecimal(order, "totalAmount"),
             ProviderCreatedAt: ExtractDate(order, "creationDate"),
             ProviderUpdatedAt: ExtractDate(order, "lastUpdateDate"),
             CustomerType: ExtractString(order, "customerType"),
@@ -92,7 +95,7 @@ public sealed class IServiceProviderInteractionOrderAdapter : IProviderInteracti
             Symptom: ExtractSymptom(order));
     }
 
-    private static string? ExtractProviderId(BsonDocument order)
+    private static string? ExtractWorkOrderProviderId(BsonDocument order)
     {
         if (order.TryGetValue("workOrderId", out var workOrderId) && !workOrderId.IsBsonNull)
             return workOrderId.ToString();
@@ -134,6 +137,28 @@ public sealed class IServiceProviderInteractionOrderAdapter : IProviderInteracti
             raw, ProviderDateFormat, CultureInfo.InvariantCulture, DateTimeStyles.None, out var parsed)
             ? new DateTimeOffset(parsed, TimeSpan.Zero)
             : null;
+    }
+
+    /// <summary>
+    /// Lê e converte um campo numérico cru do documento (ex.: <c>totalAmount</c>), tratando
+    /// ausência/null como null.
+    /// </summary>
+    private static decimal? ExtractDecimal(BsonDocument order, string field)
+    {
+        if (!order.TryGetValue(field, out var value) || value.IsBsonNull)
+            return null;
+
+        return value.BsonType switch
+        {
+            BsonType.Decimal128 => (decimal)value.AsDecimal128,
+            BsonType.Double => (decimal)value.AsDouble,
+            BsonType.Int32 => value.AsInt32,
+            BsonType.Int64 => value.AsInt64,
+            BsonType.String => decimal.TryParse(value.AsString, NumberStyles.Any, CultureInfo.InvariantCulture, out var parsed)
+                ? parsed
+                : null,
+            _ => null,
+        };
     }
 
     /// <summary>

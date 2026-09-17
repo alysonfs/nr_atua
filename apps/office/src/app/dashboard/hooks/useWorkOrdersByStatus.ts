@@ -14,8 +14,10 @@ import { apiClient } from '../../../shared/lib/apiClient'
 export interface WorkOrderListItem {
   /** Identificador da OS (Atua). */
   id: string
-  /** Identificador externo da OS no sistema de origem do provedor. */
-  providerId: string
+  /** Identificador externo da OS no sistema de origem do provedor (workOrderId do iService). */
+  workOrderProviderId: string
+  /** Número visível da OS no provedor (workOrderNo do iService, ex.: BRWO260909869). */
+  workOrderProviderNo: string | null
   /** Status cru da OS (RF-017). */
   status: string
   /** Data/hora de criação da OS no Atua (ISO 8601). */
@@ -34,6 +36,8 @@ export interface WorkOrderListItem {
   customerName: string | null
   /** Cidade do endereço do consumidor. */
   cityName: string | null
+  /** Nome do provedor de integração (ex.: iService). */
+  providerName: string
 }
 
 interface WorkOrderListResponse {

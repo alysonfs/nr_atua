@@ -36,16 +36,18 @@ const TENANT_ID = 'tenant-1'
 
 const mockedOrders = [
   {
-    id: 'os-1', providerId: 'EXT-1001', status: 'Designado',
+    id: 'os-1', workOrderProviderId: 'EXT-1001', workOrderProviderNo: 'BRWO260909869', status: 'Designado',
     createdAt: '2026-09-01T10:00:00Z', updatedAt: '2026-09-02T10:00:00Z',
     providerCreatedAt: '2026-09-01T09:00:00Z', providerUpdatedAt: '2026-09-02T09:00:00Z',
     productModel: 'CRM43', productBrand: 'Consul', customerName: 'Maria Souza', cityName: 'Natal',
+    providerName: 'iService',
   },
   {
-    id: 'os-2', providerId: 'EXT-1002', status: 'Designado',
+    id: 'os-2', workOrderProviderId: 'EXT-1002', workOrderProviderNo: 'BRWO260909870', status: 'Designado',
     createdAt: '2026-09-03T10:00:00Z', updatedAt: '2026-09-04T10:00:00Z',
     providerCreatedAt: '2026-09-03T09:00:00Z', providerUpdatedAt: '2026-09-04T09:00:00Z',
     productModel: 'W11A', productBrand: 'Brastemp', customerName: 'João Lima', cityName: 'Parnamirim',
+    providerName: 'iService',
   },
 ]
 
@@ -72,9 +74,7 @@ describe('ServiceOrdersTable', () => {
     expect(screen.getByRole('columnheader', { name: /criada em \(provedor\)/i })).toBeInTheDocument()
     expect(screen.getByRole('columnheader', { name: /atualizada em \(provedor\)/i })).toBeInTheDocument()
     expect(screen.getByRole('columnheader', { name: /modelo do equipamento/i })).toBeInTheDocument()
-    expect(screen.getByRole('columnheader', { name: /marca do equipamento/i })).toBeInTheDocument()
-    expect(screen.getByRole('columnheader', { name: /nome do consumidor/i })).toBeInTheDocument()
-    expect(screen.getByRole('columnheader', { name: /^cidade$/i })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: /^provedor$/i })).toBeInTheDocument()
   })
 
   it('renders one row per service order returned by the API', async () => {
@@ -82,11 +82,11 @@ describe('ServiceOrdersTable', () => {
 
     render(<ServiceOrdersTable tenantId={TENANT_ID} status="Designado" />)
 
-    await waitFor(() => expect(screen.getByText('Maria Souza')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText('BRWO260909869')).toBeInTheDocument())
 
     mockedOrders.forEach((order) => {
-      expect(screen.getAllByText(order.providerId).length).toBeGreaterThan(0)
-      expect(screen.getByText(order.customerName)).toBeInTheDocument()
+      expect(screen.getAllByText(order.workOrderProviderNo).length).toBeGreaterThan(0)
+      expect(screen.getAllByText(order.productModel).length).toBeGreaterThan(0)
     })
 
     const rows = screen.getAllByRole('row')
@@ -100,7 +100,7 @@ describe('ServiceOrdersTable', () => {
 
     render(<ServiceOrdersTable tenantId={TENANT_ID} status="Designado" />)
 
-    await waitFor(() => expect(screen.getByText('Maria Souza')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText('BRWO260909869')).toBeInTheDocument())
 
     fireEvent.change(screen.getByLabelText(/itens por página/i), { target: { value: '25' } })
 

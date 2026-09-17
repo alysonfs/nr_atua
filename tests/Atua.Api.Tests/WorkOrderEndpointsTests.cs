@@ -4,6 +4,7 @@ using System.Security.Claims;
 using System.Text.Encodings.Web;
 using Atua.Api.Application.WorkOrders;
 using Atua.Api.Application.WorkOrders.Contracts;
+using Atua.Api.Domain.Integrations;
 using Atua.Api.Domain.Tenants;
 using Atua.Api.Domain.WorkOrders;
 using Atua.Api.Endpoints;
@@ -65,13 +66,13 @@ public class WorkOrderEndpointsTests
         {
             var createdAt = new DateTimeOffset(2026, 9, 1, 9, 0, 0, TimeSpan.FromHours(-3));
             var changedAt = new DateTimeOffset(2026, 9, 5, 10, 0, 0, TimeSpan.FromHours(-3));
-            var workOrder = new WorkOrder(workOrderId, tenantId, "OS-1", "Novo", createdAt);
+            var workOrder = new WorkOrder(workOrderId, tenantId, Guid.CreateVersion7(), "OS-1", "Novo", createdAt);
             workOrder.UpdateStatus("Em Andamento", changedAt);
             context.WorkOrders.Add(workOrder);
             context.WorkOrderHistories.Add(new WorkOrderHistory(Guid.CreateVersion7(), workOrderId,
-                Guid.CreateVersion7(), tenantId, "OS-1", "Novo", createdAt));
+                Guid.CreateVersion7(), tenantId, Guid.CreateVersion7(), "OS-1", "Novo", createdAt));
             context.WorkOrderHistories.Add(new WorkOrderHistory(Guid.CreateVersion7(), workOrderId,
-                Guid.CreateVersion7(), tenantId, "OS-1", "Em Andamento", changedAt));
+                Guid.CreateVersion7(), tenantId, Guid.CreateVersion7(), "OS-1", "Em Andamento", changedAt));
             await context.SaveChangesAsync();
         }
 
@@ -114,15 +115,16 @@ public class WorkOrderEndpointsTests
         await using var appDisposable = app;
         var userId = Guid.CreateVersion7();
         var tenantId = await SeedTenantWithMembershipAsync(databaseName, userId);
+        var integrationId = await SeedIntegrationAsync(databaseName, tenantId);
 
         await using (var context = CreateContext(databaseName))
         {
-            var older = new WorkOrder(Guid.CreateVersion7(), tenantId, "OS-1", "Novo",
+            var older = new WorkOrder(Guid.CreateVersion7(), tenantId, integrationId, "OS-1", "Novo",
                 DateTimeOffset.UtcNow.AddDays(-2));
-            var newer = new WorkOrder(Guid.CreateVersion7(), tenantId, "OS-2", "Novo",
+            var newer = new WorkOrder(Guid.CreateVersion7(), tenantId, integrationId, "OS-2", "Novo",
                 DateTimeOffset.UtcNow.AddDays(-1));
             newer.Touch(DateTimeOffset.UtcNow);
-            var otherStatus = new WorkOrder(Guid.CreateVersion7(), tenantId, "OS-3", "Concluído",
+            var otherStatus = new WorkOrder(Guid.CreateVersion7(), tenantId, integrationId, "OS-3", "Concluído",
                 DateTimeOffset.UtcNow);
             context.WorkOrders.AddRange(older, newer, otherStatus);
             await context.SaveChangesAsync();
@@ -134,8 +136,8 @@ public class WorkOrderEndpointsTests
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal(2, body!.TotalCount);
-        Assert.Equal("OS-2", body.Items[0].ProviderId);
-        Assert.Equal("OS-1", body.Items[1].ProviderId);
+        Assert.Equal("OS-2", body.Items[0].WorkOrderProviderId);
+        Assert.Equal("OS-1", body.Items[1].WorkOrderProviderId);
     }
 
     [Fact]
@@ -145,11 +147,15 @@ public class WorkOrderEndpointsTests
         await using var appDisposable = app;
         var userId = Guid.CreateVersion7();
         var tenantId = await SeedTenantWithMembershipAsync(databaseName, userId);
+        var integrationId = await SeedIntegrationAsync(databaseName, tenantId, providerName: "iService");
 
         await using (var context = CreateContext(databaseName))
         {
-            var order = new WorkOrder(Guid.CreateVersion7(), tenantId, "OS-1", "Designado", DateTimeOffset.UtcNow);
+            var order = new WorkOrder(Guid.CreateVersion7(), tenantId, integrationId, "OS-1", "Designado", DateTimeOffset.UtcNow);
             order.UpdateDetails(new WorkOrderDetails(
+                WorkOrderProviderNo: "BRWO260909869",
+                ServiceRequestId: "102215534",
+                Amount: 199.90m,
                 ProviderCreatedAt: new DateTimeOffset(2026, 9, 1, 9, 0, 0, TimeSpan.Zero),
                 ProviderUpdatedAt: new DateTimeOffset(2026, 9, 2, 9, 0, 0, TimeSpan.Zero),
                 CustomerType: null, CustomerName: "Maria Souza", CustomerCpf: null,
@@ -168,11 +174,15 @@ public class WorkOrderEndpointsTests
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var item = body!.Items.Single();
+        Assert.Equal("BRWO260909869", item.WorkOrderProviderNo);
         Assert.Equal("Maria Souza", item.CustomerName);
         Assert.Equal("CRM43", item.ProductModel);
         Assert.Equal("Consul", item.ProductBrand);
         Assert.Equal("Natal", item.CityName);
         Assert.Equal(new DateTimeOffset(2026, 9, 1, 9, 0, 0, TimeSpan.Zero), item.ProviderCreatedAt);
+        Assert.Equal("102215534", item.ServiceRequestId);
+        Assert.Equal(199.90m, item.Amount);
+        Assert.Equal("iService", item.ProviderName);
     }
 
     [Fact]
@@ -199,9 +209,9 @@ public class WorkOrderEndpointsTests
         await using (var context = CreateContext(databaseName))
         {
             context.WorkOrders.AddRange(
-                new WorkOrder(Guid.CreateVersion7(), tenantId, "OS-1", "pending", DateTimeOffset.UtcNow.AddMonths(-3)),
-                new WorkOrder(Guid.CreateVersion7(), tenantId, "OS-2", "pending", DateTimeOffset.UtcNow.AddMonths(-2)),
-                new WorkOrder(Guid.CreateVersion7(), tenantId, "OS-3", "closed", DateTimeOffset.UtcNow.AddMonths(-1)));
+                new WorkOrder(Guid.CreateVersion7(), tenantId, Guid.CreateVersion7(), "OS-1", "pending", DateTimeOffset.UtcNow.AddMonths(-3)),
+                new WorkOrder(Guid.CreateVersion7(), tenantId, Guid.CreateVersion7(), "OS-2", "pending", DateTimeOffset.UtcNow.AddMonths(-2)),
+                new WorkOrder(Guid.CreateVersion7(), tenantId, Guid.CreateVersion7(), "OS-3", "closed", DateTimeOffset.UtcNow.AddMonths(-1)));
             await context.SaveChangesAsync();
         }
 
@@ -212,6 +222,19 @@ public class WorkOrderEndpointsTests
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal(2, body!.Statuses.Single(status => status.Status == "pending").Total);
         Assert.Equal(1, body.Statuses.Single(status => status.Status == "closed").Total);
+    }
+
+    private static async Task<Guid> SeedIntegrationAsync(string databaseName, Guid tenantId,
+        string providerName = "iService")
+    {
+        var providerId = Guid.CreateVersion7();
+        var integrationId = Guid.CreateVersion7();
+        await using var context = CreateContext(databaseName);
+        context.IntegrationProviders.Add(new IntegrationProvider(providerId, providerName, "Fabricante",
+            new Uri("https://provider.example.com"), true));
+        context.Integrations.Add(new Integration(integrationId, tenantId, providerId, true));
+        await context.SaveChangesAsync();
+        return integrationId;
     }
 
     private static async Task<Guid> SeedTenantAsync(string databaseName)

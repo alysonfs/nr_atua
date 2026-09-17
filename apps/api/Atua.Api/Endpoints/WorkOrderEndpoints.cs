@@ -79,9 +79,10 @@ public static class WorkOrderEndpoints
         var response = new WorkOrderListResponse(result.Status, result.Page, result.PageSize,
             result.TotalCount,
             result.Items
-                .Select(item => new WorkOrderListItem(item.Id, item.ProviderId, item.Status, item.CreatedAt,
-                    item.UpdatedAt, item.ProviderCreatedAt, item.ProviderUpdatedAt, item.ProductModel,
-                    item.ProductBrand, item.CustomerName, item.CityName))
+                .Select(item => new WorkOrderListItem(item.Id, item.WorkOrderProviderId, item.WorkOrderProviderNo,
+                    item.ServiceRequestId, item.Amount,
+                    item.Status, item.CreatedAt, item.UpdatedAt, item.ProviderCreatedAt, item.ProviderUpdatedAt,
+                    item.ProductModel, item.ProductBrand, item.CustomerName, item.CityName, item.ProviderName))
                 .ToArray());
 
         return Results.Ok(response);
@@ -138,10 +139,11 @@ public sealed record WorkOrderStatusMonthSummary(string Status, int Total,
 public sealed record WorkOrderListResponse(string Status, int Page, int PageSize, int TotalCount,
     IReadOnlyList<WorkOrderListItem> Items);
 
-public sealed record WorkOrderListItem(Guid Id, string ProviderId, string Status,
+public sealed record WorkOrderListItem(Guid Id, string WorkOrderProviderId, string? WorkOrderProviderNo,
+    string? ServiceRequestId, decimal? Amount, string Status,
     DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt,
     DateTimeOffset? ProviderCreatedAt, DateTimeOffset? ProviderUpdatedAt,
-    string? ProductModel, string? ProductBrand, string? CustomerName, string? CityName);
+    string? ProductModel, string? ProductBrand, string? CustomerName, string? CityName, string ProviderName);
 
 public sealed record WorkOrderStatusSummaryResponse(IReadOnlyList<WorkOrderStatusCount> Statuses);
 

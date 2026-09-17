@@ -2,18 +2,20 @@ namespace Atua.Api.Domain.WorkOrders;
 
 /// <summary>
 /// Estado atual de uma OS por tenant (RF-017).
-/// Chave de identidade: (TenantId, ProviderId) — ver RN-017.6.
+/// Chave de identidade: (TenantId, WorkOrderProviderId) — ver RN-017.6.
 /// Status é string crua do provedor, sem enum (DP-017.2 resolvida).
 /// </summary>
 public sealed class WorkOrder
 {
     private WorkOrder() { }
 
-    public WorkOrder(Guid id, Guid tenantId, string providerId, string status, DateTimeOffset createdAt)
+    public WorkOrder(Guid id, Guid tenantId, Guid integrationId, string workOrderProviderId, string status,
+        DateTimeOffset createdAt)
     {
         Id = id;
         TenantId = tenantId;
-        ProviderId = providerId;
+        IntegrationId = integrationId;
+        WorkOrderProviderId = workOrderProviderId;
         Status = status;
         CreatedAt = createdAt;
         UpdatedAt = createdAt;
@@ -24,8 +26,28 @@ public sealed class WorkOrder
     /// <summary>Redundante para isolamento multi-tenant (RN-017.6).</summary>
     public Guid TenantId { get; private set; }
 
-    /// <summary>Identificador externo da OS no provedor (ex.: workOrderId do iService).</summary>
-    public string ProviderId { get; private set; } = string.Empty;
+    /// <summary>
+    /// FK para <see cref="Atua.Api.Domain.Integrations.Integration"/> — permite chegar ao
+    /// Tenant e ao Provider a partir da OS (RN-017.7). Obrigatório: toda OS é sempre
+    /// coletada por uma integração conhecida.
+    /// </summary>
+    public Guid IntegrationId { get; private set; }
+
+    /// <summary>Identificador serial externo da OS no provedor (<c>workOrderId</c> no iService).</summary>
+    public string WorkOrderProviderId { get; private set; } = string.Empty;
+
+    /// <summary>Número visível da OS no provedor (<c>workOrderNo</c> no iService, ex.: BRWO260909869).</summary>
+    public string? WorkOrderProviderNo { get; private set; }
+
+    /// <summary>
+    /// Identificador do Service Request (SR) no provedor (<c>serviceRequestId</c> no iService) —
+    /// chave usada para obter os dados reais (não mascarados) do consumidor via
+    /// <c>getSrOriginalInfo</c>.
+    /// </summary>
+    public string? ServiceRequestId { get; private set; }
+
+    /// <summary>Valor total da OS informado pelo provedor (<c>totalAmount</c> no iService).</summary>
+    public decimal? Amount { get; private set; }
 
     /// <summary>
     /// Status atual da OS — string crua retornada pelo provedor, sem mapeamento (DP-017.2).
@@ -130,6 +152,9 @@ public sealed class WorkOrder
     /// </summary>
     public void UpdateDetails(WorkOrderDetails details, DateTimeOffset now)
     {
+        WorkOrderProviderNo = details.WorkOrderProviderNo;
+        ServiceRequestId = details.ServiceRequestId;
+        Amount = details.Amount;
         ProviderCreatedAt = details.ProviderCreatedAt;
         ProviderUpdatedAt = details.ProviderUpdatedAt;
         CustomerType = details.CustomerType;
@@ -161,6 +186,9 @@ public sealed class WorkOrder
 /// assinatura de método com dezenas de parâmetros posicionais.
 /// </summary>
 public sealed record WorkOrderDetails(
+    string? WorkOrderProviderNo,
+    string? ServiceRequestId,
+    decimal? Amount,
     DateTimeOffset? ProviderCreatedAt,
     DateTimeOffset? ProviderUpdatedAt,
     string? CustomerType,

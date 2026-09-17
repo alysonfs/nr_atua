@@ -159,10 +159,20 @@ Ordenação proposta: `UpdatedAt` descendente (mais recente primeiro).
   "items": [
     {
       "id": "b6e2...",
-      "providerId": "OS-1001",
+      "workOrderProviderId": "OS-1001",
+      "workOrderProviderNo": "BRWO260909869",
+      "serviceRequestId": "102215534",
+      "amount": 199.90,
       "status": "Designado",
       "createdAt": "2026-09-01T09:15:00.000Z",
-      "updatedAt": "2026-09-02T13:40:00.000Z"
+      "updatedAt": "2026-09-02T13:40:00.000Z",
+      "providerCreatedAt": "2026-09-01T09:00:00.000Z",
+      "providerUpdatedAt": "2026-09-02T09:00:00.000Z",
+      "productModel": "CRM43",
+      "productBrand": "Consul",
+      "customerName": "Maria Souza",
+      "cityName": "Natal",
+      "providerName": "iService"
     }
   ]
 }
@@ -175,9 +185,11 @@ public sealed record WorkOrderListResponse(
     string Status, int Page, int PageSize, int TotalCount,
     IReadOnlyList<WorkOrderListItem> Items);
 
-public sealed record WorkOrderListItem(
-    Guid Id, string ProviderId, string Status,
-    DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt);
+public sealed record WorkOrderListItem(Guid Id, string WorkOrderProviderId, string? WorkOrderProviderNo,
+    string? ServiceRequestId, decimal? Amount, string Status,
+    DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt,
+    DateTimeOffset? ProviderCreatedAt, DateTimeOffset? ProviderUpdatedAt,
+    string? ProductModel, string? ProductBrand, string? CustomerName, string? CityName, string ProviderName);
 ```
 
 ### Contrato de interface
@@ -259,30 +271,35 @@ Autorização e tenant scoping seguem o mesmo padrão da seção 5 abaixo.
 
 ## 4. Decisão sobre `providerName`
 
-**`providerName` NÃO existe na resposta. Não é uma lacuna a preencher — é
-uma incompatibilidade conceitual do mock que deve ser corrigida no front.**
+**Atualizado**: `providerName` agora existe na resposta do Endpoint 2. A
+seção abaixo documenta a decisão original (por que não podia vir de
+`WorkOrderProviderId`) e como o campo passou a ser resolvido de fato.
 
-Motivo: no domínio real (`WorkOrder.cs`, RF-017), `ProviderId` **não
-identifica uma empresa/provedor terceirizado**. É o identificador *externo
-da própria OS* no sistema de origem (ex. `workOrderId` do iService — ver
-comentário em `WorkOrder.cs`: "Identificador externo da OS no provedor").
-Ou seja, o domínio hoje não modela "provedor" como uma entidade de negócio
-(empresa prestadora) — modela apenas a integração de origem (iService) e o
-ID da OS dentro dela.
+Motivo original: no domínio real (`WorkOrder.cs`, RF-017), `WorkOrderProviderId`
+**não identifica uma empresa/provedor terceirizado**. É o identificador
+serial *externo da própria OS* no sistema de origem (`workOrderId` do
+iService — ver comentário em `WorkOrder.cs`: "Identificador serial
+externo da OS no provedor"). A rastreabilidade até o provedor/empresa da
+integração (ex.: iService) é feita pela FK `WorkOrder.IntegrationId` →
+`Integration.ProviderId` (`IntegrationProvider`), não por este campo.
 
-O mock (`providerName: 'Refrigeração Natal Ltda'`, etc.) presumiu, de forma
-incorreta, que `providerId` seria um identificador de empresa prestadora
-de serviço. Essa entidade não existe no domínio hoje e **não deve ser
-criada apenas para satisfazer o mock** (regra de evolução: não antecipar
-modelagem sem necessidade real identificada em RF).
+O mock original (`providerName: 'Refrigeração Natal Ltda'`, etc.) presumiu,
+de forma incorreta, que `workOrderProviderId` seria um identificador de
+empresa prestadora de serviço — essa entidade (empresa prestadora) segue
+não existindo no domínio.
 
-Ação recomendada para o `frontend-engineer`: renomear/reinterpretar a
-coluna da tabela do Dashboard de "Provedor" para algo como "Nº da OS no
-provedor" ou similar, exibindo `providerId` (ex. `OS-1001`) como o
-identificador externo da OS, não como nome de empresa. Se o produto
-realmente precisar exibir "qual empresa prestou o serviço", isso é um novo
-requisito de negócio (nova entidade `Provider`/empresa) que deve ser
-levantado como RF novo, não resolvido silenciosamente aqui.
+**Implementação atual**: `providerName` é resolvido a partir de
+`IntegrationProvider.Name` (ex.: "iService"), via `JOIN`
+`WorkOrder.IntegrationId → Integration.Id → Integration.ProviderId →
+IntegrationProvider.Id` em `WorkOrderListByStatusQueryHandler`. Ou seja, é
+o nome do *provedor de integração* (sistema de origem), não o nome de uma
+empresa prestadora de serviço terceirizada — essa distinção conceitual
+continua valendo; apenas o dado passou a ser exposto porque já existe no
+domínio via `Integration`/`IntegrationProvider`.
+
+A coluna "Nº da OS no provedor" na tabela do Dashboard exibe
+`workOrderProviderNo` (número visível da OS, ex. `BRWO260909869`), e a
+coluna "Provedor" exibe `providerName` (nome da integração de origem).
 
 ---
 

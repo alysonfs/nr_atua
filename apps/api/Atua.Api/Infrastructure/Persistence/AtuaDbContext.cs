@@ -359,13 +359,18 @@ public sealed class AtuaDbContext(DbContextOptions<AtuaDbContext> options) : DbC
         builder.ToTable("work_orders");
         builder.HasKey(wo => wo.Id);
         builder.Property(wo => wo.Id).ValueGeneratedNever();
-        builder.Property(wo => wo.ProviderId).HasMaxLength(256).IsRequired();
+        builder.Property(wo => wo.WorkOrderProviderId).HasMaxLength(256).IsRequired();
         builder.Property(wo => wo.Status).IsRequired();
-        // Chave de identidade: (tenant_id, provider_id) — RF-017.6
-        builder.HasIndex(wo => new { wo.TenantId, wo.ProviderId })
+        builder.Property(wo => wo.Amount).HasColumnType("numeric(18,2)");
+        // Chave de identidade: (tenant_id, work_order_provider_id) — RF-017.6
+        builder.HasIndex(wo => new { wo.TenantId, wo.WorkOrderProviderId })
             .IsUnique()
             .HasDatabaseName("uq_work_orders_tenant_provider");
         builder.HasIndex(wo => wo.TenantId);
+        builder.HasIndex(wo => wo.IntegrationId);
+        // Obrigatório (RN-017.7): toda OS é sempre coletada por uma integração conhecida.
+        builder.HasOne<Integration>().WithMany().HasForeignKey(wo => wo.IntegrationId)
+            .OnDelete(DeleteBehavior.Restrict);
     }
 
     private static void ConfigureWorkOrderHistory(EntityTypeBuilder<WorkOrderHistory> builder)
@@ -373,8 +378,9 @@ public sealed class AtuaDbContext(DbContextOptions<AtuaDbContext> options) : DbC
         builder.ToTable("work_order_histories");
         builder.HasKey(h => h.Id);
         builder.Property(h => h.Id).ValueGeneratedNever();
-        builder.Property(h => h.ProviderId).HasMaxLength(256).IsRequired();
+        builder.Property(h => h.WorkOrderProviderId).HasMaxLength(256).IsRequired();
         builder.Property(h => h.Status).IsRequired();
+        builder.Property(h => h.Amount).HasColumnType("numeric(18,2)");
         // WorkOrderSnapshotId é referência de aplicação, sem FK de banco (ADR-023)
         builder.Property(h => h.WorkOrderSnapshotId).IsRequired();
         builder.HasIndex(h => h.WorkOrderId)
@@ -384,6 +390,8 @@ public sealed class AtuaDbContext(DbContextOptions<AtuaDbContext> options) : DbC
         builder.HasOne<WorkOrder>().WithMany()
             .HasForeignKey(h => h.WorkOrderId)
             .OnDelete(DeleteBehavior.Cascade);
+        builder.HasOne<Integration>().WithMany().HasForeignKey(h => h.IntegrationId)
+            .OnDelete(DeleteBehavior.Restrict);
     }
 
     private static void ConfigureConsumerState(EntityTypeBuilder<ConsumerState> builder)
