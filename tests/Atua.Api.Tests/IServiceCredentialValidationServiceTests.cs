@@ -127,6 +127,31 @@ public class IServiceCredentialValidationServiceTests
         Assert.Equal(EImmediateCollectionCommandStatus.Pending, command.Status);
     }
 
+    /// <summary>
+    /// Regressão: divergência de chave mestra (ex.: credencial salva com uma
+    /// chave e o processo atual configurado com outra) faz o AES-GCM lançar
+    /// <see cref="System.Security.Cryptography.AuthenticationTagMismatchException"/>
+    /// ao decifrar. Isso não deve propagar como 500 — deve ser tratado como
+    /// Failed, igual a uma falha de autenticação comum.
+    /// </summary>
+    [Fact]
+    public async Task RegistraFailedQuandoChaveMestraDivergeAoDecifrar()
+    {
+        await using var context = CreateContext();
+        var (tenant, integration, owner) = await SeedAsync(context);
+        var cipherUsadoAoSalvar = CreateCipher();
+        await CreateCredentialService(context, cipherUsadoAoSalvar).SetCredentialsAsync(
+            owner.Id, tenant.Id, integration.Id, "usuario", "senha-valida", null, CancellationToken.None);
+
+        var cipherComOutraChave = new AesGcmCredentialCipher(Options.Create(
+            new CredentialCipherOptions { MasterKeyBase64 = Convert.ToBase64String(new byte[32].Select(_ => (byte)1).ToArray()) }));
+        var service = CreateValidationService(context, cipherComOutraChave, new FakeIServiceAuthClient());
+
+        var result = await service.ValidateAsync(owner.Id, tenant.Id, integration.Id, CancellationToken.None);
+
+        Assert.Equal(EIServiceValidationStatus.Failed, result!.ValidationStatus);
+    }
+
     [Fact]
     public async Task RetornaNuloQuandoUsuarioNaoEMembro()
     {
