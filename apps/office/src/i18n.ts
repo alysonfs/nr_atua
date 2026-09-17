@@ -269,8 +269,12 @@ const ptBR = {
     inactive: 'Inativo',
     validationHint: 'As credenciais ainda não foram validadas. Recomendamos testar a validação antes de ativar o coletor.',
     activatedAt: 'Ativado em {{date}}',
+    lastSuccessfulCollectionAt: 'Última coleta com sucesso: {{date}}',
+    lastSuccessfulCollectionNever: 'Nenhuma coleta com sucesso registrada ainda.',
     activate: 'Ativar coletor',
     activating: 'Ativando coletor...',
+    deactivate: 'Desativar coletor',
+    deactivating: 'Desativando coletor...',
     blockReasons: {
       None: 'A ativação está indisponível no momento. Tente novamente mais tarde.',
       PlanIneligible: 'Seu plano atual não permite ativar o Agente Coletor. Verifique o status do seu Trial ou plano.',
@@ -282,6 +286,13 @@ const ptBR = {
       missing_idempotency_key: 'Não foi possível processar a ativação. Tente novamente.',
       idempotency_key_conflict: 'Já existe uma solicitação de ativação em andamento. Tente novamente em instantes.',
       unknown_error: 'Não foi possível ativar o Agente Coletor agora. Tente novamente.',
+    },
+    deactivateErrors: {
+      integration_not_found: 'Integração não encontrada. Contate o suporte.',
+      forbidden: 'Apenas o proprietário ou administrador da empresa pode desativar o Agente Coletor.',
+      missing_idempotency_key: 'Não foi possível processar a desativação. Tente novamente.',
+      idempotency_key_conflict: 'Já existe uma solicitação de desativação em andamento. Tente novamente em instantes.',
+      unknown_error: 'Não foi possível desativar o Agente Coletor agora. Tente novamente.',
     },
   },
   timezone: {
@@ -498,7 +509,10 @@ const enUS = {
     active: 'Active', inactive: 'Inactive',
     validationHint: 'Credentials have not been validated yet. We recommend testing validation before activating the collector.',
     activatedAt: 'Activated at {{date}}',
+    lastSuccessfulCollectionAt: 'Last successful collection: {{date}}',
+    lastSuccessfulCollectionNever: 'No successful collection recorded yet.',
     activate: 'Activate collector', activating: 'Activating collector...',
+    deactivate: 'Deactivate collector', deactivating: 'Deactivating collector...',
     blockReasons: {
       None: 'Activation is unavailable right now. Please try again later.',
       PlanIneligible: 'Your current plan does not allow activating the Collector Agent. Check your Trial or plan status.',
@@ -510,6 +524,13 @@ const enUS = {
       missing_idempotency_key: 'Unable to process the activation. Try again.',
       idempotency_key_conflict: 'An activation request is already in progress. Try again shortly.',
       unknown_error: 'Unable to activate the Collector Agent now. Try again.',
+    },
+    deactivateErrors: {
+      integration_not_found: 'Integration not found. Contact support.',
+      forbidden: 'Only the company owner or admin can deactivate the Collector Agent.',
+      missing_idempotency_key: 'Unable to process the deactivation. Try again.',
+      idempotency_key_conflict: 'A deactivation request is already in progress. Try again shortly.',
+      unknown_error: 'Unable to deactivate the Collector Agent now. Try again.',
     },
   },
   timezone: {
@@ -706,7 +727,10 @@ const esAR = {
     active: 'Activo', inactive: 'Inactivo',
     validationHint: 'Las credenciales todavía no fueron validadas. Te recomendamos probar la validación antes de activar el colector.',
     activatedAt: 'Activado el {{date}}',
+    lastSuccessfulCollectionAt: 'Última recolección exitosa: {{date}}',
+    lastSuccessfulCollectionNever: 'Todavía no hay recolecciones exitosas registradas.',
     activate: 'Activar colector', activating: 'Activando colector...',
+    deactivate: 'Desactivar colector', deactivating: 'Desactivando colector...',
     blockReasons: {
       None: 'La activación no está disponible en este momento. Intentá nuevamente más tarde.',
       PlanIneligible: 'Tu plan actual no permite activar el Agente Colector. Verificá el estado de tu Trial o plan.',
@@ -718,6 +742,13 @@ const esAR = {
       missing_idempotency_key: 'No fue posible procesar la activación. Intentá nuevamente.',
       idempotency_key_conflict: 'Ya hay una solicitud de activación en curso. Intentá nuevamente en unos instantes.',
       unknown_error: 'No fue posible activar el Agente Colector ahora. Intentá nuevamente.',
+    },
+    deactivateErrors: {
+      integration_not_found: 'Integración no encontrada. Contactá a soporte.',
+      forbidden: 'Solo el propietario o administrador de la empresa puede desactivar el Agente Colector.',
+      missing_idempotency_key: 'No fue posible procesar la desactivación. Intentá nuevamente.',
+      idempotency_key_conflict: 'Ya hay una solicitud de desactivación en curso. Intentá nuevamente en unos instantes.',
+      unknown_error: 'No fue posible desactivar el Agente Colector ahora. Intentá nuevamente.',
     },
   },
   timezone: {

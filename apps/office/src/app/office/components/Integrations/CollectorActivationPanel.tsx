@@ -1,7 +1,14 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useActivateCollector, useCollectorActivation } from '../../hooks/useCollectorActivation'
-import type { ActivateCollectorErrorCode } from '../../../../shared/types/integration'
+import {
+  useActivateCollector,
+  useCollectorActivation,
+  useDeactivateCollector,
+} from '../../hooks/useCollectorActivation'
+import type {
+  ActivateCollectorErrorCode,
+  DeactivateCollectorErrorCode,
+} from '../../../../shared/types/integration'
 
 interface CollectorActivationPanelProps {
   tenantId: string
@@ -24,7 +31,9 @@ export function CollectorActivationPanel({
   const { t } = useTranslation()
   const { status, isLoading, isError, refetch } = useCollectorActivation(tenantId, integrationId)
   const { activate, isActivating } = useActivateCollector(tenantId, integrationId)
+  const { deactivate, isDeactivating } = useDeactivateCollector(tenantId, integrationId)
   const [activateError, setActivateError] = useState<string | null>(null)
+  const [deactivateError, setDeactivateError] = useState<string | null>(null)
 
   const handleActivate = async () => {
     setActivateError(null)
@@ -36,6 +45,18 @@ export function CollectorActivationPanel({
 
     const errorCode: ActivateCollectorErrorCode = result.errorCode ?? 'unknown_error'
     setActivateError(t(`collector.activateErrors.${errorCode}`))
+  }
+
+  const handleDeactivate = async () => {
+    setDeactivateError(null)
+    const result = await deactivate()
+    if (result.status === 'success') {
+      await refetch()
+      return
+    }
+
+    const errorCode: DeactivateCollectorErrorCode = result.errorCode ?? 'unknown_error'
+    setDeactivateError(t(`collector.deactivateErrors.${errorCode}`))
   }
 
   if (isLoading) {
@@ -89,6 +110,12 @@ export function CollectorActivationPanel({
           </div>
         )}
 
+        {deactivateError && (
+          <div role="alert" className="mb-4 rounded-md border-l-4 border-red-500 bg-red-50 p-3">
+            <p className="text-sm text-red-800">{deactivateError}</p>
+          </div>
+        )}
+
         {isActive && status.activatedAtUtc && (
           <p className="mb-4 text-sm text-slate-600">
             {t('collector.activatedAt', {
@@ -96,6 +123,14 @@ export function CollectorActivationPanel({
             })}
           </p>
         )}
+
+        <p className="mb-4 text-sm text-slate-600">
+          {status.lastSuccessfulCollectionAtUtc
+            ? t('collector.lastSuccessfulCollectionAt', {
+                date: new Date(status.lastSuccessfulCollectionAtUtc).toLocaleString(),
+              })
+            : t('collector.lastSuccessfulCollectionNever')}
+        </p>
 
         {!isActive && (
           <div className="flex justify-end border-t border-slate-100 pt-4">
@@ -106,6 +141,19 @@ export function CollectorActivationPanel({
               className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-emerald-700 active:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-slate-300"
             >
               {isActivating ? t('collector.activating') : t('collector.activate')}
+            </button>
+          </div>
+        )}
+
+        {isActive && (
+          <div className="flex justify-end border-t border-slate-100 pt-4">
+            <button
+              type="button"
+              onClick={handleDeactivate}
+              disabled={isDeactivating}
+              className="rounded-md bg-white px-4 py-2 text-sm font-semibold text-red-700 ring-1 ring-inset ring-red-300 transition-colors hover:bg-red-50 active:bg-red-100 disabled:cursor-not-allowed disabled:text-slate-400 disabled:ring-slate-200"
+            >
+              {isDeactivating ? t('collector.deactivating') : t('collector.deactivate')}
             </button>
           </div>
         )}

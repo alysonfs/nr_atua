@@ -357,6 +357,38 @@ public class CollectorActivationServiceTests
     }
 
     [Fact]
+    public async Task LeituraExpoeDataDaUltimaColetaComSucesso()
+    {
+        await using var context = CreateContext();
+        var seed = await SeedAsync(context, trialActive: true,
+            credentialStatus: EIServiceValidationStatus.Succeeded);
+
+        var succeededAt = DateTimeOffset.UtcNow.AddHours(-2);
+        var succeeded = new ImmediateCollectionCommand(Guid.NewGuid(), seed.TenantId, seed.IntegrationId,
+            Guid.NewGuid(), succeededAt.AddMinutes(-5));
+        succeeded.TryClaim(succeededAt.AddMinutes(-1), TimeSpan.FromMinutes(30));
+        succeeded.TryComplete(EImmediateCollectionCommandStatus.Succeeded, succeededAt);
+        context.ImmediateCollectionCommands.Add(succeeded);
+
+        // Comando mais recente, porém sem sucesso: não deve substituir a data acima.
+        var failedAt = DateTimeOffset.UtcNow.AddMinutes(-10);
+        var failed = new ImmediateCollectionCommand(Guid.NewGuid(), seed.TenantId, seed.IntegrationId,
+            Guid.NewGuid(), failedAt.AddMinutes(-2));
+        failed.TryClaim(failedAt.AddMinutes(-1), TimeSpan.FromMinutes(30));
+        failed.TryFail(ECommandFailureReason.IServiceUnavailable, failedAt);
+        context.ImmediateCollectionCommands.Add(failed);
+
+        await context.SaveChangesAsync();
+        var service = CreateService(context);
+
+        var view = await service.GetAsync(seed.OwnerId, seed.TenantId, seed.IntegrationId,
+            CancellationToken.None);
+
+        Assert.NotNull(view);
+        Assert.Equal(succeededAt, view!.LastSuccessfulCollectionAtUtc);
+    }
+
+    [Fact]
     public async Task LeituraInformaMotivoDeIndisponibilidadeSemSegredo()
     {
         // RF-008.8/RN-008.6.

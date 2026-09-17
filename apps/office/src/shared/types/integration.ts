@@ -64,12 +64,20 @@ export interface CollectorActivationView {
   activatedAtUtc: string | null
   deactivatedAtUtc: string | null
   lastImmediateCommand: ImmediateCommandView | null
+  lastSuccessfulCollectionAtUtc: string | null
 }
 
 export type ActivateCollectorErrorCode =
   | 'integration_not_found'
   | 'forbidden'
   | 'activation_not_eligible'
+  | 'missing_idempotency_key'
+  | 'idempotency_key_conflict'
+  | 'unknown_error'
+
+export type DeactivateCollectorErrorCode =
+  | 'integration_not_found'
+  | 'forbidden'
   | 'missing_idempotency_key'
   | 'idempotency_key_conflict'
   | 'unknown_error'

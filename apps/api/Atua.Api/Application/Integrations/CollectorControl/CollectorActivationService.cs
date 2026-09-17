@@ -40,8 +40,9 @@ public sealed class CollectorActivationService(
             item => item.IntegrationId == integrationId && item.TenantId == tenantId, cancellationToken);
         var eligibility = await eligibilityEvaluator.EvaluateAsync(tenantId, integrationId, cancellationToken);
         var lastCommand = await FindLastCommandAsync(tenantId, integrationId, cancellationToken);
+        var lastSuccessAtUtc = await FindLastSuccessfulCollectionAtUtcAsync(tenantId, integrationId, cancellationToken);
 
-        return BuildView(activation, eligibility, lastCommand);
+        return BuildView(activation, eligibility, lastCommand, lastSuccessAtUtc);
     }
 
     /// <summary>
@@ -99,7 +100,8 @@ public sealed class CollectorActivationService(
             dbContext.ImmediateCollectionCommands.Add(pending);
         }
 
-        var view = BuildView(activation, eligibility, pending);
+        var lastSuccessAtUtc = await FindLastSuccessfulCollectionAtUtcAsync(tenantId, integrationId, cancellationToken);
+        var view = BuildView(activation, eligibility, pending, lastSuccessAtUtc);
         RecordIdempotency(tenantId, integrationId, userId, ECollectorControlOperation.Activate,
             idempotencyKey!, view, now);
 
@@ -146,7 +148,8 @@ public sealed class CollectorActivationService(
         // ainda enxergaria o estado anterior antes do SaveChanges.
         var lastCommand = pending
             ?? await FindLastCommandAsync(tenantId, integrationId, cancellationToken);
-        var view = BuildView(activation, eligibility, lastCommand);
+        var lastSuccessAtUtc = await FindLastSuccessfulCollectionAtUtcAsync(tenantId, integrationId, cancellationToken);
+        var view = BuildView(activation, eligibility, lastCommand, lastSuccessAtUtc);
         RecordIdempotency(tenantId, integrationId, userId, ECollectorControlOperation.Deactivate,
             idempotencyKey!, view, now);
 
@@ -253,6 +256,15 @@ public sealed class CollectorActivationService(
             .OrderByDescending(item => item.RequestedAtUtc).ThenByDescending(item => item.Id)
             .FirstOrDefaultAsync(cancellationToken);
 
+    private async Task<DateTimeOffset?> FindLastSuccessfulCollectionAtUtcAsync(Guid tenantId, Guid integrationId,
+        CancellationToken cancellationToken) =>
+        await dbContext.ImmediateCollectionCommands.AsNoTracking()
+            .Where(item => item.IntegrationId == integrationId && item.TenantId == tenantId &&
+                           item.Status == EImmediateCollectionCommandStatus.Succeeded)
+            .OrderByDescending(item => item.CompletedAtUtc)
+            .Select(item => item.CompletedAtUtc)
+            .FirstOrDefaultAsync(cancellationToken);
+
     /// <summary>
     /// RF-008.2: somente membership ativo <c>OWNER</c> ou <c>ADMIN</c> no
     /// tenant da rota pode ler ou alterar o estado.
@@ -265,7 +277,8 @@ public sealed class CollectorActivationService(
              membership.Role == ETenantMembershipRole.Admin), cancellationToken);
 
     private static CollectorActivationView BuildView(CollectorActivation? activation,
-        CollectorEligibility eligibility, ImmediateCollectionCommand? lastCommand) =>
+        CollectorEligibility eligibility, ImmediateCollectionCommand? lastCommand,
+        DateTimeOffset? lastSuccessfulCollectionAtUtc) =>
         new(
             (activation?.Status ?? ECollectorActivationStatus.Inactive).ToString(),
             eligibility.Eligible,
@@ -276,7 +289,8 @@ public sealed class CollectorActivationService(
             lastCommand is null
                 ? null
                 : new ImmediateCommandView(lastCommand.Id, lastCommand.Status.ToString(),
-                    lastCommand.RequestedAtUtc));
+                    lastCommand.RequestedAtUtc),
+            lastSuccessfulCollectionAtUtc);
 }
 
 /// <summary>
@@ -286,7 +300,8 @@ public sealed class CollectorActivationService(
 public sealed record CollectorActivationView(string Status, bool CanActivate,
     string ActivationBlockReason, string CredentialValidationStatus,
     DateTimeOffset? ActivatedAtUtc, DateTimeOffset? DeactivatedAtUtc,
-    ImmediateCommandView? LastImmediateCommand);
+    ImmediateCommandView? LastImmediateCommand,
+    DateTimeOffset? LastSuccessfulCollectionAtUtc);
 
 public sealed record ImmediateCommandView(Guid CommandId, string Status,
     DateTimeOffset RequestedAtUtc);
