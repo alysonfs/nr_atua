@@ -17,6 +17,7 @@ vi.mock('../../hooks/useIServiceIntegration', () => ({
 vi.mock('../../hooks/useCollectorActivation', () => ({
   useCollectorActivation: () => ({ status: null, isLoading: false, isError: false, refetch: vi.fn() }),
   useActivateCollector: () => ({ activate: vi.fn(), isActivating: false }),
+  useDeactivateCollector: () => ({ deactivate: vi.fn(), isDeactivating: false }),
 }))
 
 describe('ProviderIntegrationSection', () => {

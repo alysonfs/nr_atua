@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useState } from 'react'
 import { apiClient, ApiError } from '../../../shared/lib/apiClient'
-import type { ActivateCollectorErrorCode, CollectorActivationView } from '../../../shared/types/integration'
+import type {
+  ActivateCollectorErrorCode,
+  CollectorActivationView,
+  DeactivateCollectorErrorCode,
+} from '../../../shared/types/integration'
 
 /**
  * RF-008 (ADR-020/ADR-024): estado de ativação do Agente Coletor.
@@ -102,4 +106,52 @@ export function useActivateCollector(tenantId: string | null, integrationId: str
   }, [tenantId, integrationId])
 
   return { activate, isActivating }
+}
+
+export interface DeactivateCollectorResult {
+  status: 'success' | 'error'
+  view?: CollectorActivationView
+  errorCode?: DeactivateCollectorErrorCode
+}
+
+/**
+ * RF-008.5/ADR-020: desativação manual do Agente Coletor.
+ *
+ * DELETE /api/tenants/{tenantId}/integrations/{integrationId}/collector-activation
+ *
+ * Operação idempotente controlada por header `Idempotency-Key`, gerado a
+ * cada tentativa de desativação a partir desta chamada.
+ */
+export function useDeactivateCollector(tenantId: string | null, integrationId: string | null) {
+  const [isDeactivating, setIsDeactivating] = useState(false)
+
+  const deactivate = useCallback(async (): Promise<DeactivateCollectorResult> => {
+    if (!tenantId || !integrationId) {
+      return { status: 'error', errorCode: 'integration_not_found' }
+    }
+
+    setIsDeactivating(true)
+    try {
+      const view = await apiClient.delete<CollectorActivationView>(
+        `/api/tenants/${tenantId}/integrations/${integrationId}/collector-activation`,
+        { 'Idempotency-Key': crypto.randomUUID() },
+      )
+      return { status: 'success', view: view ?? undefined }
+    } catch (err) {
+      if (err instanceof ApiError) {
+        if (err.status === 403) {
+          return { status: 'error', errorCode: 'forbidden' }
+        }
+        return {
+          status: 'error',
+          errorCode: (err.code as DeactivateCollectorErrorCode) ?? 'unknown_error',
+        }
+      }
+      return { status: 'error', errorCode: 'unknown_error' }
+    } finally {
+      setIsDeactivating(false)
+    }
+  }, [tenantId, integrationId])
+
+  return { deactivate, isDeactivating }
 }

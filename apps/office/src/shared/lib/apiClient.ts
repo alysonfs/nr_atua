@@ -150,4 +150,6 @@ export const apiClient = {
       body: body ? JSON.stringify(body) : undefined,
       headers,
     }),
+  delete: <TResponse>(path: string, headers?: Record<string, string>) =>
+    request<TResponse>(path, { method: 'DELETE', headers }),
 }
