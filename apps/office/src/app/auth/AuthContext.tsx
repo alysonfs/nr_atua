@@ -21,7 +21,7 @@ import {
   useState,
   type ReactNode,
 } from 'react'
-import { apiClient, setAccessTokenProvider } from '../../shared/lib/apiClient'
+import { apiClient, setAccessTokenProvider, setSessionRefreshHandler } from '../../shared/lib/apiClient'
 import { changePreferredLocale, syncAuthenticatedLocale } from '../../shared/lib/localePreference'
 import type { SupportedLocale } from '../../i18n'
 
@@ -74,6 +74,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // sempre aponta para o valor mais recente.
   useEffect(() => {
     setAccessTokenProvider(() => tokenRef.current)
+  }, [])
+
+  // Renovação silenciosa da sessão em resposta a um 401 do apiClient (JWT de
+  // acesso expirado em uso, ex.: usuário demora a testar uma validação de
+  // credenciais). Em caso de sucesso, o apiClient repete a requisição
+  // original; em caso de falha, encerra a sessão localmente e o
+  // ProtectedRoute redireciona para /login.
+  useEffect(() => {
+    setSessionRefreshHandler(async () => {
+      try {
+        const data = await restoreSessionOnce()
+        if (data) {
+          tokenRef.current = data.accessToken
+          setState((current) => ({ ...current, accessToken: data.accessToken }))
+          return true
+        }
+      } catch {
+        // Falha na renovação é tratada como sessão encerrada abaixo.
+      }
+      tokenRef.current = null
+      setState((current) => ({ ...current, accessToken: null }))
+      return false
+    })
+    return () => setSessionRefreshHandler(null)
   }, [])
 
   // Mantém ref sincronizado com state.

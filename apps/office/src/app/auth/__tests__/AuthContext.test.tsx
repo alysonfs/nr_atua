@@ -10,6 +10,7 @@ vi.mock('../../../shared/lib/apiClient', () => ({
     post: (...args: unknown[]) => mockPost(...args),
   },
   setAccessTokenProvider: vi.fn(),
+  setSessionRefreshHandler: vi.fn(),
 }))
 
 function AuthProbe() {

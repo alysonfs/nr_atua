@@ -43,6 +43,24 @@ export function setAccessTokenProvider(provider: () => string | null): void {
   accessTokenProvider = provider
 }
 
+let sessionRefreshHandler: (() => Promise<boolean>) | null = null
+
+/**
+ * Permite que a camada de autenticação registre uma tentativa de renovação
+ * silenciosa da sessão (via cookie HttpOnly de refresh) quando uma requisição
+ * autenticada recebe 401 — o JWT de acesso tem vida curta (~15 min) e pode
+ * expirar em uso normal (ex.: usuário demora para preencher um formulário).
+ *
+ * Retorna `true` se a sessão foi renovada (a requisição original deve ser
+ * repetida com o novo token) ou `false` se a renovação falhou (sessão
+ * encerrada; a camada de autenticação já deve ter tratado o logout).
+ */
+export function setSessionRefreshHandler(handler: (() => Promise<boolean>) | null): void {
+  sessionRefreshHandler = handler
+}
+
+const NO_REFRESH_RETRY_PATHS = new Set(['/auth/refresh', '/auth/signin'])
+
 /**
  * Resolve a URL final da requisição.
  *
@@ -80,6 +98,7 @@ function resolveCredentialsMode(): RequestCredentials {
 async function request<TResponse>(
   path: string,
   init: RequestInit = {},
+  isRetryAfterRefresh = false,
 ): Promise<TResponse | null> {
   const token = accessTokenProvider?.() ?? null
   const headers = new Headers(init.headers)
@@ -98,6 +117,18 @@ async function request<TResponse>(
     return null
   }
 
+  if (
+    response.status === 401 &&
+    !isRetryAfterRefresh &&
+    !NO_REFRESH_RETRY_PATHS.has(path) &&
+    sessionRefreshHandler
+  ) {
+    const refreshed = await sessionRefreshHandler()
+    if (refreshed) {
+      return request<TResponse>(path, init, true)
+    }
+  }
+
   const isJson = response.headers.get('content-type')?.includes('application/json')
   const body = isJson ? await response.json().catch(() => null) : null
 
@@ -113,6 +144,10 @@ export const apiClient = {
   get: <TResponse>(path: string) => request<TResponse>(path, { method: 'GET' }),
   post: <TResponse>(path: string, body?: unknown) =>
     request<TResponse>(path, { method: 'POST', body: body ? JSON.stringify(body) : undefined }),
-  put: <TResponse>(path: string, body?: unknown) =>
-    request<TResponse>(path, { method: 'PUT', body: body ? JSON.stringify(body) : undefined }),
+  put: <TResponse>(path: string, body?: unknown, headers?: Record<string, string>) =>
+    request<TResponse>(path, {
+      method: 'PUT',
+      body: body ? JSON.stringify(body) : undefined,
+      headers,
+    }),
 }
