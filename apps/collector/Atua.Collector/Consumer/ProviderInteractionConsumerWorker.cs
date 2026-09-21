@@ -1,3 +1,4 @@
+using Atua.Collector.Persistence;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using MongoDB.Bson;
@@ -20,7 +21,8 @@ namespace Atua.Collector.Consumer;
 /// </summary>
 public sealed class ProviderInteractionConsumerWorker(
     IMongoDatabase mongoDatabase,
-    WorkOrderPgRepository pgRepository,
+    IWorkOrderPgRepository pgRepository,
+    IProviderInteractionRepository providerInteractionRepository,
     IReadOnlyDictionary<string, IProviderInteractionOrderAdapter> adapters,
     ILogger<ProviderInteractionConsumerWorker> logger)
     : BackgroundService
@@ -123,13 +125,30 @@ public sealed class ProviderInteractionConsumerWorker(
         }, stoppingToken);
     }
 
+    /// <summary>
+    /// Processa um único evento de insert do Change Stream — extrai o documento e o resume
+    /// token e delega a <see cref="ProcessDocumentAsync"/>.
+    /// </summary>
     private async Task ProcessChangeAsync(
         ChangeStreamDocument<BsonDocument> change,
         CancellationToken stoppingToken)
     {
-        var doc = change.FullDocument;
-        var tokenJson = change.ResumeToken.ToJson();
+        await ProcessDocumentAsync(change.FullDocument, change.ResumeToken.ToJson(), stoppingToken);
+    }
 
+    /// <summary>
+    /// Núcleo do processamento de um documento de <c>provider_interactions</c> (ADR-030).
+    /// Acessibilidade <c>internal</c> (em vez de <c>private</c>) para permitir testes
+    /// unitários diretos dos cinco caminhos de sucesso e da ordem de chamadas, sem depender
+    /// de um Change Stream real — ver
+    /// <see cref="System.Runtime.CompilerServices.InternalsVisibleToAttribute"/> em
+    /// Atua.Collector.csproj.
+    /// </summary>
+    internal async Task ProcessDocumentAsync(
+        BsonDocument doc,
+        string tokenJson,
+        CancellationToken stoppingToken)
+    {
         var interactionId = doc.TryGetValue("_id", out var idVal)
             ? (Guid.TryParse(idVal.ToString(), out var parsedId) ? parsedId : Guid.Empty)
             : Guid.Empty;
@@ -145,10 +164,17 @@ public sealed class ProviderInteractionConsumerWorker(
         var providerType = doc.TryGetValue("provider_type", out var ptVal) ? ptVal.ToString() : null;
         var interactionType = doc.TryGetValue("interaction_type", out var itVal) ? itVal.ToString() : null;
 
+        // created_at (RF-022.5) vira a marca d'água de LastProcessedInteractionCreatedAt
+        // (ADR-030, decisão 2) — usado pelo ProviderInteractionCleanupJob, não gerado aqui.
+        var createdAt = doc.TryGetValue("created_at", out var createdAtVal) && createdAtVal is BsonDateTime bsonCreatedAt
+            ? new DateTimeOffset(bsonCreatedAt.ToUniversalTime(), TimeSpan.Zero)
+            : DateTimeOffset.UtcNow;
+
         // "login" não carrega OS — nada a projetar no Postgres, só avança o token.
         if (string.Equals(interactionType, "login", StringComparison.OrdinalIgnoreCase))
         {
-            await pgRepository.AdvanceResumeTokenAsync(tokenJson, ConsumerId, stoppingToken);
+            await pgRepository.AdvanceResumeTokenAsync(tokenJson, ConsumerId, createdAt, stoppingToken);
+            await providerInteractionRepository.DeleteProcessedAsync(interactionId, stoppingToken);
             return;
         }
 
@@ -159,7 +185,8 @@ public sealed class ProviderInteractionConsumerWorker(
                 "[CONSUMER] Interação com success=false. Nada a projetar. " +
                 "InteractionId={InteractionId} TenantId={TenantId} CommandId={CommandId} Type={Type}.",
                 interactionId, tenantId, commandId, interactionType);
-            await pgRepository.AdvanceResumeTokenAsync(tokenJson, ConsumerId, stoppingToken);
+            await pgRepository.AdvanceResumeTokenAsync(tokenJson, ConsumerId, createdAt, stoppingToken);
+            await providerInteractionRepository.DeleteProcessedAsync(interactionId, stoppingToken);
             return;
         }
 
@@ -169,7 +196,8 @@ public sealed class ProviderInteractionConsumerWorker(
                 "[CONSUMER] Adapter não encontrado para provider_type={ProviderType}. " +
                 "InteractionId={InteractionId} TenantId={TenantId} CommandId={CommandId}. Avançando token.",
                 providerType, interactionId, tenantId, commandId);
-            await pgRepository.AdvanceResumeTokenAsync(tokenJson, ConsumerId, stoppingToken);
+            await pgRepository.AdvanceResumeTokenAsync(tokenJson, ConsumerId, createdAt, stoppingToken);
+            await providerInteractionRepository.DeleteProcessedAsync(interactionId, stoppingToken);
             return;
         }
 
@@ -185,12 +213,15 @@ public sealed class ProviderInteractionConsumerWorker(
                 "[CONSUMER] Nenhuma OS extraível desta interação (array vazio ou sem campos " +
                 "utilizáveis). InteractionId={InteractionId} TenantId={TenantId} CommandId={CommandId}.",
                 interactionId, tenantId, commandId);
-            await pgRepository.AdvanceResumeTokenAsync(tokenJson, ConsumerId, stoppingToken);
+            await pgRepository.AdvanceResumeTokenAsync(tokenJson, ConsumerId, createdAt, stoppingToken);
+            await providerInteractionRepository.DeleteProcessedAsync(interactionId, stoppingToken);
             return;
         }
 
         await pgRepository.ProcessInteractionAsync(
-            interactionId, tenantId, orders, tokenJson, ConsumerId, stoppingToken);
+            interactionId, tenantId, orders, tokenJson, ConsumerId, createdAt, stoppingToken);
+
+        await providerInteractionRepository.DeleteProcessedAsync(interactionId, stoppingToken);
 
         logger.LogDebug(
             "[CONSUMER] Interação processada. InteractionId={InteractionId} TenantId={TenantId} " +

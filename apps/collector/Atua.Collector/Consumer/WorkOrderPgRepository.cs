@@ -13,6 +13,7 @@ namespace Atua.Collector.Consumer;
 public sealed class WorkOrderPgRepository(
     string connectionString,
     ILogger<WorkOrderPgRepository> logger)
+    : IWorkOrderPgRepository
 {
     private readonly string _connectionString = connectionString;
 
@@ -30,6 +31,7 @@ public sealed class WorkOrderPgRepository(
         IReadOnlyList<ProviderWorkOrderData> orders,
         string resumeToken,
         string consumerId,
+        DateTimeOffset interactionCreatedAt,
         CancellationToken cancellationToken = default)
     {
         await using var conn = new NpgsqlConnection(_connectionString);
@@ -55,7 +57,7 @@ public sealed class WorkOrderPgRepository(
                 }
             }
 
-            await UpsertConsumerStateAsync(conn, tx, consumerId, resumeToken, cancellationToken);
+            await UpsertConsumerStateAsync(conn, tx, consumerId, resumeToken, interactionCreatedAt, cancellationToken);
 
             await tx.CommitAsync(cancellationToken);
 
@@ -76,6 +78,7 @@ public sealed class WorkOrderPgRepository(
     public async Task AdvanceResumeTokenAsync(
         string resumeToken,
         string consumerId,
+        DateTimeOffset interactionCreatedAt,
         CancellationToken cancellationToken = default)
     {
         await using var conn = new NpgsqlConnection(_connectionString);
@@ -84,7 +87,7 @@ public sealed class WorkOrderPgRepository(
 
         try
         {
-            await UpsertConsumerStateAsync(conn, tx, consumerId, resumeToken, cancellationToken);
+            await UpsertConsumerStateAsync(conn, tx, consumerId, resumeToken, interactionCreatedAt, cancellationToken);
             await tx.CommitAsync(cancellationToken);
         }
         catch
@@ -114,6 +117,27 @@ public sealed class WorkOrderPgRepository(
 
         var result = await cmd.ExecuteScalarAsync(cancellationToken);
         return result as string;
+    }
+
+    /// <summary>
+    /// Lê a marca d'água de <c>LastProcessedInteractionCreatedAt</c> persistida para
+    /// <paramref name="consumerId"/> (ADR-030, decisão 2), usada pelo
+    /// <c>ProviderInteractionCleanupJob</c> para apagar documentos já confirmados como
+    /// processados no Postgres. Retorna <c>null</c> se não houver marca d'água ainda.
+    /// </summary>
+    public async Task<DateTimeOffset?> GetLastProcessedInteractionCreatedAtAsync(
+        string consumerId,
+        CancellationToken cancellationToken = default)
+    {
+        await using var conn = new NpgsqlConnection(_connectionString);
+        await conn.OpenAsync(cancellationToken);
+
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT \"LastProcessedInteractionCreatedAt\" FROM consumer_states WHERE \"ConsumerId\" = @id";
+        cmd.Parameters.AddWithValue("@id", consumerId);
+
+        var result = await cmd.ExecuteScalarAsync(cancellationToken);
+        return result is DateTime dt ? new DateTimeOffset(dt, TimeSpan.Zero) : null;
     }
 
     /// <summary>
@@ -326,19 +350,23 @@ public sealed class WorkOrderPgRepository(
         NpgsqlTransaction tx,
         string consumerId,
         string resumeToken,
+        DateTimeOffset interactionCreatedAt,
         CancellationToken cancellationToken)
     {
         await using var cmd = conn.CreateCommand();
         cmd.Transaction = tx;
         cmd.CommandText =
             """
-            INSERT INTO consumer_states ("ConsumerId", "ResumeToken", "UpdatedAt")
-            VALUES (@id, @token::jsonb, @now)
+            INSERT INTO consumer_states ("ConsumerId", "ResumeToken", "LastProcessedInteractionCreatedAt", "UpdatedAt")
+            VALUES (@id, @token::jsonb, @interactionCreatedAt, @now)
             ON CONFLICT ("ConsumerId") DO UPDATE
-            SET "ResumeToken" = EXCLUDED."ResumeToken", "UpdatedAt" = EXCLUDED."UpdatedAt"
+            SET "ResumeToken" = EXCLUDED."ResumeToken",
+                "LastProcessedInteractionCreatedAt" = EXCLUDED."LastProcessedInteractionCreatedAt",
+                "UpdatedAt" = EXCLUDED."UpdatedAt"
             """;
         cmd.Parameters.AddWithValue("@id", consumerId);
         cmd.Parameters.AddWithValue("@token", resumeToken);
+        cmd.Parameters.AddWithValue("@interactionCreatedAt", interactionCreatedAt);
         cmd.Parameters.AddWithValue("@now", DateTimeOffset.UtcNow);
         await cmd.ExecuteNonQueryAsync(cancellationToken);
     }

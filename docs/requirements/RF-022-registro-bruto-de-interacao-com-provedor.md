@@ -55,6 +55,18 @@ na coleção `provider_interactions`. Não cobre:
   descrever o formato de `request` (ADR-028, item 7, é a referência
   arquitetural completa).
 
+## Retenção
+
+**A retenção de `provider_interactions` é efêmera, não permanente** (ver
+ADR-030, que emenda parcialmente ADR-028 quanto a este ponto). Cada
+documento é apagado assim que a interação correspondente é confirmada
+como processada no PostgreSQL — pela exclusão inline logo após a
+projeção, ou, no pior caso (falha entre o commit Postgres e a exclusão
+inline), pelo `ProviderInteractionCleanupJob`, que remove por marca
+d'água em ciclos periódicos. Não há mais janela de retenção indefinida
+nem arquivamento: a coleção não deve ser usada como fonte de auditoria
+histórica de longo prazo. Ver ADR-030 para o mecanismo completo.
+
 ## Entidade: `provider_interactions`
 
 ```

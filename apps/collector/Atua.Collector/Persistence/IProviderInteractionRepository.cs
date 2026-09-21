@@ -25,4 +25,22 @@ public interface IProviderInteractionRepository
         bool success,
         string? errorMessage,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Remove um documento já processado com sucesso pelo consumer (ADR-030, decisão 1).
+    /// Chamado apenas depois que a transação Postgres correspondente já deu commit —
+    /// nunca antes. Best-effort: falha ao apagar é logada como aviso e NUNCA propagada,
+    /// mesma postura de <see cref="InsertInteractionAsync"/>. Idempotente — apagar um
+    /// documento já removido apenas retorna <c>DeletedCount = 0</c>, sem erro.
+    /// </summary>
+    Task DeleteProcessedAsync(Guid interactionId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Remove todos os documentos com <c>created_at</c> menor ou igual a
+    /// <paramref name="watermark"/> (ADR-030, decisão 2 — marca d'água de
+    /// <c>ProviderInteractionCleanupJob</c>). Diferente de <see cref="DeleteProcessedAsync"/>,
+    /// propaga exceção — quem chama (o job de limpeza) já trata falha por execução sem
+    /// derrubar o processo. Retorna a quantidade de documentos removidos.
+    /// </summary>
+    Task<long> DeleteProcessedUpToAsync(DateTimeOffset watermark, CancellationToken cancellationToken = default);
 }

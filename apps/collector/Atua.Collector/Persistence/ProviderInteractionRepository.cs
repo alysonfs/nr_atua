@@ -86,6 +86,41 @@ public sealed class ProviderInteractionRepository(
         }
     }
 
+    /// <inheritdoc/>
+    public async Task DeleteProcessedAsync(Guid interactionId, CancellationToken cancellationToken = default)
+    {
+        var collection = database.GetCollection<ProviderInteractionDocument>(InteractionsCollection);
+
+        try
+        {
+            await collection.DeleteOneAsync(d => d.Id == interactionId, cancellationToken);
+
+            logger.LogDebug(
+                "[REPO] Interação processada removida de {Collection}. InteractionId={InteractionId}.",
+                InteractionsCollection, interactionId);
+        }
+        catch (Exception ex)
+        {
+            // Best-effort (ADR-030, decisão 1): falha ao apagar não pode derrubar o consumer
+            // nem bloquear a projeção já confirmada — o ProviderInteractionCleanupJob cobre o
+            // resíduo de documentos órfãos.
+            logger.LogWarning(ex,
+                "[REPO] Falha ao remover interação processada de {Collection}. InteractionId={InteractionId}.",
+                InteractionsCollection, interactionId);
+        }
+    }
+
+    /// <inheritdoc/>
+    public async Task<long> DeleteProcessedUpToAsync(DateTimeOffset watermark, CancellationToken cancellationToken = default)
+    {
+        var collection = database.GetCollection<ProviderInteractionDocument>(InteractionsCollection);
+
+        var filter = Builders<ProviderInteractionDocument>.Filter.Lte(d => d.CreatedAt, watermark);
+        var result = await collection.DeleteManyAsync(filter, cancellationToken);
+
+        return result.DeletedCount;
+    }
+
     /// <summary>
     /// Converte um dicionário bruto em <see cref="BsonDocument"/> preservando integralmente
     /// todos os campos (inclusive aninhados).

@@ -409,5 +409,8 @@ public sealed class AtuaDbContext(DbContextOptions<AtuaDbContext> options) : DbC
         // resume_token é JSONB no Postgres
         builder.Property(cs => cs.ResumeToken)
             .HasColumnType("jsonb");
+        // marca d'água de provider_interactions processadas (ADR-030, decisão 2)
+        builder.Property(cs => cs.LastProcessedInteractionCreatedAt)
+            .HasColumnType("timestamptz");
     }
 }

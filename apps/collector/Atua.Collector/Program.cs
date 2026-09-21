@@ -62,6 +62,7 @@ builder.Services.AddSingleton<WorkOrderPgRepository>(sp =>
     var logger = sp.GetRequiredService<ILogger<WorkOrderPgRepository>>();
     return new WorkOrderPgRepository(opts.ConnectionString, logger);
 });
+builder.Services.AddSingleton<IWorkOrderPgRepository>(sp => sp.GetRequiredService<WorkOrderPgRepository>());
 
 builder.Services.AddSingleton<IReadOnlyDictionary<string, IProviderInteractionOrderAdapter>>(_ =>
     new Dictionary<string, IProviderInteractionOrderAdapter>(StringComparer.OrdinalIgnoreCase)
@@ -70,6 +71,8 @@ builder.Services.AddSingleton<IReadOnlyDictionary<string, IProviderInteractionOr
     });
 
 builder.Services.AddHostedService<ProviderInteractionConsumerWorker>();
+// Job de limpeza por marca d'água de provider_interactions (ADR-030, decisão 2).
+builder.Services.AddHostedService<ProviderInteractionCleanupJob>();
 
 var host = builder.Build();
 
