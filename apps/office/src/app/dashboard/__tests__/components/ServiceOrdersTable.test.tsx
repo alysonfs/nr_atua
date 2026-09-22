@@ -13,6 +13,7 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor, fireEvent } from '@testing-library/react'
+import { MemoryRouter } from 'react-router-dom'
 import { ServiceOrdersTable } from '../../components/ServiceOrdersTable'
 
 const getMock = vi.fn()
@@ -56,10 +57,18 @@ describe('ServiceOrdersTable', () => {
     getMock.mockReset()
   })
 
+  function renderTable(props: { tenantId: string | null; status: string }) {
+    return render(
+      <MemoryRouter>
+        <ServiceOrdersTable {...props} />
+      </MemoryRouter>,
+    )
+  }
+
   it('renders the section heading with the filtered status', async () => {
     getMock.mockResolvedValueOnce({ status: 'Designado', page: 1, pageSize: 15, totalCount: 0, items: [] })
 
-    render(<ServiceOrdersTable tenantId={TENANT_ID} status="Designado" />)
+    renderTable({ tenantId: TENANT_ID, status: 'Designado' })
 
     expect(screen.getByRole('heading', { name: /ordens de serviço.*designado/i })).toBeInTheDocument()
   })
@@ -67,7 +76,7 @@ describe('ServiceOrdersTable', () => {
   it('renders the expected column headers', async () => {
     getMock.mockResolvedValueOnce({ status: 'Designado', page: 1, pageSize: 15, totalCount: mockedOrders.length, items: mockedOrders })
 
-    render(<ServiceOrdersTable tenantId={TENANT_ID} status="Designado" />)
+    renderTable({ tenantId: TENANT_ID, status: 'Designado' })
 
     await waitFor(() => expect(screen.getByRole('columnheader', { name: /nº da os no provedor/i })).toBeInTheDocument())
     expect(screen.getByRole('columnheader', { name: /^status$/i })).toBeInTheDocument()
@@ -80,7 +89,7 @@ describe('ServiceOrdersTable', () => {
   it('renders one row per service order returned by the API', async () => {
     getMock.mockResolvedValueOnce({ status: 'Designado', page: 1, pageSize: 15, totalCount: mockedOrders.length, items: mockedOrders })
 
-    render(<ServiceOrdersTable tenantId={TENANT_ID} status="Designado" />)
+    renderTable({ tenantId: TENANT_ID, status: 'Designado' })
 
     await waitFor(() => expect(screen.getByText('BRWO260909869')).toBeInTheDocument())
 
@@ -94,11 +103,24 @@ describe('ServiceOrdersTable', () => {
     expect(rows).toHaveLength(mockedOrders.length + 1)
   })
 
+  it('renders the provider order number as a link to the work order detail page', async () => {
+    getMock.mockResolvedValueOnce({ status: 'Designado', page: 1, pageSize: 15, totalCount: mockedOrders.length, items: mockedOrders })
+
+    renderTable({ tenantId: TENANT_ID, status: 'Designado' })
+
+    await waitFor(() => expect(screen.getByText('BRWO260909869')).toBeInTheDocument())
+
+    expect(screen.getByRole('link', { name: mockedOrders[0].workOrderProviderNo })).toHaveAttribute(
+      'href',
+      `/work-orders/${mockedOrders[0].id}`,
+    )
+  })
+
   it('changes the page size and refetches with the new value', async () => {
     getMock.mockResolvedValueOnce({ status: 'Designado', page: 1, pageSize: 15, totalCount: mockedOrders.length, items: mockedOrders })
     getMock.mockResolvedValueOnce({ status: 'Designado', page: 1, pageSize: 25, totalCount: mockedOrders.length, items: mockedOrders })
 
-    render(<ServiceOrdersTable tenantId={TENANT_ID} status="Designado" />)
+    renderTable({ tenantId: TENANT_ID, status: 'Designado' })
 
     await waitFor(() => expect(screen.getByText('BRWO260909869')).toBeInTheDocument())
 
@@ -110,7 +132,7 @@ describe('ServiceOrdersTable', () => {
   it('disables the previous page button on the first page and enables next when there are more pages', async () => {
     getMock.mockResolvedValueOnce({ status: 'Designado', page: 1, pageSize: 15, totalCount: 30, items: mockedOrders })
 
-    render(<ServiceOrdersTable tenantId={TENANT_ID} status="Designado" />)
+    renderTable({ tenantId: TENANT_ID, status: 'Designado' })
 
     await waitFor(() => expect(screen.getByText(/página 1 de 2/i)).toBeInTheDocument())
     expect(screen.getByRole('button', { name: /anterior/i })).toBeDisabled()
@@ -120,7 +142,7 @@ describe('ServiceOrdersTable', () => {
   it('renders an empty state message when there are no orders', async () => {
     getMock.mockResolvedValueOnce({ status: 'Designado', page: 1, pageSize: 15, totalCount: 0, items: [] })
 
-    render(<ServiceOrdersTable tenantId={TENANT_ID} status="Designado" />)
+    renderTable({ tenantId: TENANT_ID, status: 'Designado' })
 
     await waitFor(() => expect(screen.getByText(/nenhuma ordem de serviço encontrada/i)).toBeInTheDocument())
   })
@@ -128,7 +150,7 @@ describe('ServiceOrdersTable', () => {
   it('renders an error message when the request fails', async () => {
     getMock.mockRejectedValueOnce(new Error('network error'))
 
-    render(<ServiceOrdersTable tenantId={TENANT_ID} status="Designado" />)
+    renderTable({ tenantId: TENANT_ID, status: 'Designado' })
 
     await waitFor(() => expect(screen.getByRole('alert')).toBeInTheDocument())
   })

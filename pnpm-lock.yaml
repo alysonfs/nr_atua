@@ -184,6 +184,9 @@ importers:
       tailwindcss:
         specifier: ^4.3.3
         version: 4.3.3
+      use-react-router-breadcrumbs:
+        specifier: ^4.0.1
+        version: 4.0.1(react-router-dom@7.18.3)(react@19.2.8)
       zod:
         specifier: ^4.5.4
         version: 4.5.4
@@ -3858,6 +3861,16 @@ packages:
     resolution: {integrity: sha512-7rKUyy33Q1yc98pQ1DAmLtwX109F7TIfWlW1Ydo8Wl1ii1SeHieeh0HHfPeL2fMXK6z0s8ecKs9frCuLJvndBg==}
     dependencies:
       punycode: 2.3.1
+
+  /use-react-router-breadcrumbs@4.0.1(react-router-dom@7.18.3)(react@19.2.8):
+    resolution: {integrity: sha512-Zbcy0KvWt1JePFcUHJAnTr7Z+AeO9WxmPs6A5Q/xqOVoi8edPKzpqHF87WB2opXwie/QjCxrEyTB7kFg7fgXvQ==}
+    peerDependencies:
+      react: '>=16.8'
+      react-router-dom: '>=6.0.0'
+    dependencies:
+      react: 19.2.8
+      react-router-dom: 7.18.3(react-dom@19.2.8)(react@19.2.8)
+    dev: false
 
   /use-sync-external-store@1.6.0(react@19.2.8):
     resolution: {integrity: sha512-Pp6GSwGP/NrPIrxVFAIkOQeyw8lFenOHijQWkUTrDvrF4ALqylP2C/KCkeS9dpUM3KvYRQhna5vt7IL95+ZQ9w==}
