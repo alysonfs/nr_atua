@@ -130,12 +130,43 @@ public sealed class WorkOrder
     public string? Symptom { get; private set; }
 
     /// <summary>
+    /// Sinaliza se esta OS precisa ter detalhe buscado via <c>queryOneWorkOrder</c> na
+    /// próxima oportunidade de coleta (RF-026/ADR-031). Decidido pelo Consumer em cada
+    /// upsert; consultado pelo <c>claim</c> para devolver ao Collector.
+    /// </summary>
+    public bool NeedsDetailFetch { get; private set; }
+
+    /// <summary>
+    /// Instante em que o último <c>detail_query</c> bem-sucedido foi aplicado a esta OS
+    /// (RF-026.3/ADR-031). <c>null</c> indica que detalhe nunca foi obtido.
+    /// </summary>
+    public DateTimeOffset? DetailsFetchedAt { get; private set; }
+
+    /// <summary>
     /// Atualiza o status e <see cref="UpdatedAt"/>.
     /// </summary>
     public void UpdateStatus(string newStatus, DateTimeOffset now)
     {
         Status = newStatus;
         UpdatedAt = now;
+    }
+
+    /// <summary>
+    /// Marca que um <c>detail_query</c> bem-sucedido foi aplicado (RF-026.3/ADR-031) —
+    /// limpa a pendência de busca de detalhe.
+    /// </summary>
+    public void MarkDetailsFetched(DateTimeOffset at)
+    {
+        DetailsFetchedAt = at;
+        NeedsDetailFetch = false;
+    }
+
+    /// <summary>
+    /// Sinaliza que esta OS precisa de nova busca de detalhe (RF-026.1/RF-026.2/ADR-031).
+    /// </summary>
+    public void MarkNeedsDetailFetch()
+    {
+        NeedsDetailFetch = true;
     }
 
     /// <summary>

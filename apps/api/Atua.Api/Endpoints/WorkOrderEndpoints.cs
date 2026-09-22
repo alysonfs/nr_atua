@@ -22,6 +22,9 @@ public static class WorkOrderEndpoints
 
         endpoints.MapGet("/api/tenants/{tenantId:guid}/work-orders/status-summary", GetStatusSummary)
             .RequireAuthorization("BrowserSession");
+
+        endpoints.MapGet("/api/tenants/{tenantId:guid}/work-orders/{workOrderId:guid}", GetDetail)
+            .RequireAuthorization("BrowserSession");
     }
 
     private static async Task<IResult> GetMonthlySummary(Guid tenantId, string? month, ClaimsPrincipal user,
@@ -107,6 +110,35 @@ public static class WorkOrderEndpoints
         return Results.Ok(response);
     }
 
+    private static async Task<IResult> GetDetail(Guid tenantId, Guid workOrderId, ClaimsPrincipal user,
+        AtuaDbContext db, IWorkOrderDetailQuery query, CancellationToken cancellationToken)
+    {
+        var userId = GetGuidClaim(user, "sub");
+        if (userId is null) return Results.Unauthorized();
+
+        var isMember = await db.TenantMemberships.AsNoTracking().AnyAsync(
+            membership => membership.UserId == userId.Value && membership.TenantId == tenantId,
+            cancellationToken);
+        if (!isMember) return Results.Forbid();
+
+        var result = await query.ExecuteAsync(tenantId, workOrderId, cancellationToken);
+        if (result is null) return Results.NotFound();
+
+        var response = new WorkOrderDetailResponse(
+            result.Id, result.WorkOrderProviderId, result.WorkOrderProviderNo, result.Status,
+            result.CreatedAt, result.UpdatedAt, result.ProviderCreatedAt, result.ProviderUpdatedAt,
+            result.ServiceRequestId, result.Amount,
+            result.CustomerType, result.CustomerName, result.CustomerCpf,
+            result.ContactEmail, result.ContactPhone, result.ContactName,
+            result.Address, result.ZipCode, result.CountryName, result.StateName, result.CityName,
+            result.ProductBrand, result.PdCode, result.CategoryId, result.ProductCategoryCode,
+            result.ProductCode, result.ProductModel, result.ProductStatus, result.Symptom,
+            result.History.Select(entry => new WorkOrderHistoryEntryResponse(entry.Status, entry.CreatedAt))
+                .ToArray());
+
+        return Results.Ok(response);
+    }
+
     private static async Task<Domain.Tenants.Tenant?> GetTenantIfMemberAsync(AtuaDbContext db, Guid tenantId,
         Guid userId, CancellationToken cancellationToken)
     {
@@ -148,3 +180,17 @@ public sealed record WorkOrderListItem(Guid Id, string WorkOrderProviderId, stri
 public sealed record WorkOrderStatusSummaryResponse(IReadOnlyList<WorkOrderStatusCount> Statuses);
 
 public sealed record WorkOrderStatusCount(string Status, int Total);
+
+public sealed record WorkOrderDetailResponse(
+    Guid Id, string WorkOrderProviderId, string? WorkOrderProviderNo, string Status,
+    DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt,
+    DateTimeOffset? ProviderCreatedAt, DateTimeOffset? ProviderUpdatedAt,
+    string? ServiceRequestId, decimal? Amount,
+    string? CustomerType, string? CustomerName, string? CustomerCpf,
+    string? ContactEmail, string? ContactPhone, string? ContactName,
+    string? Address, string? ZipCode, string? CountryName, string? StateName, string? CityName,
+    string? ProductBrand, string? PdCode, string? CategoryId, string? ProductCategoryCode,
+    string? ProductCode, string? ProductModel, string? ProductStatus, string? Symptom,
+    IReadOnlyList<WorkOrderHistoryEntryResponse> History);
+
+public sealed record WorkOrderHistoryEntryResponse(string Status, DateTimeOffset CreatedAt);
