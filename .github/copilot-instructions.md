@@ -49,3 +49,10 @@ Convenções C# do projeto:
   `UseCase` (ex.: `AddTenantUseCase`), nunca `*OnboardingService` ou nomes
   genéricos de "serviço" para operações que representam uma ação de negócio
   única e nomeável.
+
+<!-- mermaid-ai-skills:start -->
+## Mermaid Diagrams
+
+When the user asks to create, edit, or visualize a diagram, follow the
+instructions in `.github/instructions/mermaid.instructions.md`.
+<!-- mermaid-ai-skills:end -->
