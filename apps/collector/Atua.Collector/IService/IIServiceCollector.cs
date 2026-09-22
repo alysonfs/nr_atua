@@ -22,6 +22,10 @@ public interface IIServiceCollector
     /// <param name="password">Senha CAS — NUNCA logar.</param>
     /// <param name="baseUrl">URL base do iService, se sobrescrita pela credencial; caso contrário usa o padrão.</param>
     /// <param name="historyWindowMonths">Janela histórica em meses (referência; a SPA filtra pelo template capturado).</param>
+    /// <param name="pendingDetailWorkOrderIds">
+    /// IDs de OS (<c>WorkOrderProviderId</c>) desta integração pendentes de busca de detalhe,
+    /// devolvidos pelo <c>claim</c> (RF-026/ADR-031) — decidido pelo Consumer, não pelo Collector.
+    /// </param>
     /// <param name="cancellationToken">Token de cancelamento.</param>
     /// <returns>Resultado da coleta com contagens e listas de OS por status.</returns>
     /// <exception cref="CredentialRejectedEx">Quando o login CAS falhar por credencial inválida.</exception>
@@ -33,5 +37,6 @@ public interface IIServiceCollector
         string password,
         string? baseUrl,
         int historyWindowMonths,
+        IReadOnlyList<string> pendingDetailWorkOrderIds,
         CancellationToken cancellationToken = default);
 }

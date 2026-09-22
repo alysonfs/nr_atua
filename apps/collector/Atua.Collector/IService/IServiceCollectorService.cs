@@ -68,6 +68,7 @@ public sealed class IServiceCollectorService(
         string password,
         string? baseUrl,
         int historyWindowMonths,
+        IReadOnlyList<string> pendingDetailWorkOrderIds,
         CancellationToken cancellationToken = default)
     {
         logger.LogInformation("[COLETOR] Iniciando coleta para usuário={Username}.", username);
@@ -83,7 +84,7 @@ public sealed class IServiceCollectorService(
         try
         {
             return await ExecuteCollectionCycleAsync(
-                browser, tenantId, commandId, username, password, historyWindowMonths, forceLogin: false, cancellationToken);
+                browser, tenantId, commandId, username, password, historyWindowMonths, pendingDetailWorkOrderIds, forceLogin: false, cancellationToken);
         }
         catch (ProviderSessionInvalidException ex)
         {
@@ -94,7 +95,7 @@ public sealed class IServiceCollectorService(
                 "[SESSAO] Sessão invalidada em pleno ciclo ({Reason}). Refazendo login (tentativa única).",
                 ex.Message);
             return await ExecuteCollectionCycleAsync(
-                browser, tenantId, commandId, username, password, historyWindowMonths, forceLogin: true, cancellationToken);
+                browser, tenantId, commandId, username, password, historyWindowMonths, pendingDetailWorkOrderIds, forceLogin: true, cancellationToken);
         }
     }
 
@@ -115,6 +116,7 @@ public sealed class IServiceCollectorService(
         string username,
         string password,
         int historyWindowMonths,
+        IReadOnlyList<string> pendingDetailWorkOrderIds,
         bool forceLogin,
         CancellationToken cancellationToken)
     {
@@ -223,9 +225,12 @@ public sealed class IServiceCollectorService(
                 logger.LogInformation("[COLETA] {Count} OS '{TabLabel}' coletadas.", statusCounts.GetValueOrDefault(key), tabLabel);
             }
 
-            // Enriquecimento: apenas OS "assigned" recebem detalhe
-            var assignedOrders = await EnrichAssignedOrdersAsync(tenantId, commandId, page, requestTemplate, ordersByStatus["assigned"], cancellationToken);
-            ordersByStatus["assigned"] = assignedOrders;
+            // Enriquecimento generalizado (RF-026.4/ADR-031): a decisão de "quais OS
+            // precisam de detalhe" já veio pronta do claim (Consumer decide) — filtra, entre
+            // TODAS as OS obtidas neste ciclo (qualquer status), apenas as pendentes, e chama
+            // o enriquecedor uma única vez sobre esse subconjunto.
+            await EnrichPendingOrdersAcrossStatusesAsync(
+                tenantId, commandId, page, requestTemplate, ordersByStatus, pendingDetailWorkOrderIds, cancellationToken);
 
             logger.LogInformation(
                 "[RESULTADO] Designado={Assigned} | Em Processamento={Accepted} | " +
@@ -1107,23 +1112,75 @@ public sealed class IServiceCollectorService(
     }
 
     // -------------------------------------------------------------------------
-    // Enriquecimento de OS "assigned" com detalhe
+    // Enriquecimento de OS pendentes de detalhe (RF-026/ADR-031)
     // -------------------------------------------------------------------------
 
-    private async Task<IReadOnlyList<object>> EnrichAssignedOrdersAsync(
+    /// <summary>
+    /// Filtra, dentre todas as OS obtidas neste ciclo (todas as chaves de
+    /// <paramref name="ordersByStatus"/>, independente de status), apenas as cujo
+    /// <c>workOrderId</c>/<c>id</c> esteja em <paramref name="pendingDetailWorkOrderIds"/>
+    /// (RF-026.4/ADR-031 — decisão de "quais OS" já veio pronta do Consumer via claim),
+    /// chama <see cref="EnrichPendingDetailOrdersAsync"/> uma única vez sobre esse
+    /// subconjunto, e substitui as entradas enriquecidas de volta em
+    /// <paramref name="ordersByStatus"/> (preservando as demais, não pendentes, intactas).
+    /// </summary>
+    private async Task EnrichPendingOrdersAcrossStatusesAsync(
         Guid tenantId,
         Guid commandId,
         IPage page,
         RequestTemplate template,
-        IReadOnlyList<object> assignedOrders,
+        Dictionary<string, IReadOnlyList<object>> ordersByStatus,
+        IReadOnlyList<string> pendingDetailWorkOrderIds,
         CancellationToken cancellationToken)
     {
-        if (assignedOrders.Count == 0) return assignedOrders;
+        if (pendingDetailWorkOrderIds.Count == 0) return;
 
-        var enriched = new List<object>(assignedOrders.Count);
+        var pendingIds = new HashSet<string>(pendingDetailWorkOrderIds, StringComparer.Ordinal);
+
+        var pendingOrders = ordersByStatus.Values
+            .SelectMany(orders => orders)
+            .Where(order => TryExtractWorkOrderIdFromOrder(order) is { } id && pendingIds.Contains(id.ToString()!))
+            .ToList();
+
+        if (pendingOrders.Count == 0) return;
+
+        var enrichedOrders = await EnrichPendingDetailOrdersAsync(
+            tenantId, commandId, page, template, pendingOrders, cancellationToken);
+
+        var enrichedById = new Dictionary<string, object>(StringComparer.Ordinal);
+        foreach (var enrichedOrder in enrichedOrders)
+        {
+            if (TryExtractWorkOrderIdFromOrder(enrichedOrder) is { } id)
+                enrichedById[id.ToString()!] = enrichedOrder;
+        }
+
+        if (enrichedById.Count == 0) return;
+
+        foreach (var key in ordersByStatus.Keys.ToList())
+        {
+            ordersByStatus[key] = ordersByStatus[key]
+                .Select(order => TryExtractWorkOrderIdFromOrder(order) is { } id
+                    && enrichedById.TryGetValue(id.ToString()!, out var enriched)
+                        ? enriched
+                        : order)
+                .ToList();
+        }
+    }
+
+    private async Task<IReadOnlyList<object>> EnrichPendingDetailOrdersAsync(
+        Guid tenantId,
+        Guid commandId,
+        IPage page,
+        RequestTemplate template,
+        IReadOnlyList<object> pendingOrders,
+        CancellationToken cancellationToken)
+    {
+        if (pendingOrders.Count == 0) return pendingOrders;
+
+        var enriched = new List<object>(pendingOrders.Count);
         var headersJson = JsonSerializer.Serialize(template.Headers);
 
-        foreach (var order in assignedOrders)
+        foreach (var order in pendingOrders)
         {
             var orderJson = JsonSerializer.Serialize(order);
             var workOrderId = TryExtractWorkOrderIdFromOrder(order);
@@ -1202,7 +1259,7 @@ public sealed class IServiceCollectorService(
     /// <summary>
     /// Extrai <c>workOrderId</c>/<c>id</c> de uma OS convertida (<see cref="ConvertJsonElement"/>)
     /// apenas para popular o campo <c>request</c> do documento de auditoria — mesma lógica
-    /// de fallback usada no lado JS de <see cref="EnrichAssignedOrdersAsync"/>. Não deve ser
+    /// de fallback usada no lado JS de <see cref="EnrichPendingDetailOrdersAsync"/>. Não deve ser
     /// usado para nenhuma decisão de negócio (RF-022.6 delega isso ao consumer).
     /// </summary>
     private static object? TryExtractWorkOrderIdFromOrder(object order)

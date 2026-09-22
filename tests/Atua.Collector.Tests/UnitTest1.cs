@@ -41,7 +41,8 @@ public class WorkerEligibilityTests
             DateTimeOffset.UtcNow,
             DateTimeOffset.UtcNow.AddMinutes(5),
             3,
-            new CredentialPayload("user@test.com", "s3cr3t", "https://iservice.test"));
+            new CredentialPayload("user@test.com", "s3cr3t", "https://iservice.test"),
+            Array.Empty<string>());
 
     private static CollectionResult MakeResult() =>
         new(DateTimeOffset.UtcNow,
@@ -86,7 +87,7 @@ public class WorkerEligibilityTests
         // CollectAsync NUNCA deve ter sido chamado
         await iService.DidNotReceive().CollectAsync(
             Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(),
-            Arg.Any<int>(), Arg.Any<CancellationToken>());
+            Arg.Any<int>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>());
 
         // CompleteAsync deve ter sido chamado com "Cancelled"
         await apiClient.Received(1).CompleteAsync(
@@ -121,7 +122,7 @@ public class WorkerEligibilityTests
         apiClient.CheckEligibilityAsync(Arg.Any<CancellationToken>())
             .Returns(new EligibilityResponse(Eligible: true, DateTimeOffset.UtcNow));
         iService.CollectAsync(Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(),
-            Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns(result);
+            Arg.Any<int>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>()).Returns(result);
         apiClient.CompleteAsync(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<ECommandFailureReason?>(),
             Arg.Any<DateTimeOffset?>(), Arg.Any<CancellationToken>())
             .Returns(new CompleteResponse(commandId, "Succeeded", DateTimeOffset.UtcNow));
@@ -138,6 +139,7 @@ public class WorkerEligibilityTests
             command.Credential.Password,
             command.Credential.BaseUrl,
             command.HistoryWindowMonths,
+            Arg.Any<IReadOnlyList<string>>(),
             Arg.Any<CancellationToken>());
 
         // CompleteAsync deve ter sido chamado com "Succeeded"
@@ -182,7 +184,7 @@ public class WorkerEligibilityTests
         // CollectAsync nunca deve ser chamado
         await iService.DidNotReceive().CollectAsync(
             Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(),
-            Arg.Any<int>(), Arg.Any<CancellationToken>());
+            Arg.Any<int>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>());
 
         // CompleteAsync deve ter sido chamado com "Failed" e IServiceUnavailable
         await apiClient.Received(1).CompleteAsync(
@@ -218,6 +220,6 @@ public class WorkerEligibilityTests
         await apiClient.DidNotReceive().CheckEligibilityAsync(Arg.Any<CancellationToken>());
         await iService.DidNotReceive().CollectAsync(
             Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(),
-            Arg.Any<int>(), Arg.Any<CancellationToken>());
+            Arg.Any<int>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>());
     }
 }

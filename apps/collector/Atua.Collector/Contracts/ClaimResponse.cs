@@ -15,4 +15,5 @@ public sealed record ClaimResponse(
     DateTimeOffset ClaimedAtUtc,
     DateTimeOffset ClaimExpiresAtUtc,
     int HistoryWindowMonths,
-    CredentialPayload Credential);
+    CredentialPayload Credential,
+    IReadOnlyList<string> PendingDetailWorkOrderIds);

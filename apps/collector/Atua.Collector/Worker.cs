@@ -110,6 +110,7 @@ public sealed class Worker(
                 command.Credential.Password,
                 command.Credential.BaseUrl,
                 command.HistoryWindowMonths,
+                command.PendingDetailWorkOrderIds,
                 cancellationToken);
 
             // 4. Registra o resumo da coleta — persistência agora é feita de forma
