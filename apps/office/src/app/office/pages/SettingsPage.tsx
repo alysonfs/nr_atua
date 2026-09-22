@@ -47,7 +47,7 @@ export function SettingsPage() {
   return (
     <div className="mx-auto grid w-full max-w-7xl gap-6 px-4 py-6 sm:px-6 lg:grid-cols-[240px_minmax(0,1fr)] lg:px-8">
       <aside className="hidden lg:block">
-        <nav aria-label={t('layout.mainNavigation')} className="sticky top-[5.5rem] space-y-1">
+        <nav aria-label={t('layout.mainNavigation')} className="sticky top-22 space-y-1">
           {[
             t('settings.navigation.overview'),
             t('settings.navigation.integrations'),
