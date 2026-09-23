@@ -1196,7 +1196,7 @@ public sealed class IServiceCollectorService(
                     @"async ({ headersJson, orderJson, detailUrl }) => {
                         const order = JSON.parse(orderJson);
                         const workOrderId = order.workOrderId || order.id || null;
-                        if (!workOrderId) return order;
+                        if (!workOrderId) return { __detailFetchFailed: true, __resultCode: null, __httpStatus: null, order };
 
                         const headers = JSON.parse(headersJson);
                         headers['content-type'] = 'application/json; charset=UTF-8';
@@ -1214,7 +1214,7 @@ public sealed class IServiceCollectorService(
                         }
                         const payload = await response.json();
                         if (!response.ok || payload.resultCode !== 'ISC-000') {
-                            return order; // falha silenciosa no detalhe, retorna OS sem detalhe
+                            return { __detailFetchFailed: true, __resultCode: payload.resultCode ?? null, __httpStatus: response.status, order };
                         }
                         return { ...order, orderDetail: payload.data || null };
                     }",
@@ -1231,6 +1231,24 @@ public sealed class IServiceCollectorService(
                         tenantId, commandId, "detail_query", request, orders: null,
                         success: false, "HTTP 401 (sessão expirada)", cancellationToken);
                     throw new ProviderSessionInvalidException("HTTP 401 em detail_query.");
+                }
+
+                if (converted is IDictionary<string, object?> failedDict
+                    && failedDict.TryGetValue("__detailFetchFailed", out var detailFailedFlag)
+                    && detailFailedFlag is true)
+                {
+                    // Falha de negócio (HTTP não-ok ou resultCode != ISC-000): NÃO pode ser
+                    // registrada como success=true, senão o Consumer marca DetailsFetchedAt
+                    // permanentemente e a OS nunca mais tenta buscar o detalhe de novo.
+                    var resultCode = failedDict.TryGetValue("__resultCode", out var rc) ? rc?.ToString() : null;
+                    var httpStatus = failedDict.TryGetValue("__httpStatus", out var hs) ? hs?.ToString() : null;
+                    enriched.Add(order);
+                    await LogProviderInteractionSafeAsync(
+                        tenantId, commandId, "detail_query", request, orders: null,
+                        success: false,
+                        $"Falha de negócio em queryOneWorkOrder (httpStatus={httpStatus}, resultCode={resultCode}).",
+                        cancellationToken);
+                    continue;
                 }
 
                 enriched.Add(converted);
