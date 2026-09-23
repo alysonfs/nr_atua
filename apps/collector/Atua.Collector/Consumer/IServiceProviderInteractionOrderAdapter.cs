@@ -64,13 +64,17 @@ public sealed class IServiceProviderInteractionOrderAdapter : IProviderInteracti
 
     private static ProviderWorkOrderData BuildOrderData(BsonDocument order, string workOrderProviderId, string status)
     {
-        // RF-026/ADR-031: quando esta OS foi enriquecida via queryOneWorkOrder, o payload
-        // completo (sem mascaramento de PII) fica em order.orderDetail — o iService mascara
-        // nome/CPF/e-mail/telefone/endereço apenas na listagem (queryWorkOrder), não no
-        // detalhe de uma OS específica. Sem isso, os campos de contato do consumidor
-        // permaneciam sempre mascarados ("S****S", "5584****51" etc.), mesmo após o
-        // enriquecimento — o detalhe era buscado e auditado, mas nunca lido de volta.
-        var detail = ExtractOrderDetail(order);
+        // RF-026/ADR-031 (corrigido 2026-09-23): queryOneWorkOrder devolve todos os campos
+        // de contato do cliente como null — não é a fonte de dado desmascarado. O endpoint
+        // correto, usado por EnrichPendingDetailOrdersAsync desde a correção, é
+        // queryWoExecutionDetail, cujo payload de contato (nome/CPF/e-mail/telefone/endereço,
+        // sem máscara) fica em order.orderDetail.customerInfo — não mais em orderDetail
+        // diretamente (payload achatado, formato do endpoint antigo). Sem isso, os campos de
+        // contato do consumidor permaneciam sempre mascarados ("S****S", "5584****51" etc.),
+        // mesmo após o enriquecimento — o detalhe era buscado e auditado, mas nunca lido
+        // corretamente de volta.
+        var orderDetail = ExtractOrderDetail(order);
+        var detail = ExtractCustomerInfo(orderDetail);
         var customerName = ExtractCustomerName(detail) ?? ExtractCustomerName(order);
 
         return new ProviderWorkOrderData(
@@ -88,10 +92,10 @@ public sealed class IServiceProviderInteractionOrderAdapter : IProviderInteracti
             ContactPhone: ExtractContactPhone(detail) ?? ExtractContactPhone(order),
             ContactName: ExtractStringPreferDetail(order, detail, "contactName") ?? customerName,
             Address: ExtractStringPreferDetail(order, detail, "address") ?? ExtractStringPreferDetail(order, detail, "address1"),
-            ZipCode: ExtractString(order, "zipcode"),
-            CountryName: ExtractString(order, "countryName"),
-            StateName: ExtractString(order, "stateName"),
-            CityName: ExtractString(order, "cityName"),
+            ZipCode: ExtractStringPreferDetail(order, detail, "zipCode") ?? ExtractString(order, "zipcode"),
+            CountryName: ExtractStringPreferDetail(order, detail, "countryName"),
+            StateName: ExtractStringPreferDetail(order, detail, "stateName"),
+            CityName: ExtractStringPreferDetail(order, detail, "cityName"),
             ProductBrand: ExtractString(order, "productBrand"),
             PdCode: ExtractString(order, "pdCode"),
             CategoryId: ExtractString(order, "categoryId"),
@@ -103,12 +107,24 @@ public sealed class IServiceProviderInteractionOrderAdapter : IProviderInteracti
     }
 
     /// <summary>
-    /// Extrai o sub-documento <c>orderDetail</c> (payload de <c>queryOneWorkOrder</c>,
-    /// mesclado por <c>EnrichPendingDetailOrdersAsync</c>), quando esta OS foi enriquecida.
-    /// Ausente em OS obtidas apenas via <c>list_query</c>.
+    /// Extrai o sub-documento <c>orderDetail</c> (payload <c>data</c> de
+    /// <c>queryWoExecutionDetail</c>, mesclado por <c>EnrichPendingDetailOrdersAsync</c>),
+    /// quando esta OS foi enriquecida. Ausente em OS obtidas apenas via <c>list_query</c>.
     /// </summary>
     private static BsonDocument? ExtractOrderDetail(BsonDocument order) =>
         order.TryGetValue("orderDetail", out var value) && value is BsonDocument detail ? detail : null;
+
+    /// <summary>
+    /// Extrai o sub-documento <c>customerInfo</c> de dentro de <c>orderDetail</c> — é aí que
+    /// <c>queryWoExecutionDetail</c> devolve nome/CPF/e-mail/telefone/endereço completos e
+    /// sem máscara (confirmado com payload real em produção, 2026-09-23). O restante de
+    /// <c>orderDetail</c> (ex.: <c>workOrder</c>, <c>productInfo</c>) tem apenas dados
+    /// operacionais, não usados por este adapter.
+    /// </summary>
+    private static BsonDocument? ExtractCustomerInfo(BsonDocument? orderDetail) =>
+        orderDetail is not null && orderDetail.TryGetValue("customerInfo", out var value) && value is BsonDocument customerInfo
+            ? customerInfo
+            : null;
 
     /// <summary>
     /// Lê um campo string preferindo o sub-documento <c>orderDetail</c> (não mascarado)

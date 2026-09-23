@@ -7,15 +7,16 @@ namespace Atua.Collector.Tests;
 /// Testes unitários de <see cref="IServiceProviderInteractionOrderAdapter"/>, focados no
 /// bug relatado em produção: dados de contato do consumidor (nome/CPF/e-mail/telefone/
 /// endereço) permaneciam sempre mascarados ("S****S", "5584****51" etc.) na página de
-/// detalhes da OS, mesmo após o enriquecimento via <c>queryOneWorkOrder</c> — o adapter
-/// nunca lia o sub-documento <c>orderDetail</c> (payload não mascarado do detalhe),
-/// sempre extraindo dos campos de nível raiz (mascarados na listagem).
+/// detalhes da OS, mesmo após o enriquecimento — o adapter nunca lia o sub-documento
+/// correto do payload não mascarado do detalhe (<c>orderDetail.customerInfo</c>, devolvido
+/// por <c>queryWoExecutionDetail</c>), sempre extraindo dos campos de nível raiz (mascarados
+/// na listagem).
 /// </summary>
 public class IServiceProviderInteractionOrderAdapterTests
 {
     private readonly IServiceProviderInteractionOrderAdapter _adapter = new();
 
-    private static BsonDocument MaskedListOrder(BsonDocument? orderDetail = null)
+    private static BsonDocument MaskedListOrder(BsonDocument? customerInfo = null)
     {
         var order = new BsonDocument
         {
@@ -30,9 +31,9 @@ public class IServiceProviderInteractionOrderAdapterTests
             ["address"] = "RU****il",
         };
 
-        if (orderDetail is not null)
+        if (customerInfo is not null)
         {
-            order["orderDetail"] = orderDetail;
+            order["orderDetail"] = new BsonDocument { ["customerInfo"] = customerInfo };
         }
 
         return order;
@@ -55,7 +56,7 @@ public class IServiceProviderInteractionOrderAdapterTests
     [Fact]
     public void ComOrderDetail_PreferoDadosNaoMascaradosDoDetalhe()
     {
-        var detail = new BsonDocument
+        var customerInfo = new BsonDocument
         {
             ["name"] = "Suzana Silva",
             ["cpf"] = "12345678900",
@@ -65,7 +66,7 @@ public class IServiceProviderInteractionOrderAdapterTests
             ["contactName"] = "Suzana Silva",
             ["address"] = "Rua das Flores, 123",
         };
-        var order = MaskedListOrder(detail);
+        var order = MaskedListOrder(customerInfo);
 
         var result = _adapter.ExtractOrders([order]);
 
@@ -81,13 +82,14 @@ public class IServiceProviderInteractionOrderAdapterTests
     [Fact]
     public void ComOrderDetailParcial_CamposAusentesCaemParaOsMascaradosDaListagem()
     {
-        // orderDetail existe mas só trouxe o telefone (ex.: payload de detalhe incompleto) —
-        // os demais campos devem continuar vindo do nível raiz, não devem virar null.
-        var detail = new BsonDocument
+        // orderDetail.customerInfo existe mas só trouxe o telefone (ex.: payload de detalhe
+        // incompleto) — os demais campos devem continuar vindo do nível raiz, não devem
+        // virar null.
+        var customerInfo = new BsonDocument
         {
             ["phoneNumber1"] = "84991234451",
         };
-        var order = MaskedListOrder(detail);
+        var order = MaskedListOrder(customerInfo);
 
         var result = _adapter.ExtractOrders([order]);
 
