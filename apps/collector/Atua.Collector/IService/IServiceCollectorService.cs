@@ -35,7 +35,11 @@ public sealed class IServiceCollectorService(
     private const string IServiceHost = "ics-amer.midea.com";
     private const string SigninHost = "signin.midea.com";
     private const string WoListUrl = "https://ics-amer.midea.com/web/iservice-wom/workOrder/queryWorkOrder";
-    private const string WoDetailUrl = "https://ics-amer.midea.com/web/iservice-wom/workOrder/queryOneWorkOrder";
+    // queryOneWorkOrder (RF-026/ADR-031 original) devolve todos os campos de contato
+    // do cliente como null — confirmado com payload real em produção (2026-09-23).
+    // queryWoExecutionDetail é o endpoint que a SPA usa na tela de detalhe da OS e
+    // devolve o contato completo, sem máscara.
+    private const string WoDetailUrl = "https://ics-amer.midea.com/web/iservice-wom/oha/woExecution/queryWoExecutionDetail";
     // ADR-021 (D1+D6) sugeria 50 como valor inicial de WORKER_PAGE_SIZE; estava
     // hardcoded em 200. Reduzido após ciclo real (3 meses, 200/página) ter
     // devolvido 1035 OS em 6 páginas e o consumer da Fase 4 não ter conseguido
@@ -638,7 +642,7 @@ public sealed class IServiceCollectorService(
         {
             var url = response.Url;
             var isWorkOrderList = url.Contains("queryWorkOrder", StringComparison.OrdinalIgnoreCase);
-            var isWorkOrderDetail = url.Contains("queryOneWorkOrder", StringComparison.OrdinalIgnoreCase);
+            var isWorkOrderDetail = url.Contains("queryWoExecutionDetail", StringComparison.OrdinalIgnoreCase);
             if (!isWorkOrderList && !isWorkOrderDetail) return;
 
             int? statusCode = null;
@@ -1196,6 +1200,7 @@ public sealed class IServiceCollectorService(
                     @"async ({ headersJson, orderJson, detailUrl }) => {
                         const order = JSON.parse(orderJson);
                         const workOrderId = order.workOrderId || order.id || null;
+                        const divisionCode = order.divisionCode || null;
                         if (!workOrderId) return { __detailFetchFailed: true, __resultCode: null, __httpStatus: null, order };
 
                         const headers = JSON.parse(headersJson);
@@ -1207,7 +1212,7 @@ public sealed class IServiceCollectorService(
                             method: 'POST',
                             credentials: 'include',
                             headers,
-                            body: JSON.stringify({ workOrderId }),
+                            body: JSON.stringify({ workOrderId: String(workOrderId), divisionCode }),
                         });
                         if (response.status === 401) {
                             return { __sessionExpired: true };

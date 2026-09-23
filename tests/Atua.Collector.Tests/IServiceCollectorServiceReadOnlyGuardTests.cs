@@ -25,6 +25,7 @@ public class IServiceCollectorServiceReadOnlyGuardTests
     [Theory]
     [InlineData("/web/iservice-wom/workOrder/queryWorkOrder")]
     [InlineData("/web/iservice-wom/workOrder/queryOneWorkOrder")]
+    [InlineData("/web/iservice-wom/oha/woExecution/queryWoExecutionDetail")]
     [InlineData("/web/iservice-wom/workOrder/getStatusCount")]
     [InlineData("/web/iservice-wom/workOrder/selectAssignedTechnicians")]
     [InlineData("/web/iservice-wom/workOrder/listWorkOrder")]
