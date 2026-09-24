@@ -61,7 +61,8 @@ public static class CollectorCommandEndpoints
             new CredentialPayload(
                 result.Credential.Username,
                 result.Credential.Password,
-                result.Credential.BaseUrl)));
+                result.Credential.BaseUrl),
+            result.PendingDetailWorkOrderIds));
     }
 
     // -----------------------------------------------------------------------
@@ -154,7 +155,8 @@ public static class CollectorCommandEndpoints
         DateTimeOffset ClaimedAtUtc,
         DateTimeOffset ClaimExpiresAtUtc,
         int HistoryWindowMonths,
-        CredentialPayload Credential);
+        CredentialPayload Credential,
+        IReadOnlyList<string> PendingDetailWorkOrderIds);
 
     /// <summary>
     /// Credenciais em claro para o Worker (ADR-021/D9-B).

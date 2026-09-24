@@ -5,7 +5,7 @@ import { useMyTenants } from '../../office/hooks/useTenants'
 import { useTranslation } from 'react-i18next'
 
 /** Status inicial exibido na tabela de OS ao carregar o Dashboard (RN do card padrão). */
-const DEFAULT_STATUS = 'Designado'
+const DEFAULT_STATUS = 'assigned'
 
 /**
  * Dashboard: home pós-login do Office.

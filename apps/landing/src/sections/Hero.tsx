@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import logoBgLight from '../../../../assets/logo_bg_light.svg'
+import logoBgLight from '../../../../assets/logo-bg-light.svg'
 
 type HeroProps = {
   languageSelector: ReactNode

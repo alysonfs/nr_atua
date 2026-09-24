@@ -7,8 +7,8 @@ import { useTranslation } from 'react-i18next'
 import { ApiError, apiClient } from '../../../shared/lib/apiClient'
 import { AuthLanguageSelector } from '../AuthLanguageSelector'
 import { createConfirmEmailSchema, type ConfirmEmailFormValues } from '../schemas'
-import logoBgLight from '../../../../../../assets/logo_bg_light.svg'
-import logoBgDark from '../../../../../../assets/logo_bg_dark.svg'
+import logoBgLight from '../../../../../../assets/logo-bg-light.svg'
+import logoBgDark from '../../../../../../assets/logo-bg-dark.svg'
 
 interface LocationState {
   email?: string

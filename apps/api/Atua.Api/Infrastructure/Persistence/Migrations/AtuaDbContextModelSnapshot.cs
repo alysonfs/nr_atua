@@ -700,8 +700,16 @@ namespace Atua.Api.Infrastructure.Persistence.Migrations
                     b.Property<string>("CustomerType")
                         .HasColumnType("text");
 
+                    b.Property<DateTimeOffset?>("DetailsFetchedAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<Guid>("IntegrationId")
                         .HasColumnType("uuid");
+
+                    b.Property<bool>("NeedsDetailFetch")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
 
                     b.Property<string>("PdCode")
                         .HasColumnType("text");
@@ -766,6 +774,9 @@ namespace Atua.Api.Infrastructure.Persistence.Migrations
                     b.HasIndex("TenantId", "WorkOrderProviderId")
                         .IsUnique()
                         .HasDatabaseName("uq_work_orders_tenant_provider");
+
+                    b.HasIndex(new[] { "IntegrationId" }, "ix_work_orders_pending_detail_fetch")
+                        .HasFilter("\"NeedsDetailFetch\" = true");
 
                     b.ToTable("work_orders", (string)null);
                 });

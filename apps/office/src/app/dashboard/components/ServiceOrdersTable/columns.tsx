@@ -1,5 +1,6 @@
 import type { ColumnDef } from '@tanstack/react-table'
 import type { TFunction } from 'i18next'
+import { Link } from 'react-router-dom'
 import type { WorkOrderListItem } from '../../hooks/useWorkOrdersByStatus'
 
 /** Formata uma data ISO 8601 no padrão do locale ativo (dd/mm/aaaa hh:mm). */
@@ -26,7 +27,11 @@ export function createServiceOrdersColumns(
     {
       accessorKey: 'workOrderProviderNo',
       header: t('common.providerOrderNumber'),
-      cell: (info) => info.getValue<string | null>() ?? '—',
+      cell: (info) => (
+        <Link to={`/work-orders/${info.row.original.id}`} className="font-medium text-sky-700 hover:underline">
+          {info.getValue<string | null>() ?? '—'}
+        </Link>
+      ),
     },
     {
       accessorKey: 'status',
@@ -38,13 +43,13 @@ export function createServiceOrdersColumns(
       cell: (info) => formatDateTime(info.getValue<string | null>(), locale),
     },
     {
-      accessorKey: 'providerUpdatedAt',
-      header: t('common.providerUpdatedAt'),
-      cell: (info) => formatDateTime(info.getValue<string | null>(), locale),
-    },
-    {
       accessorKey: 'productModel',
       header: t('common.equipmentModel'),
+      cell: (info) => info.getValue<string | null>() ?? '—',
+    },
+    {
+      accessorKey: 'customerName',
+      header: t('common.consumerName'),
       cell: (info) => info.getValue<string | null>() ?? '—',
     },
     {

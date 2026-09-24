@@ -113,6 +113,13 @@ public sealed class ImmediateCollectionCommandService(
             return null;
         }
 
+        // RF-026/ADR-031: sinaliza ao Collector, no mesmo claim já existente, quais OS
+        // desta integração precisam de busca de detalhe (decidido pelo Consumer).
+        var pendingDetailWorkOrderIds = await dbContext.WorkOrders
+            .Where(w => w.IntegrationId == integrationId && w.NeedsDetailFetch)
+            .Select(w => w.WorkOrderProviderId)
+            .ToListAsync(cancellationToken);
+
         return new ClaimCommandResult(
             command.Id,
             command.IntegrationId,
@@ -122,7 +129,8 @@ public sealed class ImmediateCollectionCommandService(
             command.ClaimedAtUtc!.Value,
             command.ClaimExpiresAtUtc!.Value,
             options.Value.HistoryWindowMonths,
-            new DecryptedCredential(username, password, baseUrl));
+            new DecryptedCredential(username, password, baseUrl),
+            pendingDetailWorkOrderIds);
     }
 
     // -----------------------------------------------------------------------
@@ -327,7 +335,8 @@ public sealed record ClaimCommandResult(
     DateTimeOffset ClaimedAtUtc,
     DateTimeOffset ClaimExpiresAtUtc,
     int HistoryWindowMonths,
-    DecryptedCredential Credential);
+    DecryptedCredential Credential,
+    IReadOnlyList<string> PendingDetailWorkOrderIds);
 
 /// <summary>
 /// Credenciais decifradas para o Worker (ADR-021/D9-B).

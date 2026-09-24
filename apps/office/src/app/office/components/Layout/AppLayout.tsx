@@ -1,6 +1,7 @@
 import { Outlet } from 'react-router-dom'
 import { DashboardHeader } from './DashboardHeader'
 import { Sidebar } from './Sidebar'
+import { Breadcrumbs } from './Breadcrumbs'
 import { TrialBadge } from '../Trial'
 import { useAuth } from '../../../auth/AuthContext'
 import { useTranslation } from 'react-i18next'
@@ -38,6 +39,7 @@ export function AppLayout() {
       <div className="flex min-h-[calc(100vh-4rem)]">
         <Sidebar />
         <main className="min-w-0 flex-1">
+          <Breadcrumbs />
           {localeSyncError && (
             <button
               type="button"

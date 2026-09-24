@@ -4,7 +4,7 @@ import reactLogo from './assets/react.svg'
 import viteLogo from './assets/vite.svg'
 import './App.css'
 
-const iconsUrl = `${import.meta.env.BASE_URL}icons.svg`
+const iconsUrl = `${import.meta.env.BASE_URL}icons.jpg`
 
 function App() {
   const [count, setCount] = useState(0)

@@ -26,8 +26,6 @@ export interface WorkOrderListItem {
   updatedAt: string
   /** Data de criação da OS informada pelo provedor (ISO 8601). */
   providerCreatedAt: string | null
-  /** Data da última atualização da OS informada pelo provedor (ISO 8601). */
-  providerUpdatedAt: string | null
   /** Modelo do equipamento. */
   productModel: string | null
   /** Marca do equipamento. */

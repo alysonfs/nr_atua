@@ -9,6 +9,7 @@ import { SignUpPage } from './app/auth/pages/SignUpPage'
 import { ConfirmEmailPage } from './app/auth/pages/ConfirmEmailPage'
 import { AppLayout } from './app/office/components/Layout'
 import { DashboardPage } from './app/dashboard/pages/DashboardPage'
+import { WorkOrderDetailPage } from './app/dashboard/pages/WorkOrderDetailPage'
 import { SettingsPage } from './app/office/pages/SettingsPage'
 
 export function AppRouter() {
@@ -28,6 +29,7 @@ export function AppRouter() {
           <Route element={<ProtectedRoute />}>
             <Route element={<AppLayout />}>
               <Route path="/home" element={<DashboardPage />} />
+              <Route path="/work-orders/:workOrderId" element={<WorkOrderDetailPage />} />
               <Route path="/settings" element={<SettingsPage />} />
             </Route>
           </Route>

@@ -224,6 +224,110 @@ public class WorkOrderEndpointsTests
         Assert.Equal(1, body.Statuses.Single(status => status.Status == "closed").Total);
     }
 
+    [Fact]
+    public async Task GetDetailRetorna403QuandoUsuarioNaoEMembroDoTenant()
+    {
+        var (app, databaseName) = await CreateApplicationAsync();
+        await using var appDisposable = app;
+        var tenantId = await SeedTenantAsync(databaseName);
+        var client = CreateAuthenticatedClient(app, Guid.CreateVersion7());
+
+        var response = await client.GetAsync($"/api/tenants/{tenantId}/work-orders/{Guid.CreateVersion7()}");
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task GetDetailRetorna401QuandoRequisicaoNaoAutenticada()
+    {
+        var (app, databaseName) = await CreateApplicationAsync();
+        await using var appDisposable = app;
+        var tenantId = await SeedTenantAsync(databaseName);
+        var client = app.GetTestClient();
+
+        var response = await client.GetAsync($"/api/tenants/{tenantId}/work-orders/{Guid.CreateVersion7()}");
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task GetDetailRetorna404QuandoOSNaoPertenceAoTenant()
+    {
+        var (app, databaseName) = await CreateApplicationAsync();
+        await using var appDisposable = app;
+        var userId = Guid.CreateVersion7();
+        var tenantId = await SeedTenantWithMembershipAsync(databaseName, userId);
+        var otherTenantId = await SeedTenantAsync(databaseName);
+        var integrationId = await SeedIntegrationAsync(databaseName, otherTenantId);
+
+        var workOrderId = Guid.CreateVersion7();
+        await using (var context = CreateContext(databaseName))
+        {
+            context.WorkOrders.Add(new WorkOrder(workOrderId, otherTenantId, integrationId, "OS-1", "Novo",
+                DateTimeOffset.UtcNow));
+            await context.SaveChangesAsync();
+        }
+
+        var client = CreateAuthenticatedClient(app, userId);
+        var response = await client.GetAsync($"/api/tenants/{tenantId}/work-orders/{workOrderId}");
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task GetDetailRetornaCamposCompletosEHistoricoOrdenadoDoMaisAntigoParaOMaisRecente()
+    {
+        var (app, databaseName) = await CreateApplicationAsync();
+        await using var appDisposable = app;
+        var userId = Guid.CreateVersion7();
+        var tenantId = await SeedTenantWithMembershipAsync(databaseName, userId);
+        var integrationId = await SeedIntegrationAsync(databaseName, tenantId, providerName: "iService");
+
+        var workOrderId = Guid.CreateVersion7();
+        var createdAt = new DateTimeOffset(2026, 9, 1, 9, 0, 0, TimeSpan.Zero);
+        var changedAt = new DateTimeOffset(2026, 9, 5, 10, 0, 0, TimeSpan.Zero);
+        await using (var context = CreateContext(databaseName))
+        {
+            var order = new WorkOrder(workOrderId, tenantId, integrationId, "OS-1", "Novo", createdAt);
+            order.UpdateDetails(new WorkOrderDetails(
+                WorkOrderProviderNo: "BRWO260909869",
+                ServiceRequestId: "102215534",
+                Amount: 199.90m,
+                ProviderCreatedAt: createdAt,
+                ProviderUpdatedAt: changedAt,
+                CustomerType: "Person", CustomerName: "Maria Souza", CustomerCpf: "12345678900",
+                ContactEmail: "maria@example.com", ContactPhone: "+5584999999999", ContactName: "Maria Souza",
+                Address: "Rua A, 123", ZipCode: "59000000", CountryName: "Brasil", StateName: "RN", CityName: "Natal",
+                ProductBrand: "Consul", PdCode: "PD1", CategoryId: "CAT1", ProductCategoryCode: "PCC1",
+                ProductCode: "PC1", ProductModel: "CRM43", ProductStatus: "Ativo", Symptom: "Não gela"),
+                changedAt);
+            order.UpdateStatus("Em Andamento", changedAt);
+            context.WorkOrders.Add(order);
+            context.WorkOrderHistories.Add(new WorkOrderHistory(Guid.CreateVersion7(), workOrderId,
+                Guid.CreateVersion7(), tenantId, integrationId, "OS-1", "Em Andamento", changedAt));
+            context.WorkOrderHistories.Add(new WorkOrderHistory(Guid.CreateVersion7(), workOrderId,
+                Guid.CreateVersion7(), tenantId, integrationId, "OS-1", "Novo", createdAt));
+            await context.SaveChangesAsync();
+        }
+
+        var client = CreateAuthenticatedClient(app, userId);
+        var response = await client.GetAsync($"/api/tenants/{tenantId}/work-orders/{workOrderId}");
+        var body = await response.Content.ReadFromJsonAsync<WorkOrderDetailResponse>();
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(workOrderId, body!.Id);
+        Assert.Equal("BRWO260909869", body.WorkOrderProviderNo);
+        Assert.Equal("Em Andamento", body.Status);
+        Assert.Equal("Maria Souza", body.CustomerName);
+        Assert.Equal("Natal", body.CityName);
+        Assert.Equal("CRM43", body.ProductModel);
+        Assert.Equal("Não gela", body.Symptom);
+        Assert.Equal(2, body.History.Count);
+        Assert.Equal("Novo", body.History[0].Status);
+        Assert.Equal("Em Andamento", body.History[1].Status);
+        Assert.True(body.History[0].CreatedAt < body.History[1].CreatedAt);
+    }
+
     private static async Task<Guid> SeedIntegrationAsync(string databaseName, Guid tenantId,
         string providerName = "iService")
     {
@@ -270,6 +374,7 @@ public class WorkOrderEndpointsTests
         builder.Services.AddScoped<IWorkOrderMonthlySummaryQuery, WorkOrderMonthlySummaryQueryHandler>();
         builder.Services.AddScoped<IWorkOrderListByStatusQuery, WorkOrderListByStatusQueryHandler>();
         builder.Services.AddScoped<IWorkOrderStatusSummaryQuery, WorkOrderStatusSummaryQueryHandler>();
+        builder.Services.AddScoped<IWorkOrderDetailQuery, WorkOrderDetailQueryHandler>();
         builder.Services.AddAuthorization(options =>
         {
             options.AddPolicy("BrowserSession", policy =>

@@ -26,6 +26,7 @@
     "react-router-dom": "^7.18.3",
     "react-toastify": "^11.1.0",
     "tailwindcss": "^4.3.3",
+    "use-react-router-breadcrumbs": "^4.0.1",
     "zod": "^4.5.4"
   },
   "devDependencies": {

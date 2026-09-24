@@ -16,6 +16,7 @@ public interface IWorkOrderPgRepository
         string resumeToken,
         string consumerId,
         DateTimeOffset interactionCreatedAt,
+        string interactionType,
         CancellationToken cancellationToken = default);
 
     /// <inheritdoc cref="WorkOrderPgRepository.AdvanceResumeTokenAsync"/>

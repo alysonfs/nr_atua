@@ -369,12 +369,20 @@ public sealed class AtuaDbContext(DbContextOptions<AtuaDbContext> options) : DbC
         builder.Property(wo => wo.WorkOrderProviderId).HasMaxLength(256).IsRequired();
         builder.Property(wo => wo.Status).IsRequired();
         builder.Property(wo => wo.Amount).HasColumnType("numeric(18,2)");
+        // RF-026/ADR-031: fila implícita de OS pendentes de busca de detalhe.
+        builder.Property(wo => wo.NeedsDetailFetch).IsRequired().HasDefaultValue(false);
+        builder.Property(wo => wo.DetailsFetchedAt);
         // Chave de identidade: (tenant_id, work_order_provider_id) — RF-017.6
         builder.HasIndex(wo => new { wo.TenantId, wo.WorkOrderProviderId })
             .IsUnique()
             .HasDatabaseName("uq_work_orders_tenant_provider");
         builder.HasIndex(wo => wo.TenantId);
         builder.HasIndex(wo => wo.IntegrationId);
+        // Consultada a cada `claim` (ADR-031) — índice parcial mantém a leitura barata.
+        // Nome explícito na sobrecarga (em vez de HasDatabaseName) evita que o EF funda
+        // esta configuração com o índice simples de IntegrationId acima.
+        builder.HasIndex(wo => wo.IntegrationId, "ix_work_orders_pending_detail_fetch")
+            .HasFilter("\"NeedsDetailFetch\" = true");
         // Obrigatório (RN-017.7): toda OS é sempre coletada por uma integração conhecida.
         builder.HasOne<Integration>().WithMany().HasForeignKey(wo => wo.IntegrationId)
             .OnDelete(DeleteBehavior.Restrict);

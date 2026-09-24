@@ -219,7 +219,7 @@ public sealed class ProviderInteractionConsumerWorker(
         }
 
         await pgRepository.ProcessInteractionAsync(
-            interactionId, tenantId, orders, tokenJson, ConsumerId, createdAt, stoppingToken);
+            interactionId, tenantId, orders, tokenJson, ConsumerId, createdAt, interactionType ?? string.Empty, stoppingToken);
 
         await providerInteractionRepository.DeleteProcessedAsync(interactionId, stoppingToken);
 

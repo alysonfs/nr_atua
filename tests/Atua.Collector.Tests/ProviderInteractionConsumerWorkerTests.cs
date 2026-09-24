@@ -77,7 +77,7 @@ public class ProviderInteractionConsumerWorkerTests
         await _providerInteractionRepository.Received(1).DeleteProcessedAsync(id, Arg.Any<CancellationToken>());
         await _pgRepository.DidNotReceive().ProcessInteractionAsync(
             Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<IReadOnlyList<ProviderWorkOrderData>>(),
-            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>());
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<DateTimeOffset>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -171,7 +171,7 @@ public class ProviderInteractionConsumerWorkerTests
 
         _pgRepository.ProcessInteractionAsync(
                 Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<IReadOnlyList<ProviderWorkOrderData>>(),
-                Arg.Any<string>(), Arg.Any<string>(), Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>())
+                Arg.Any<string>(), Arg.Any<string>(), Arg.Any<DateTimeOffset>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(Task.CompletedTask);
 
         await worker.ProcessDocumentAsync(doc, "{}", CancellationToken.None);
@@ -180,7 +180,7 @@ public class ProviderInteractionConsumerWorkerTests
         {
             _pgRepository.ProcessInteractionAsync(
                 id, Arg.Any<Guid>(), Arg.Any<IReadOnlyList<ProviderWorkOrderData>>(),
-                "{}", "provider-interaction-to-work-order", Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>());
+                "{}", "provider-interaction-to-work-order", Arg.Any<DateTimeOffset>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
             _providerInteractionRepository.DeleteProcessedAsync(id, Arg.Any<CancellationToken>());
         });
     }
@@ -198,7 +198,7 @@ public class ProviderInteractionConsumerWorkerTests
         // constraint) — ProcessInteractionAsync propaga a exceção sem ter dado commit.
         _pgRepository.ProcessInteractionAsync(
                 Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<IReadOnlyList<ProviderWorkOrderData>>(),
-                Arg.Any<string>(), Arg.Any<string>(), Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>())
+                Arg.Any<string>(), Arg.Any<string>(), Arg.Any<DateTimeOffset>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromException(new InvalidOperationException("falha simulada de transação")));
 
         await Assert.ThrowsAsync<InvalidOperationException>(
