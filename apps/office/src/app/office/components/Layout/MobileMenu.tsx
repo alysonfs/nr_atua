@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { SidebarItem } from './SidebarItem'
 import { getNavItems } from './navItems'
 import logoBgLight from '../../../../../../../assets/logo-bg-light.svg'
+import logoBgDark from '../../../../../../../assets/logo-bg-dark.svg'
 
 interface MobileMenuProps {
   /** Se o overlay está aberto. */
@@ -31,8 +32,8 @@ export function MobileMenu({ open, onClose }: MobileMenuProps) {
     >
       <div className="grid h-16 grid-cols-[1fr_auto_1fr] items-center border-b border-slate-800 px-4">
         <span aria-hidden="true" />
-        <span className="justify-self-center rounded-md bg-white px-2 py-1 shadow-sm">
-          <img src={logoBgLight} alt={t('common.brandAlt')} className="h-6 w-auto" />
+        <span className="justify-self-center rounded-md px-2 py-1 shadow-sm">
+          <img src={logoBgDark} alt={t('common.brandAlt')} className="h-6 w-auto" />
         </span>
         <button
           type="button"
