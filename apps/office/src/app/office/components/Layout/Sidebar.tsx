@@ -1,52 +1,34 @@
-import { NavLink } from 'react-router-dom'
-import { Dashboard } from '@icon-park/react'
-import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-
-interface SidebarItem {
-  label: string
-  to: string
-  icon: ReactNode
-}
+import { SidebarItem } from './SidebarItem'
+import { getNavItems } from './navItems'
+import logoBgLight from '../../../../../../../assets/logo-bg-light.svg'
+import logoBgDark from '../../../../../../../assets/logo-bg-dark.svg'
 
 /**
- * Itens de navegação do menu lateral. Por ora, apenas o Dashboard
- * (rota /home) está definido — os demais itens são uma decisão de
- * produto que será feita em uma próxima etapa.
- */
-/**
- * Menu lateral esquerdo do Office, na mesma paleta escura do header.
+ * Menu lateral esquerdo do Office (desktop, sm+): bloco de marca no topo
+ * (mesma altura do header, para alinhar as duas bordas) seguido da
+ * navegação. Em telas menores, o MobileMenu assume esse papel.
  */
 export function Sidebar() {
   const { t } = useTranslation()
-  const items: SidebarItem[] = [
-    { label: t('layout.dashboard'), to: '/home', icon: <Dashboard theme="outline" size={18} /> },
-  ]
+  const items = getNavItems(t)
 
   return (
     <aside
       aria-label={t('layout.sideMenu')}
-      className="hidden w-56 shrink-0 border-r border-slate-800 bg-slate-950 text-slate-100 sm:block"
+      className="sticky top-0 hidden h-screen w-56 shrink-0 overflow-y-auto border-r border-slate-800 bg-slate-950 text-slate-100 sm:block"
     >
+      <div className="flex h-16 items-center justify-center border-b border-slate-800 px-4">
+        <span className="rounded-md px-2 py-1 shadow-sm">
+          <img src={logoBgDark} alt={t('common.brandAlt')} className="h-6 w-auto" />
+        </span>
+      </div>
       <nav aria-label={t('layout.mainNavigation')} className="sticky top-16 space-y-1 p-4">
         <p className="px-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
           {t('layout.menu')}
         </p>
         {items.map((item) => (
-          <NavLink
-            key={item.to}
-            to={item.to}
-            className={({ isActive }) =>
-              `flex items-center gap-2 rounded-md px-2 py-2 text-sm font-medium transition ${
-                isActive
-                  ? 'bg-slate-900 text-white'
-                  : 'text-slate-400 hover:bg-slate-900/60 hover:text-slate-100'
-              }`
-            }
-          >
-            {item.icon}
-            {item.label}
-          </NavLink>
+          <SidebarItem key={item.to} {...item} />
         ))}
       </nav>
     </aside>

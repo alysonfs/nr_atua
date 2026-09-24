@@ -1,7 +1,7 @@
 import { useWorkOrderStatusSummary } from '../../hooks/useWorkOrderStatusSummary'
 import { StatusSummaryCard } from './StatusSummaryCard'
 import { useTranslation } from 'react-i18next'
-import { getProviderStatusAccentColor, translateProviderStatus } from '../../lib/providerStatus'
+import { getProviderStatusTone, translateProviderStatus } from '../../lib/providerStatus'
 
 interface StatusSummaryProps {
   /** Tenant ativo do usuário (ver useMyTenants().defaultTenantId). */
@@ -49,7 +49,7 @@ export function StatusSummary({ tenantId, selectedStatus, onSelectStatus }: Stat
               key={status}
               status={translateProviderStatus(status, t)}
               total={total}
-              accentColor={getProviderStatusAccentColor(status)}
+              tone={getProviderStatusTone(status)}
               isSelected={status.toLocaleLowerCase() === selectedStatus.toLocaleLowerCase()}
               onSelect={() => onSelectStatus(status)}
             />

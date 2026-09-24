@@ -4,7 +4,10 @@ const STATUS_TRANSLATION_KEYS: Record<string, string> = {
   'request cancel': 'dashboard.statuses.requestCancel',
   assigned: 'dashboard.statuses.assigned',
   designado: 'dashboard.statuses.assigned',
+  accepted: 'dashboard.statuses.accepted',
+  aceito: 'dashboard.statuses.accepted',
   'exchange proposal': 'dashboard.statuses.exchangeProposal',
+  'exchange approved': 'dashboard.statuses.exchangeApproved',
   closed: 'dashboard.statuses.closed',
   fechado: 'dashboard.statuses.closed',
   cancelled: 'dashboard.statuses.cancelled',
@@ -16,23 +19,29 @@ const STATUS_TRANSLATION_KEYS: Record<string, string> = {
   'payment approved': 'dashboard.statuses.paymentApproved',
 }
 
-const STATUS_ACCENT_COLORS: Record<string, string> = {
-  'request cancel': '#c2410c',
-  assigned: '#0369a1',
-  designado: '#0369a1',
-  'exchange proposal': '#7c3aed',
-  closed: '#15803d',
-  fechado: '#15803d',
-  cancelled: '#b91c1c',
-  cancelado: '#b91c1c',
-  'payment rejected': '#be123c',
-  'request to explain': '#a16207',
-  pending: '#b45309',
-  pendente: '#b45309',
-  'payment approved': '#047857',
+/** Tonalidades centralizadas (tokens `--color-status-*` em index.css). */
+export type StatusTone = 'success' | 'danger' | 'info' | 'warning' | 'neutral'
+
+const STATUS_TONES: Record<string, StatusTone> = {
+  'request cancel': 'warning',
+  assigned: 'info',
+  designado: 'info',
+  accepted: 'info',
+  aceito: 'info',
+  'exchange proposal': 'info',
+  'exchange approved': 'success',
+  closed: 'success',
+  fechado: 'success',
+  cancelled: 'danger',
+  cancelado: 'danger',
+  'payment rejected': 'danger',
+  'request to explain': 'warning',
+  pending: 'warning',
+  pendente: 'warning',
+  'payment approved': 'success',
 }
 
-const DEFAULT_ACCENT_COLOR = '#334155'
+const DEFAULT_TONE: StatusTone = 'neutral'
 
 function normalizeStatus(status: string): string {
   return status.trim().toLocaleLowerCase('en-US')
@@ -43,6 +52,7 @@ export function translateProviderStatus(status: string, t: TFunction): string {
   return key ? t(key) : status
 }
 
-export function getProviderStatusAccentColor(status: string): string {
-  return STATUS_ACCENT_COLORS[normalizeStatus(status)] ?? DEFAULT_ACCENT_COLOR
+/** Mapeia um status cru (RF-017: string livre) para uma tonalidade centralizada. */
+export function getProviderStatusTone(status: string): StatusTone {
+  return STATUS_TONES[normalizeStatus(status)] ?? DEFAULT_TONE
 }

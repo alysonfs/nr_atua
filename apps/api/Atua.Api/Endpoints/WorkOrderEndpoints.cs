@@ -23,6 +23,9 @@ public static class WorkOrderEndpoints
         endpoints.MapGet("/api/tenants/{tenantId:guid}/work-orders/status-summary", GetStatusSummary)
             .RequireAuthorization("BrowserSession");
 
+        endpoints.MapGet("/api/tenants/{tenantId:guid}/work-orders/metrics-summary", GetMetricsSummary)
+            .RequireAuthorization("BrowserSession");
+
         endpoints.MapGet("/api/tenants/{tenantId:guid}/work-orders/{workOrderId:guid}", GetDetail)
             .RequireAuthorization("BrowserSession");
     }
@@ -110,6 +113,38 @@ public static class WorkOrderEndpoints
         return Results.Ok(response);
     }
 
+    private const int DefaultMetricsSummaryMonths = 12;
+    private const int MinMetricsSummaryMonths = 1;
+    private const int MaxMetricsSummaryMonths = 24;
+
+    private static async Task<IResult> GetMetricsSummary(Guid tenantId, int? months, ClaimsPrincipal user,
+        AtuaDbContext db, IWorkOrderMonthlyTrendQuery trendQuery, IWorkOrderStatusSummaryQuery statusQuery,
+        CancellationToken cancellationToken)
+    {
+        var userId = GetGuidClaim(user, "sub");
+        if (userId is null) return Results.Unauthorized();
+
+        var effectiveMonths = months ?? DefaultMetricsSummaryMonths;
+        if (effectiveMonths is < MinMetricsSummaryMonths or > MaxMetricsSummaryMonths)
+        {
+            return Results.BadRequest(new { error = "invalid_months" });
+        }
+
+        var tenant = await GetTenantIfMemberAsync(db, tenantId, userId.Value, cancellationToken);
+        if (tenant is null) return Results.Forbid();
+
+        var trend = await trendQuery.ExecuteAsync(tenantId, effectiveMonths, tenant.TimeZoneId, cancellationToken);
+        var statusSummary = await statusQuery.ExecuteAsync(tenantId, cancellationToken);
+
+        var response = new WorkOrderMetricsSummaryResponse(
+            trend.Months.Select(month => new WorkOrderTrendMonth(month.Month, month.Created, month.Completed))
+                .ToArray(),
+            statusSummary.Statuses.Select(status => new WorkOrderStatusCount(status.Status, status.Total))
+                .ToArray());
+
+        return Results.Ok(response);
+    }
+
     private static async Task<IResult> GetDetail(Guid tenantId, Guid workOrderId, ClaimsPrincipal user,
         AtuaDbContext db, IWorkOrderDetailQuery query, CancellationToken cancellationToken)
     {
@@ -180,6 +215,11 @@ public sealed record WorkOrderListItem(Guid Id, string WorkOrderProviderId, stri
 public sealed record WorkOrderStatusSummaryResponse(IReadOnlyList<WorkOrderStatusCount> Statuses);
 
 public sealed record WorkOrderStatusCount(string Status, int Total);
+
+public sealed record WorkOrderMetricsSummaryResponse(IReadOnlyList<WorkOrderTrendMonth> Trend,
+    IReadOnlyList<WorkOrderStatusCount> StatusDistribution);
+
+public sealed record WorkOrderTrendMonth(string Month, int Created, int Completed);
 
 public sealed record WorkOrderDetailResponse(
     Guid Id, string WorkOrderProviderId, string? WorkOrderProviderNo, string Status,
