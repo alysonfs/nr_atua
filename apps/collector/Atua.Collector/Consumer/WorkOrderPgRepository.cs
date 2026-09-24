@@ -190,6 +190,22 @@ public sealed class WorkOrderPgRepository(
     ];
 
     /// <summary>
+    /// Subconjunto de <see cref="DetailColumns"/> com dados de contato do consumidor.
+    /// Quando a interação processada é um <c>list_query</c> (sem <c>orderDetail</c>), o
+    /// adapter cai no fallback de campos crus da listagem, que vêm MASCARADOS
+    /// ("S****S", "5584****51") mas não-nulos — por isso o COALESCE por si só não protege
+    /// esses campos, o valor mascarado venceria o COALESCE e sobrescreveria o dado bom já
+    /// obtido por um detail_query anterior (bug encontrado em produção 2026-09-24). Essas
+    /// colunas só podem ser atualizadas quando a própria interação é um detail_query.
+    /// </summary>
+    private static readonly HashSet<string> ContactDetailColumns =
+    [
+        "CustomerType", "CustomerName", "CustomerCpf",
+        "ContactEmail", "ContactPhone", "ContactName",
+        "Address", "ZipCode", "CountryName", "StateName", "CityName",
+    ];
+
+    /// <summary>
     /// Adiciona os parâmetros <c>@d0..@d20</c> correspondentes a <see cref="DetailColumns"/>,
     /// na mesma ordem, convertendo null para <see cref="DBNull"/>.
     /// </summary>
@@ -214,12 +230,18 @@ public sealed class WorkOrderPgRepository(
 
     private static string DetailParamList() => string.Join(", ", Enumerable.Range(0, DetailColumns.Length).Select(i => $"@d{i}"));
 
-    private static string DetailAssignmentList() =>
+    private static string DetailAssignmentList(bool isDetailQuery) =>
         // COALESCE preserva detalhe já capturado quando uma interação sem esses campos
         // (ex.: list_query puro, sem orderDetail) é processada depois (RF-026.4/ADR-031,
         // decisão 4) — evita zerar CustomerName/Address/etc. já obtidos por um detail_query
-        // anterior. O INSERT (OS nova) continua gravando os valores recebidos diretamente.
-        string.Join(", ", DetailColumns.Select((c, i) => $"\"{c}\" = COALESCE(@d{i}, \"{c}\")"));
+        // anterior. Colunas de contato (ContactDetailColumns) só entram no SET quando a
+        // própria interação é um detail_query — do contrário o fallback mascarado do
+        // list_query venceria o COALESCE e regravaria o dado mascarado por cima do bom.
+        // O INSERT (OS nova) continua gravando os valores recebidos diretamente.
+        string.Join(", ", DetailColumns.Select((c, i) =>
+            !isDetailQuery && ContactDetailColumns.Contains(c)
+                ? $"\"{c}\" = \"{c}\""
+                : $"\"{c}\" = COALESCE(@d{i}, \"{c}\")"));
 
     /// <summary>
     /// Resolve o <c>IntegrationId</c> do tenant para popular a FK em work_orders/
@@ -311,7 +333,7 @@ public sealed class WorkOrderPgRepository(
             updateCmd.Transaction = tx;
             updateCmd.CommandText =
                 "UPDATE work_orders SET \"Status\" = @status, \"UpdatedAt\" = @now, \"IntegrationId\" = @iid, " +
-                $"\"NeedsDetailFetch\" = @needsDetailFetch, \"DetailsFetchedAt\" = @detailsFetchedAt, {DetailAssignmentList()} " +
+                $"\"NeedsDetailFetch\" = @needsDetailFetch, \"DetailsFetchedAt\" = @detailsFetchedAt, {DetailAssignmentList(isDetailQuery)} " +
                 "WHERE \"Id\" = @id";
             updateCmd.Parameters.AddWithValue("@status", newStatus);
             updateCmd.Parameters.AddWithValue("@now", DateTimeOffset.UtcNow);
