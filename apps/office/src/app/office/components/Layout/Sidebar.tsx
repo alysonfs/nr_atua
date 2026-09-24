@@ -1,7 +1,6 @@
 import { useTranslation } from 'react-i18next'
 import { SidebarItem } from './SidebarItem'
 import { getNavItems } from './navItems'
-import logoBgLight from '../../../../../../../assets/logo-bg-light.svg'
 import logoBgDark from '../../../../../../../assets/logo-bg-dark.svg'
 
 /**
