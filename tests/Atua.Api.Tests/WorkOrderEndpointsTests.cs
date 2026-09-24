@@ -186,6 +186,134 @@ public class WorkOrderEndpointsTests
     }
 
     [Fact]
+    public async Task GetListByStatusRetorna400QuandoNenhumFiltroInformado()
+    {
+        var (app, databaseName) = await CreateApplicationAsync();
+        await using var appDisposable = app;
+        var userId = Guid.CreateVersion7();
+        var tenantId = await SeedTenantWithMembershipAsync(databaseName, userId);
+        var client = CreateAuthenticatedClient(app, userId);
+
+        var response = await client.GetAsync($"/api/tenants/{tenantId}/work-orders");
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task GetListByStatusRetorna400QuandoStatusEMinAgeDaysInformadosJuntos()
+    {
+        var (app, databaseName) = await CreateApplicationAsync();
+        await using var appDisposable = app;
+        var userId = Guid.CreateVersion7();
+        var tenantId = await SeedTenantWithMembershipAsync(databaseName, userId);
+        var client = CreateAuthenticatedClient(app, userId);
+
+        var response = await client.GetAsync($"/api/tenants/{tenantId}/work-orders?status=Novo&minAgeDays=5");
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task GetListByStatusPorMinAgeDaysIgnoraStatusTerminalEAplicaFallbackDeData()
+    {
+        var (app, databaseName) = await CreateApplicationAsync();
+        await using var appDisposable = app;
+        var userId = Guid.CreateVersion7();
+        var tenantId = await SeedTenantWithMembershipAsync(databaseName, userId);
+        var integrationId = await SeedIntegrationAsync(databaseName, tenantId);
+
+        var now = DateTimeOffset.UtcNow;
+        await using (var context = CreateContext(databaseName))
+        {
+            // Aberta há 20 dias (providerCreatedAt) — deve aparecer no filtro minAgeDays=10.
+            var openOldWithProviderDate = new WorkOrder(Guid.CreateVersion7(), tenantId, integrationId, "OS-1",
+                "Designado", now.AddDays(-1));
+            openOldWithProviderDate.UpdateDetails(
+                new WorkOrderDetails(null, null, null, now.AddDays(-20), null, null, null, null, null, null, null,
+                    null, null, null, null, null, null, null, null, null, null, null, null, null),
+                now);
+
+            // Sem providerCreatedAt: cai no fallback createdAt, também há 20 dias.
+            var openOldFallbackCreatedAt = new WorkOrder(Guid.CreateVersion7(), tenantId, integrationId, "OS-2",
+                "Designado", now.AddDays(-20));
+
+            // Aberta há apenas 2 dias — não deve aparecer no filtro minAgeDays=10.
+            var openRecent = new WorkOrder(Guid.CreateVersion7(), tenantId, integrationId, "OS-3", "Designado",
+                now.AddDays(-2));
+
+            // Terminal ("closed") há 20 dias — nunca deve contar como aberta, mesmo velha.
+            var terminalOld = new WorkOrder(Guid.CreateVersion7(), tenantId, integrationId, "OS-4", "closed",
+                now.AddDays(-20));
+
+            context.WorkOrders.AddRange(openOldWithProviderDate, openOldFallbackCreatedAt, openRecent, terminalOld);
+            await context.SaveChangesAsync();
+        }
+
+        var client = CreateAuthenticatedClient(app, userId);
+        var response = await client.GetAsync($"/api/tenants/{tenantId}/work-orders?minAgeDays=10");
+        var body = await response.Content.ReadFromJsonAsync<WorkOrderListResponse>();
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(10, body!.MinAgeDays);
+        Assert.Null(body.Status);
+        Assert.Equal(2, body.TotalCount);
+        Assert.Contains(body.Items, item => item.WorkOrderProviderId == "OS-1");
+        Assert.Contains(body.Items, item => item.WorkOrderProviderId == "OS-2");
+        Assert.DoesNotContain(body.Items, item => item.WorkOrderProviderId == "OS-3");
+        Assert.DoesNotContain(body.Items, item => item.WorkOrderProviderId == "OS-4");
+    }
+
+    [Fact]
+    public async Task GetAgingSummaryRetorna403QuandoUsuarioNaoEMembroDoTenant()
+    {
+        var (app, databaseName) = await CreateApplicationAsync();
+        await using var appDisposable = app;
+        var tenantId = await SeedTenantAsync(databaseName);
+        var client = CreateAuthenticatedClient(app, Guid.CreateVersion7());
+
+        var response = await client.GetAsync($"/api/tenants/{tenantId}/work-orders/aging-summary");
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task GetAgingSummaryContaFaixasCumulativasEIgnoraStatusTerminal()
+    {
+        var (app, databaseName) = await CreateApplicationAsync();
+        await using var appDisposable = app;
+        var userId = Guid.CreateVersion7();
+        var tenantId = await SeedTenantWithMembershipAsync(databaseName, userId);
+        var integrationId = await SeedIntegrationAsync(databaseName, tenantId);
+
+        var now = DateTimeOffset.UtcNow;
+        await using (var context = CreateContext(databaseName))
+        {
+            // Aberta há 40 dias: conta nas 3 faixas (+5/+10/+30).
+            context.WorkOrders.Add(new WorkOrder(Guid.CreateVersion7(), tenantId, integrationId, "OS-1", "Designado",
+                now.AddDays(-40)));
+            // Aberta há 8 dias: conta só na faixa +5.
+            context.WorkOrders.Add(new WorkOrder(Guid.CreateVersion7(), tenantId, integrationId, "OS-2", "Designado",
+                now.AddDays(-8)));
+            // Aberta há 2 dias: não conta em nenhuma faixa.
+            context.WorkOrders.Add(new WorkOrder(Guid.CreateVersion7(), tenantId, integrationId, "OS-3", "Designado",
+                now.AddDays(-2)));
+            // Terminal ("Payment Approved") há 40 dias: nunca conta como aberta.
+            context.WorkOrders.Add(new WorkOrder(Guid.CreateVersion7(), tenantId, integrationId, "OS-4",
+                "Payment Approved", now.AddDays(-40)));
+            await context.SaveChangesAsync();
+        }
+
+        var client = CreateAuthenticatedClient(app, userId);
+        var response = await client.GetAsync($"/api/tenants/{tenantId}/work-orders/aging-summary");
+        var body = await response.Content.ReadFromJsonAsync<WorkOrderAgingSummaryResponse>();
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(2, body!.MoreThan5Days);
+        Assert.Equal(1, body.MoreThan10Days);
+        Assert.Equal(1, body.MoreThan30Days);
+    }
+
+    [Fact]
     public async Task GetStatusSummaryRetorna403QuandoUsuarioNaoEMembroDoTenant()
     {
         var (app, databaseName) = await CreateApplicationAsync();
@@ -443,6 +571,7 @@ public class WorkOrderEndpointsTests
         builder.Services.AddScoped<IWorkOrderMonthlySummaryQuery, WorkOrderMonthlySummaryQueryHandler>();
         builder.Services.AddScoped<IWorkOrderListByStatusQuery, WorkOrderListByStatusQueryHandler>();
         builder.Services.AddScoped<IWorkOrderStatusSummaryQuery, WorkOrderStatusSummaryQueryHandler>();
+        builder.Services.AddScoped<IWorkOrderAgingSummaryQuery, WorkOrderAgingSummaryQueryHandler>();
         builder.Services.AddScoped<IWorkOrderDetailQuery, WorkOrderDetailQueryHandler>();
         builder.Services.AddScoped<IWorkOrderMonthlyTrendQuery, WorkOrderMonthlyTrendQueryHandler>();
         builder.Services.AddSingleton(TimeProvider.System);

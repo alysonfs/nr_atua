@@ -1,20 +1,27 @@
 using Atua.Api.Application.WorkOrders.Contracts;
+using Atua.Api.Domain.WorkOrders;
 using Atua.Api.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
 namespace Atua.Api.Application.WorkOrders;
 
 /// <summary>
-/// RF-017: lista paginada de OS no estado atual (<c>WorkOrder</c>) filtradas
-/// por status, ordenadas por atualização mais recente primeiro.
+/// RF-017/RF-027: lista paginada de OS no estado atual (<c>WorkOrder</c>),
+/// filtradas por status exato OU por tempo mínimo de abertura
+/// (<c>minAgeDays</c>, mutuamente exclusivos), ordenadas por atualização
+/// mais recente primeiro.
 /// </summary>
 public sealed class WorkOrderListByStatusQueryHandler(AtuaDbContext dbContext) : IWorkOrderListByStatusQuery
 {
-    public async Task<WorkOrderListResult> ExecuteAsync(Guid tenantId, string status, int page, int pageSize,
-        CancellationToken cancellationToken)
+    public async Task<WorkOrderListResult> ExecuteAsync(Guid tenantId, string? status, int? minAgeDays, int page,
+        int pageSize, DateTimeOffset now, CancellationToken cancellationToken)
     {
         var baseQuery = dbContext.WorkOrders.AsNoTracking()
-            .Where(workOrder => workOrder.TenantId == tenantId && workOrder.Status == status);
+            .Where(workOrder => workOrder.TenantId == tenantId);
+
+        baseQuery = status is not null
+            ? baseQuery.Where(workOrder => workOrder.Status == status)
+            : ApplyAgingFilter(baseQuery, minAgeDays!.Value, now);
 
         var totalCount = await baseQuery.CountAsync(cancellationToken);
 
@@ -33,6 +40,17 @@ public sealed class WorkOrderListByStatusQueryHandler(AtuaDbContext dbContext) :
                     wi.workOrder.CityName, provider.Name))
             .ToListAsync(cancellationToken);
 
-        return new WorkOrderListResult(status, page, pageSize, totalCount, items);
+        return new WorkOrderListResult(status, minAgeDays, page, pageSize, totalCount, items);
+    }
+
+    private static IQueryable<Domain.WorkOrders.WorkOrder> ApplyAgingFilter(
+        IQueryable<Domain.WorkOrders.WorkOrder> query, int minAgeDays, DateTimeOffset now)
+    {
+        var threshold = now.AddDays(-minAgeDays);
+        var terminalStatuses = WorkOrderTerminalStatuses.Values;
+
+        return query.Where(workOrder =>
+            !terminalStatuses.Contains(workOrder.Status)
+            && (workOrder.ProviderCreatedAt ?? workOrder.CreatedAt) <= threshold);
     }
 }

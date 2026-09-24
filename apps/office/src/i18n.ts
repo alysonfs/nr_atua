@@ -134,6 +134,7 @@ const ptBR = {
     mainNavigation: 'Navegação principal',
     menu: 'Menu',
     dashboard: 'Dashboard',
+    serviceOrders: 'Ordens de Serviço',
     account: 'Conta',
     accountMenuAria: 'Abrir menu da conta',
     openMenu: 'Abrir menu',
@@ -141,6 +142,7 @@ const ptBR = {
     breadcrumbs: {
       ariaLabel: 'Trilha de navegação',
       home: 'Dashboard',
+      serviceOrders: 'Ordens de Serviço',
       settings: 'Configurações',
       workOrderDetail: 'Detalhes da OS',
     },
@@ -159,6 +161,14 @@ const ptBR = {
     designatedError: 'Não foi possível carregar as ordens de serviço. Tente novamente mais tarde.',
     designatedEmpty: 'Nenhuma ordem de serviço encontrada para este status.',
     ordersTitle: 'Ordens de serviço — {{status}}',
+    aging: {
+      title: 'OS abertas por tempo de abertura',
+      loading: 'Carregando resumo por tempo de abertura...',
+      error: 'Não foi possível carregar o resumo por tempo de abertura. Tente novamente mais tarde.',
+      moreThan5Days: 'Abertas há mais de 5 dias',
+      moreThan10Days: 'Abertas há mais de 10 dias',
+      moreThan30Days: 'Abertas há mais de 30 dias',
+    },
     statuses: {
       requestCancel: 'Cancelamento Solicitado',
       assigned: 'Designado',
@@ -187,6 +197,11 @@ const ptBR = {
       loading: 'Carregando gráficos...',
       error: 'Não foi possível carregar os gráficos. Tente novamente mais tarde.',
     },
+  },
+  serviceOrders: {
+    title: 'Ordens de Serviço',
+    subtitle: 'Consulte e filtre todas as ordens de serviço por status ou por tempo de abertura.',
+    ordersTitleByAging: 'Ordens de serviço — abertas há mais de {{days}} dias',
   },
   workOrderDetail: {
     loading: 'Carregando detalhes da ordem de serviço...',
@@ -513,9 +528,9 @@ const enUS = {
     office: 'Office', subtitle: 'Operations and integrations', clientName: 'Client Name',
     alerts: 'Notifications', settings: 'Settings', signOut: 'Sign out',
     signOutAria: 'Sign out of account', sideMenu: 'Side menu', mainNavigation: 'Main navigation',
-    menu: 'Menu', dashboard: 'Dashboard', account: 'Account', accountMenuAria: 'Open account menu',
+    menu: 'Menu', dashboard: 'Dashboard', serviceOrders: 'Service Orders', account: 'Account', accountMenuAria: 'Open account menu',
     openMenu: 'Open menu', closeMenu: 'Close menu',
-    breadcrumbs: { ariaLabel: 'Breadcrumb navigation', home: 'Dashboard', settings: 'Settings', workOrderDetail: 'Work Order Details' },
+    breadcrumbs: { ariaLabel: 'Breadcrumb navigation', home: 'Dashboard', serviceOrders: 'Service Orders', settings: 'Settings', workOrderDetail: 'Work Order Details' },
   },
   dashboard: {
     ...ptBR.dashboard,
@@ -527,6 +542,14 @@ const enUS = {
     designatedError: 'Unable to load work orders. Please try again later.',
     designatedEmpty: 'No work orders found for this status.',
     ordersTitle: 'Work orders — {{status}}',
+    aging: {
+      title: 'Open work orders by age',
+      loading: 'Loading age summary...',
+      error: 'Unable to load the age summary. Please try again later.',
+      moreThan5Days: 'Open for more than 5 days',
+      moreThan10Days: 'Open for more than 10 days',
+      moreThan30Days: 'Open for more than 30 days',
+    },
     statuses: {
       requestCancel: 'Cancellation Requested', assigned: 'Assigned', accepted: 'Accepted',
       exchangeProposal: 'Exchange Proposal', exchangeApproved: 'Exchange Approved',
@@ -548,6 +571,12 @@ const enUS = {
       loading: 'Loading charts...',
       error: 'Unable to load the charts. Please try again later.',
     },
+  },
+  serviceOrders: {
+    ...ptBR.serviceOrders,
+    title: 'Service Orders',
+    subtitle: 'Browse and filter all service orders by status or by time open.',
+    ordersTitleByAging: 'Work orders — open for more than {{days}} days',
   },
   workOrderDetail: {
     ...ptBR.workOrderDetail,
@@ -816,9 +845,9 @@ const esAR = {
     office: 'Office', subtitle: 'Operaciones e integraciones', clientName: 'Nombre del Cliente',
     alerts: 'Notificaciones', settings: 'Configuración', signOut: 'Salir',
     signOutAria: 'Cerrar sesión', sideMenu: 'Menú lateral', mainNavigation: 'Navegación principal',
-    menu: 'Menú', dashboard: 'Panel', account: 'Cuenta', accountMenuAria: 'Abrir menú de la cuenta',
+    menu: 'Menú', dashboard: 'Panel', serviceOrders: 'Órdenes de Servicio', account: 'Cuenta', accountMenuAria: 'Abrir menú de la cuenta',
     openMenu: 'Abrir menú', closeMenu: 'Cerrar menú',
-    breadcrumbs: { ariaLabel: 'Ruta de navegación', home: 'Panel', settings: 'Configuración', workOrderDetail: 'Detalles de la OS' },
+    breadcrumbs: { ariaLabel: 'Ruta de navegación', home: 'Panel', serviceOrders: 'Órdenes de Servicio', settings: 'Configuración', workOrderDetail: 'Detalles de la OS' },
   },
   dashboard: {
     ...enUS.dashboard,
@@ -846,12 +875,26 @@ const esAR = {
     designatedError: 'No fue posible cargar las órdenes de servicio. Intentá nuevamente más tarde.',
     designatedEmpty: 'No se encontraron órdenes de servicio para este estado.',
     ordersTitle: 'Órdenes de servicio — {{status}}',
+    aging: {
+      title: 'Órdenes de servicio abiertas por tiempo de apertura',
+      loading: 'Cargando el resumen por tiempo de apertura...',
+      error: 'No fue posible cargar el resumen por tiempo de apertura. Intentá nuevamente más tarde.',
+      moreThan5Days: 'Abiertas hace más de 5 días',
+      moreThan10Days: 'Abiertas hace más de 10 días',
+      moreThan30Days: 'Abiertas hace más de 30 días',
+    },
     statuses: {
       requestCancel: 'Cancelación Solicitada', assigned: 'Asignado', accepted: 'Aceptado',
       exchangeProposal: 'Propuesta de Cambio', exchangeApproved: 'Cambio Aprobado',
       closed: 'Cerrado', cancelled: 'Cancelado', paymentRejected: 'Pago Rechazado',
       requestToExplain: 'Solicitud de Explicación', pending: 'Pendiente', paymentApproved: 'Pago Aprobado',
     },
+  },
+  serviceOrders: {
+    ...enUS.serviceOrders,
+    title: 'Órdenes de Servicio',
+    subtitle: 'Consultá y filtrá todas las órdenes de servicio por estado o por tiempo de apertura.',
+    ordersTitleByAging: 'Órdenes de servicio — abiertas hace más de {{days}} días',
   },
   workOrderDetail: {
     ...enUS.workOrderDetail,

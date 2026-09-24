@@ -2,14 +2,16 @@ import { useEffect, useState } from 'react'
 import { apiClient } from '../../../shared/lib/apiClient'
 
 /**
- * RF-017: status de OS é uma string livre (sem enum fixo). Este hook expõe
- * a listagem paginada de ordens de serviço filtradas por um status
- * qualquer (card selecionado no resumo do Dashboard).
+ * RF-017/RF-027: status de OS é uma string livre (sem enum fixo). Este hook
+ * expõe a listagem paginada de ordens de serviço filtradas por um status
+ * exato OU por tempo mínimo de abertura em dias (aging) — mutuamente
+ * exclusivos, exatamente um dos dois deve ser informado no filtro.
  *
  * GET /api/tenants/{tenantId}/work-orders?status=&page=&pageSize=
+ * GET /api/tenants/{tenantId}/work-orders?minAgeDays=&page=&pageSize=
  *
- * Ver docs/architecture/dashboard-work-order-queries.md (Endpoint 2) para o
- * contrato completo.
+ * Ver docs/architecture/dashboard-work-order-queries.md para o contrato
+ * completo.
  */
 export interface WorkOrderListItem {
   /** Identificador da OS (Atua). */
@@ -38,8 +40,15 @@ export interface WorkOrderListItem {
   providerName: string
 }
 
+/** Filtro aplicado à listagem: status exato XOR tempo mínimo de abertura (dias). */
+export interface WorkOrdersFilter {
+  status?: string
+  minAgeDays?: number
+}
+
 interface WorkOrderListResponse {
-  status: string
+  status: string | null
+  minAgeDays: number | null
   page: number
   pageSize: number
   totalCount: number
@@ -47,7 +56,8 @@ interface WorkOrderListResponse {
 }
 
 /**
- * Busca a lista paginada de OS filtradas por status para o tenant ativo.
+ * Busca a lista paginada de OS filtradas por status exato ou por aging para
+ * o tenant ativo.
  *
  * `tenantId` deve vir do tenant ativo do usuário (ver useMyTenants(), no
  * padrão já usado por SettingsPage.tsx). Enquanto `tenantId` for `null`
@@ -55,10 +65,11 @@ interface WorkOrderListResponse {
  */
 export function useWorkOrdersByStatus(
   tenantId: string | null,
-  status: string,
+  filter: WorkOrdersFilter,
   page: number,
   pageSize: number,
 ) {
+  const { status, minAgeDays } = filter
   const [orders, setOrders] = useState<WorkOrderListItem[]>([])
   const [totalCount, setTotalCount] = useState(0)
   const [isLoading, setIsLoading] = useState(true)
@@ -70,7 +81,7 @@ export function useWorkOrdersByStatus(
     void Promise.resolve().then(async () => {
       if (isCancelled) return
 
-      if (!tenantId) {
+      if (!tenantId || (!status && !minAgeDays)) {
         setIsLoading(false)
         setOrders([])
         setTotalCount(0)
@@ -81,8 +92,11 @@ export function useWorkOrdersByStatus(
       setIsError(false)
 
       try {
+        const filterParam = status
+          ? `status=${encodeURIComponent(status)}`
+          : `minAgeDays=${minAgeDays}`
         const response = await apiClient.get<WorkOrderListResponse>(
-          `/api/tenants/${tenantId}/work-orders?status=${encodeURIComponent(status)}&page=${page}&pageSize=${pageSize}`,
+          `/api/tenants/${tenantId}/work-orders?${filterParam}&page=${page}&pageSize=${pageSize}`,
         )
         if (isCancelled) return
         setOrders(response?.items ?? [])
@@ -100,7 +114,8 @@ export function useWorkOrdersByStatus(
     return () => {
       isCancelled = true
     }
-  }, [tenantId, status, page, pageSize])
+  }, [tenantId, status, minAgeDays, page, pageSize])
 
   return { orders, totalCount, isLoading, isError }
 }
+

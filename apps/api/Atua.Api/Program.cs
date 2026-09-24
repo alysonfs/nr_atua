@@ -146,6 +146,7 @@ builder.Services.AddScoped<ChangeTenantMembershipRoleUseCase>();
 builder.Services.AddScoped<IWorkOrderMonthlySummaryQuery, WorkOrderMonthlySummaryQueryHandler>();
 builder.Services.AddScoped<IWorkOrderListByStatusQuery, WorkOrderListByStatusQueryHandler>();
 builder.Services.AddScoped<IWorkOrderStatusSummaryQuery, WorkOrderStatusSummaryQueryHandler>();
+builder.Services.AddScoped<IWorkOrderAgingSummaryQuery, WorkOrderAgingSummaryQueryHandler>();
 builder.Services.AddScoped<IWorkOrderDetailQuery, WorkOrderDetailQueryHandler>();
 builder.Services.AddScoped<IWorkOrderMonthlyTrendQuery, WorkOrderMonthlyTrendQueryHandler>();
 builder.Services.AddScoped<IServiceCredentialService>();

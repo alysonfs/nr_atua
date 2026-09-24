@@ -1,19 +1,22 @@
 namespace Atua.Api.Application.WorkOrders.Contracts;
 
 /// <summary>
-/// Lista paginada de OS por status atual, derivada de <c>WorkOrder</c>
-/// (RF-017, ver <c>docs/architecture/dashboard-work-order-queries.md</c>).
+/// Lista paginada de OS derivada de <c>WorkOrder</c> (RF-017/RF-027, ver
+/// <c>docs/architecture/dashboard-work-order-queries.md</c>), filtrada por
+/// status exato OU por tempo mínimo de abertura (<c>minAgeDays</c>) —
+/// mutuamente exclusivos: exatamente um dos dois deve ser informado.
 /// </summary>
 public interface IWorkOrderListByStatusQuery
 {
     Task<WorkOrderListResult> ExecuteAsync(
-        Guid tenantId, string status, int page, int pageSize,
+        Guid tenantId, string? status, int? minAgeDays, int page, int pageSize, DateTimeOffset now,
         CancellationToken cancellationToken);
 }
 
-/// <summary>Resultado paginado da consulta de OS por status.</summary>
+/// <summary>Resultado paginado da consulta de OS por status ou por aging.</summary>
 public sealed record WorkOrderListResult(
-    string Status,
+    string? Status,
+    int? MinAgeDays,
     int Page,
     int PageSize,
     int TotalCount,

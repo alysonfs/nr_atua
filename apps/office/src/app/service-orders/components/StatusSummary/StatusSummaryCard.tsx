@@ -1,5 +1,5 @@
 import { Badge } from '../../../../shared/components/ui/Badge'
-import type { StatusTone } from '../../lib/providerStatus'
+import type { StatusTone } from '../../../dashboard/lib/providerStatus'
 
 interface StatusSummaryCardProps {
   /** Nome cru do status (RF-017: string livre, sem enum fixo). */

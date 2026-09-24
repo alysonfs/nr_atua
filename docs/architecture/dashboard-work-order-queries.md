@@ -126,33 +126,43 @@ sem efeito colateral de negócio).
 
 ---
 
-## 2. Endpoint 2 — Lista de OS por status
+## 2. Endpoint 2 — Lista de OS por status ou por tempo de abertura (aging)
 
 ### Rota
 
 ```
 GET /api/tenants/{tenantId:guid}/work-orders?status={status}&page={page}&pageSize={pageSize}
+GET /api/tenants/{tenantId:guid}/work-orders?minAgeDays={minAgeDays}&page={page}&pageSize={pageSize}
 ```
 
-- `status`: query param obrigatório, string crua (ex. `Designado`). Sem
-  paginação no MVP seria aceitável dado volume atual, mas propor
-  `page`/`pageSize` (default `page=1`, `pageSize=20`) desde já evita
-  reabrir o contrato quando o volume crescer — é paginação simples de
-  lista, não é complexidade antecipada indevida.
-- Sem parâmetro de mês: esta lista é "OS atualmente nesse status", não
-  histórica por período (paridade com o mock, que lista `WorkOrder`
-  correntes, não um recorte temporal).
+- `status` e `minAgeDays` são **mutuamente exclusivos**: exatamente um dos
+  dois deve ser informado (RF-027). Informar ambos, ou nenhum, retorna
+  `400 Bad Request` (`invalid_filter`).
+- `status`: string crua (ex. `Designado`), filtra por status exato.
+- `minAgeDays` (RF-027): inteiro positivo (`> 0`), filtra OS **não
+  terminais** (ver `WorkOrderTerminalStatuses`/ADR-032) cuja data de
+  abertura (`ProviderCreatedAt ?? CreatedAt`) seja mais antiga que
+  `now - minAgeDays` dias. `minAgeDays <= 0` retorna `400`.
+- Paginação: `page`/`pageSize` (default `page=1`, `pageSize=20`) — é
+  paginação simples de lista, não é complexidade antecipada indevida.
+- Sem parâmetro de mês: esta lista é "OS atualmente nesse status/faixa de
+  aging", não histórica por período (paridade com o mock, que lista
+  `WorkOrder` correntes, não um recorte temporal).
 
 ### Origem dos dados
 
-Tabela `WorkOrder` (estado atual), filtrando por `TenantId` e `Status`.
-Ordenação proposta: `UpdatedAt` descendente (mais recente primeiro).
+Tabela `WorkOrder` (estado atual), filtrando por `TenantId` e `Status`
+(modo `status`) ou por `TenantId` + status não terminal +
+`ProviderCreatedAt ?? CreatedAt <= now.AddDays(-minAgeDays)` (modo
+`minAgeDays`). Ordenação proposta: `UpdatedAt` descendente (mais recente
+primeiro).
 
 ### Response (200)
 
 ```json
 {
   "status": "Designado",
+  "minAgeDays": null,
   "page": 1,
   "pageSize": 20,
   "totalCount": 5,
@@ -182,7 +192,7 @@ DTO:
 
 ```csharp
 public sealed record WorkOrderListResponse(
-    string Status, int Page, int PageSize, int TotalCount,
+    string? Status, int? MinAgeDays, int Page, int PageSize, int TotalCount,
     IReadOnlyList<WorkOrderListItem> Items);
 
 public sealed record WorkOrderListItem(Guid Id, string WorkOrderProviderId, string? WorkOrderProviderNo,
@@ -204,12 +214,68 @@ namespace Atua.Api.Application.WorkOrders.Contracts;
 public interface IWorkOrderListByStatusQuery
 {
     Task<WorkOrderListResult> ExecuteAsync(
-        Guid tenantId, string status, int page, int pageSize,
-        CancellationToken cancellationToken);
+        Guid tenantId, string? status, int? minAgeDays, int page, int pageSize,
+        DateTimeOffset now, CancellationToken cancellationToken);
 }
 ```
 
 Implementação: `Application/WorkOrders/WorkOrderListByStatusQueryHandler.cs`.
+
+---
+
+## 2.1. Endpoint 2.1 — Contagem de OS abertas por faixa de aging (RF-027)
+
+### Rota
+
+```
+GET /api/tenants/{tenantId:guid}/work-orders/aging-summary
+```
+
+Usado pelos 3 cards de aging do Dashboard ("abertas há mais de 5/10/30
+dias"), cada um linkando para o Endpoint 2 com `minAgeDays` correspondente.
+
+### Origem dos dados
+
+Tabela `WorkOrder` (estado atual), filtrando por `TenantId` + status **não
+terminal** (`WorkOrderTerminalStatuses`/ADR-032), contando quantas OS têm
+`ProviderCreatedAt ?? CreatedAt <= now.AddDays(-N)` para cada `N` em
+`{5, 10, 30}`. As 3 faixas são **cumulativas e não mutuamente exclusivas**
+(uma OS aberta há 40 dias conta nas 3 faixas).
+
+### Response (200)
+
+```json
+{
+  "moreThan5Days": 42,
+  "moreThan10Days": 18,
+  "moreThan30Days": 3
+}
+```
+
+DTO:
+
+```csharp
+public sealed record WorkOrderAgingSummaryResponse(int MoreThan5Days, int MoreThan10Days, int MoreThan30Days);
+```
+
+### Contrato de interface
+
+```
+Application/WorkOrders/Contracts/IWorkOrderAgingSummaryQuery.cs
+```
+
+```csharp
+namespace Atua.Api.Application.WorkOrders.Contracts;
+
+public interface IWorkOrderAgingSummaryQuery
+{
+    Task<WorkOrderAgingSummaryResult> ExecuteAsync(Guid tenantId, DateTimeOffset now, CancellationToken cancellationToken);
+}
+```
+
+Implementação: `Application/WorkOrders/WorkOrderAgingSummaryQueryHandler.cs`.
+
+Autorização e tenant scoping seguem o mesmo padrão da seção 5 abaixo.
 
 ---
 

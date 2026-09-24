@@ -1,7 +1,7 @@
 import { useWorkOrderStatusSummary } from '../../hooks/useWorkOrderStatusSummary'
 import { StatusSummaryCard } from './StatusSummaryCard'
 import { useTranslation } from 'react-i18next'
-import { getProviderStatusTone, translateProviderStatus } from '../../lib/providerStatus'
+import { getProviderStatusTone, translateProviderStatus } from '../../../dashboard/lib/providerStatus'
 
 interface StatusSummaryProps {
   /** Tenant ativo do usuário (ver useMyTenants().defaultTenantId). */

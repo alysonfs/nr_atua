@@ -23,6 +23,9 @@ public static class WorkOrderEndpoints
         endpoints.MapGet("/api/tenants/{tenantId:guid}/work-orders/status-summary", GetStatusSummary)
             .RequireAuthorization("BrowserSession");
 
+        endpoints.MapGet("/api/tenants/{tenantId:guid}/work-orders/aging-summary", GetAgingSummary)
+            .RequireAuthorization("BrowserSession");
+
         endpoints.MapGet("/api/tenants/{tenantId:guid}/work-orders/metrics-summary", GetMetricsSummary)
             .RequireAuthorization("BrowserSession");
 
@@ -55,16 +58,18 @@ public static class WorkOrderEndpoints
         return Results.Ok(response);
     }
 
-    private static async Task<IResult> GetListByStatus(Guid tenantId, string? status, int? page,
+    private static async Task<IResult> GetListByStatus(Guid tenantId, string? status, int? minAgeDays, int? page,
         int? pageSize, ClaimsPrincipal user, AtuaDbContext db, IWorkOrderListByStatusQuery query,
-        CancellationToken cancellationToken)
+        TimeProvider timeProvider, CancellationToken cancellationToken)
     {
         var userId = GetGuidClaim(user, "sub");
         if (userId is null) return Results.Unauthorized();
 
-        if (string.IsNullOrWhiteSpace(status))
+        var hasStatus = !string.IsNullOrWhiteSpace(status);
+        var hasMinAgeDays = minAgeDays is not null;
+        if (hasStatus == hasMinAgeDays || (hasMinAgeDays && minAgeDays <= 0))
         {
-            return Results.BadRequest(new { error = "invalid_status" });
+            return Results.BadRequest(new { error = "invalid_filter" });
         }
 
         var effectivePage = page ?? 1;
@@ -79,10 +84,10 @@ public static class WorkOrderEndpoints
             cancellationToken);
         if (!isMember) return Results.Forbid();
 
-        var result = await query.ExecuteAsync(tenantId, status, effectivePage, effectivePageSize,
-            cancellationToken);
+        var result = await query.ExecuteAsync(tenantId, hasStatus ? status : null, hasMinAgeDays ? minAgeDays : null,
+            effectivePage, effectivePageSize, timeProvider.GetUtcNow(), cancellationToken);
 
-        var response = new WorkOrderListResponse(result.Status, result.Page, result.PageSize,
+        var response = new WorkOrderListResponse(result.Status, result.MinAgeDays, result.Page, result.PageSize,
             result.TotalCount,
             result.Items
                 .Select(item => new WorkOrderListItem(item.Id, item.WorkOrderProviderId, item.WorkOrderProviderNo,
@@ -92,6 +97,23 @@ public static class WorkOrderEndpoints
                 .ToArray());
 
         return Results.Ok(response);
+    }
+
+    private static async Task<IResult> GetAgingSummary(Guid tenantId, ClaimsPrincipal user, AtuaDbContext db,
+        IWorkOrderAgingSummaryQuery query, TimeProvider timeProvider, CancellationToken cancellationToken)
+    {
+        var userId = GetGuidClaim(user, "sub");
+        if (userId is null) return Results.Unauthorized();
+
+        var isMember = await db.TenantMemberships.AsNoTracking().AnyAsync(
+            membership => membership.UserId == userId.Value && membership.TenantId == tenantId,
+            cancellationToken);
+        if (!isMember) return Results.Forbid();
+
+        var result = await query.ExecuteAsync(tenantId, timeProvider.GetUtcNow(), cancellationToken);
+
+        return Results.Ok(new WorkOrderAgingSummaryResponse(result.MoreThan5Days, result.MoreThan10Days,
+            result.MoreThan30Days));
     }
 
     private static async Task<IResult> GetStatusSummary(Guid tenantId, ClaimsPrincipal user, AtuaDbContext db,
@@ -203,8 +225,10 @@ public sealed record WorkOrderMonthlySummaryResponse(string Month, string TimeZo
 public sealed record WorkOrderStatusMonthSummary(string Status, int Total,
     IReadOnlyList<int> DailyCounts);
 
-public sealed record WorkOrderListResponse(string Status, int Page, int PageSize, int TotalCount,
+public sealed record WorkOrderListResponse(string? Status, int? MinAgeDays, int Page, int PageSize, int TotalCount,
     IReadOnlyList<WorkOrderListItem> Items);
+
+public sealed record WorkOrderAgingSummaryResponse(int MoreThan5Days, int MoreThan10Days, int MoreThan30Days);
 
 public sealed record WorkOrderListItem(Guid Id, string WorkOrderProviderId, string? WorkOrderProviderNo,
     string? ServiceRequestId, decimal? Amount, string Status,

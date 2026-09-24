@@ -10,28 +10,36 @@ const PAGE_SIZE_OPTIONS = [10, 15, 20, 25, 50] as const
 interface ServiceOrdersTableProps {
   /** Tenant ativo do usuário (ver useMyTenants().defaultTenantId). */
   tenantId: string | null
-  /** Status atualmente selecionado (card clicado no StatusSummary). */
-  status: string
+  /** Status exato a filtrar (mutuamente exclusivo com minAgeDays). */
+  status?: string
+  /** Dias mínimos de abertura a filtrar — aging (mutuamente exclusivo com status). */
+  minAgeDays?: number
 }
 
 /**
- * Seção "Ordens de serviço" do Dashboard: lista paginada de OS filtradas
- * pelo status selecionado nos cards de resumo.
+ * Seção "Ordens de serviço" da página `/service-orders`: lista paginada de
+ * OS filtradas pelo status selecionado nos cards de resumo OU pela faixa de
+ * aging vinda de um drill-down do Dashboard.
  *
- * Integra com GET /api/tenants/{tenantId}/work-orders?status=&page=&pageSize=
+ * Integra com GET /api/tenants/{tenantId}/work-orders?status=|minAgeDays=&page=&pageSize=
  * (ver useWorkOrdersByStatus).
  */
-export function ServiceOrdersTable({ tenantId, status }: ServiceOrdersTableProps) {
+export function ServiceOrdersTable({ tenantId, status, minAgeDays }: ServiceOrdersTableProps) {
   const { i18n, t } = useTranslation()
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState<number>(PAGE_SIZE_OPTIONS[1])
 
-  // Status trocado (novo card clicado): reinicia para a primeira página.
+  // Filtro trocado (novo card clicado ou navegação por aging): reinicia para a primeira página.
   useEffect(() => {
     setPage(1)
-  }, [status])
+  }, [status, minAgeDays])
 
-  const { orders, totalCount, isLoading, isError } = useWorkOrdersByStatus(tenantId, status, page, pageSize)
+  const { orders, totalCount, isLoading, isError } = useWorkOrdersByStatus(
+    tenantId,
+    { status, minAgeDays },
+    page,
+    pageSize,
+  )
   const columns = useMemo(
     () => createServiceOrdersColumns(t, i18n.resolvedLanguage ?? 'pt-BR'),
     [i18n.resolvedLanguage, t],
@@ -49,7 +57,7 @@ export function ServiceOrdersTable({ tenantId, status }: ServiceOrdersTableProps
     <section aria-labelledby="service-orders-heading" className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 id="service-orders-heading" className="text-sm font-semibold text-slate-700">
-          {t('dashboard.ordersTitle', { status })}
+          {status ? t('dashboard.ordersTitle', { status }) : t('serviceOrders.ordersTitleByAging', { days: minAgeDays })}
         </h2>
 
         <label className="flex items-center gap-2 text-xs text-slate-600">

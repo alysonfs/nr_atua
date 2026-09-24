@@ -14,6 +14,7 @@ export function Breadcrumbs() {
   const routes = useMemo<BreadcrumbsRoute[]>(
     () => [
       { path: '/', breadcrumb: t('layout.breadcrumbs.home') },
+      { path: '/service-orders', breadcrumb: t('layout.breadcrumbs.serviceOrders') },
       { path: '/settings', breadcrumb: t('layout.breadcrumbs.settings') },
       { path: '/work-orders/:workOrderId', breadcrumb: t('layout.breadcrumbs.workOrderDetail') },
     ],

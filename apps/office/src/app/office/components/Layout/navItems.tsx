@@ -1,4 +1,4 @@
-import { Dashboard, Setting } from '@icon-park/react'
+import { Dashboard, FileText, Setting } from '@icon-park/react'
 import type { TFunction } from 'i18next'
 import type { SidebarItemConfig } from './SidebarItem'
 
@@ -6,6 +6,7 @@ import type { SidebarItemConfig } from './SidebarItem'
 export function getNavItems(t: TFunction): SidebarItemConfig[] {
   return [
     { label: t('layout.dashboard'), to: '/home', icon: <Dashboard theme="outline" size={18} /> },
+    { label: t('layout.serviceOrders'), to: '/service-orders', icon: <FileText theme="outline" size={18} /> },
     { label: t('layout.settings'), to: '/settings', icon: <Setting theme="outline" size={18} /> },
   ]
 }

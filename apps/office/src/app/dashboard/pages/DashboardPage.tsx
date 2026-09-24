@@ -1,6 +1,5 @@
-import { useMemo, useState } from 'react'
-import { ServiceOrdersTable } from '../components/ServiceOrdersTable'
-import { StatusSummary } from '../components/StatusSummary'
+import { useMemo } from 'react'
+import { AgingSummaryCards } from '../components/AgingSummaryCards'
 import { RevenueTrendChart } from '../components/charts/RevenueTrendChart'
 import { StatusDistributionChart } from '../components/charts/StatusDistributionChart'
 import { useMyTenants } from '../../office/hooks/useTenants'
@@ -10,9 +9,6 @@ import { Card } from '../../../shared/components/ui/Card'
 import { KpiCard } from '../../../shared/components/ui/KpiCard'
 import { translateProviderStatus } from '../lib/providerStatus'
 import { aggregateTopStatuses, OTHER_STATUS_KEY } from '../lib/statusDistribution'
-
-/** Status inicial exibido na tabela de OS ao carregar o Dashboard (RN do card padrão). */
-const DEFAULT_STATUS = 'assigned'
 
 /** Formata "AAAA-MM" para um rótulo curto de mês no locale ativo. */
 function formatMonthLabel(month: string, locale: string): string {
@@ -50,7 +46,6 @@ function formatDelta(
 export function DashboardPage() {
   const { t, i18n } = useTranslation()
   const { defaultTenantId, isLoading, isError } = useMyTenants()
-  const [selectedStatus, setSelectedStatus] = useState(DEFAULT_STATUS)
   const locale = i18n.resolvedLanguage ?? 'pt-BR'
 
   const { data: metrics, isLoading: isMetricsLoading, isError: isMetricsError } = useWorkOrderMetricsSummary(
@@ -207,10 +202,7 @@ export function DashboardPage() {
           )}
 
           <div className="col-span-12">
-            <StatusSummary tenantId={defaultTenantId} selectedStatus={selectedStatus} onSelectStatus={setSelectedStatus} />
-          </div>
-          <div className="col-span-12">
-            <ServiceOrdersTable tenantId={defaultTenantId} status={selectedStatus} />
+            <AgingSummaryCards tenantId={defaultTenantId} />
           </div>
         </>
       )}
