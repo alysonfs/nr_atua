@@ -8,8 +8,8 @@ import { ApiError } from '../../../shared/lib/apiClient'
 import { useAuth } from '../AuthContext'
 import { AuthLanguageSelector } from '../AuthLanguageSelector'
 import { createSignInSchema, type SignInFormValues } from '../schemas'
-import logoBgLight from '../../../../../../assets/logo_bg_light.svg'
-import logoBgDark from '../../../../../../assets/logo_bg_dark.svg'
+import logoBgLight from '../../../../../../assets/logo-bg-light.svg'
+import logoBgDark from '../../../../../../assets/logo-bg-dark.svg'
 
 export function SignInPage() {
   const { t } = useTranslation()

@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next'
 import { SUPPORT_EMAIL } from '../constants'
-import logoBgLight from '../../../../assets/logo_bg_light.svg'
+import logoBgLight from '../../../../assets/logo-bg-light.svg'
 
 type FooterProps = {
   signInUrl: string

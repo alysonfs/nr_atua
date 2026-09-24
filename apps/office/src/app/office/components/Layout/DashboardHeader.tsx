@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom'
 import { Setting, Remind } from '@icon-park/react'
-import logoBgLight from '../../../../../../../assets/logo_bg_light.svg'
+import logoBgLight from '../../../../../../../assets/logo-bg-light.svg'
 import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 
