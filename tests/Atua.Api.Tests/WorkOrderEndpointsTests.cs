@@ -225,6 +225,75 @@ public class WorkOrderEndpointsTests
     }
 
     [Fact]
+    public async Task GetMetricsSummaryRetorna403QuandoUsuarioNaoEMembroDoTenant()
+    {
+        var (app, databaseName) = await CreateApplicationAsync();
+        await using var appDisposable = app;
+        var tenantId = await SeedTenantAsync(databaseName);
+        var client = CreateAuthenticatedClient(app, Guid.CreateVersion7());
+
+        var response = await client.GetAsync($"/api/tenants/{tenantId}/work-orders/metrics-summary");
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(25)]
+    public async Task GetMetricsSummaryRetorna400QuandoMonthsInvalido(int months)
+    {
+        var (app, databaseName) = await CreateApplicationAsync();
+        await using var appDisposable = app;
+        var userId = Guid.CreateVersion7();
+        var tenantId = await SeedTenantWithMembershipAsync(databaseName, userId);
+        var client = CreateAuthenticatedClient(app, userId);
+
+        var response = await client.GetAsync($"/api/tenants/{tenantId}/work-orders/metrics-summary?months={months}");
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task GetMetricsSummaryDiferenciaOSCriadaDeOSConcluidaEmMesesDistintos()
+    {
+        var (app, databaseName) = await CreateApplicationAsync();
+        await using var appDisposable = app;
+        var userId = Guid.CreateVersion7();
+        var tenantId = await SeedTenantWithMembershipAsync(databaseName, userId);
+        var integrationId = await SeedIntegrationAsync(databaseName, tenantId);
+
+        // OS criada 2 meses atrás e concluída ("closed") 1 mês atrás — created e
+        // completed não podem cair no mesmo mês da série.
+        var createdAt = DateTimeOffset.UtcNow.AddMonths(-2);
+        var completedAt = DateTimeOffset.UtcNow.AddMonths(-1);
+        var workOrderId = Guid.CreateVersion7();
+        await using (var context = CreateContext(databaseName))
+        {
+            var workOrder = new WorkOrder(workOrderId, tenantId, integrationId, "OS-1", "Novo", createdAt);
+            workOrder.UpdateStatus("closed", completedAt);
+            context.WorkOrders.Add(workOrder);
+            context.WorkOrderHistories.Add(new WorkOrderHistory(Guid.CreateVersion7(), workOrderId,
+                Guid.CreateVersion7(), tenantId, integrationId, "OS-1", "Novo", createdAt));
+            context.WorkOrderHistories.Add(new WorkOrderHistory(Guid.CreateVersion7(), workOrderId,
+                Guid.CreateVersion7(), tenantId, integrationId, "OS-1", "closed", completedAt));
+            await context.SaveChangesAsync();
+        }
+
+        var client = CreateAuthenticatedClient(app, userId);
+        var response = await client.GetAsync($"/api/tenants/{tenantId}/work-orders/metrics-summary?months=3");
+        var body = await response.Content.ReadFromJsonAsync<WorkOrderMetricsSummaryResponse>();
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(3, body!.Trend.Count);
+        Assert.Equal(1, body.Trend.Sum(month => month.Created));
+        Assert.Equal(1, body.Trend.Sum(month => month.Completed));
+
+        var createdMonth = body.Trend.Single(month => month.Created == 1);
+        var completedMonth = body.Trend.Single(month => month.Completed == 1);
+        Assert.NotEqual(createdMonth.Month, completedMonth.Month);
+    }
+
+    [Fact]
     public async Task GetDetailRetorna403QuandoUsuarioNaoEMembroDoTenant()
     {
         var (app, databaseName) = await CreateApplicationAsync();
@@ -375,6 +444,8 @@ public class WorkOrderEndpointsTests
         builder.Services.AddScoped<IWorkOrderListByStatusQuery, WorkOrderListByStatusQueryHandler>();
         builder.Services.AddScoped<IWorkOrderStatusSummaryQuery, WorkOrderStatusSummaryQueryHandler>();
         builder.Services.AddScoped<IWorkOrderDetailQuery, WorkOrderDetailQueryHandler>();
+        builder.Services.AddScoped<IWorkOrderMonthlyTrendQuery, WorkOrderMonthlyTrendQueryHandler>();
+        builder.Services.AddSingleton(TimeProvider.System);
         builder.Services.AddAuthorization(options =>
         {
             options.AddPolicy("BrowserSession", policy =>
