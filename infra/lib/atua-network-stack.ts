@@ -70,8 +70,9 @@ export class AtuaNetworkStack extends cdk.Stack {
     });
     this.sgApi.addIngressRule(ec2.Peer.anyIpv4(), ec2.Port.tcp(443), 'HTTPS publico');
     this.sgApi.addIngressRule(ec2.Peer.anyIpv4(), ec2.Port.tcp(80), 'HTTP publico (redirect para HTTPS)');
-    // SSH administrativo restrito ao IP autorizado do operador.
+    // SSH administrativo restrito ao(s) IP(s) autorizado(s) do operador.
     this.sgApi.addIngressRule(ec2.Peer.ipv4('186.236.211.36/32'), ec2.Port.tcp(22), 'SSH administrativo');
+    this.sgApi.addIngressRule(ec2.Peer.ipv4('177.198.18.175/32'), ec2.Port.tcp(22), 'SSH administrativo (novo IP)');
 
     // --- Security Group: Collector (Agente Coletor, RF-009/016/017/023) ---
     // A instância do Collector nasce e morre junto com a API Master no
@@ -106,9 +107,10 @@ export class AtuaNetworkStack extends cdk.Stack {
     // real com o Atlas (confirmado via teste de TCP direto na instância).
     this.sgCollector.addEgressRule(ec2.Peer.anyIpv4(), ec2.Port.tcp(27017), 'Egress MongoDB Atlas (conexao direta aos shards do replica set)');
     this.sgCollector.addEgressRule(this.sgApi, ec2.Port.tcp(80), 'Egress HTTP para API Master (claim/complete/eligibility)');
-    // SSH administrativo restrito ao IP autorizado do operador (mesmo padrão da API,
+    // SSH administrativo restrito ao(s) IP(s) autorizado(s) do operador (mesmo padrão da API,
     // usado apenas para diagnóstico manual — não faz parte do fluxo normal).
     this.sgCollector.addIngressRule(ec2.Peer.ipv4('186.236.211.36/32'), ec2.Port.tcp(22), 'SSH administrativo');
+    this.sgCollector.addIngressRule(ec2.Peer.ipv4('177.198.18.175/32'), ec2.Port.tcp(22), 'SSH administrativo (novo IP)');
     // Sem outras regras de ingress: nenhum outro acesso de entrada previsto.
 
     // --- Security Group: RDS PostgreSQL (subnet privada isolada) ---
@@ -123,7 +125,8 @@ export class AtuaNetworkStack extends cdk.Stack {
     this.sgCollector.addEgressRule(this.sgRds, ec2.Port.tcp(5432), 'Egress Postgres para o RDS (consumer ADR-023)');
     // Acesso local do operador (desenvolvimento, RDS com PubliclyAccessible=true).
     // IP dinâmico do provedor — atualizar este /32 quando o IP mudar.
-    this.sgRds.addIngressRule(ec2.Peer.ipv4('186.236.211.186/32'), ec2.Port.tcp(5432), 'Postgres do operador (dev local)');
+    this.sgRds.addIngressRule(ec2.Peer.ipv4('186.236.210.61/32'), ec2.Port.tcp(5432), 'Postgres do operador (dev local)');
+    this.sgRds.addIngressRule(ec2.Peer.ipv4('177.198.18.175/32'), ec2.Port.tcp(5432), 'Postgres do operador (dev local, novo IP)');
 
     // Rota para o IGW nas subnets do RDS: necessária para o acesso público
     // direto ao RDS (PubliclyAccessible=true) funcionar — sem esta rota o
