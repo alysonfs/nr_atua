@@ -48,10 +48,10 @@ describe('AppLayout', () => {
   it('renders the header, sidebar and the outlet content together', () => {
     renderAppLayout('/home')
 
-    // Header sempre visível
-    expect(screen.getByRole('link', { name: /configurações/i })).toBeInTheDocument()
+    // Header sempre visível (ícone de configurações) + item de navegação no Sidebar
+    expect(screen.getAllByRole('link', { name: /configurações/i }).length).toBeGreaterThanOrEqual(1)
 
-    // Sidebar estrutural, sem itens de navegação ainda
+    // Sidebar estrutural, com itens de navegação (Dashboard e Configurações)
     expect(screen.getByRole('navigation', { name: /navegação principal/i })).toBeInTheDocument()
 
     // Miolo renderiza a rota ativa
@@ -61,7 +61,7 @@ describe('AppLayout', () => {
   it('renders the settings route content in the same layout', () => {
     renderAppLayout('/settings')
 
-    expect(screen.getByRole('link', { name: /configurações/i })).toBeInTheDocument()
+    expect(screen.getAllByRole('link', { name: /configurações/i }).length).toBeGreaterThanOrEqual(1)
     expect(screen.getByText('Conteúdo de configurações')).toBeInTheDocument()
   })
 })

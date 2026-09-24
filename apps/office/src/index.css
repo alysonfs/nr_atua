@@ -1,7 +1,4 @@
 @import "tailwindcss";
-@plugin "daisyui" {
-	themes: light --default;
-}
 
 @theme {
 	--font-sans: "Aptos", "Helvetica Neue", sans-serif;
@@ -9,6 +6,13 @@
 	--color-atua-navy-deep: #0e1a30;
 	--color-atua-blue: #3b82f6;
 	--color-atua-blue-dark: #2563eb;
+
+	/* Tokens de status (dashboard/badges): harmonizados com a família navy/blue acima. */
+	--color-status-success: #16a34a;
+	--color-status-danger: #dc2626;
+	--color-status-info: #0ea5e9;
+	--color-status-warning: #d97706;
+	--color-status-neutral: #475569;
 }
 
 @layer base {

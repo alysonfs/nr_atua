@@ -460,7 +460,10 @@ describe('Logout (botão Sair no header)', () => {
       </MemoryRouter>,
     )
 
-    const btnSair = screen.getByRole('button', { name: /sair da conta/i })
+    const btnMenuConta = screen.getByRole('button', { name: /abrir menu da conta/i })
+    await userEvent.click(btnMenuConta)
+
+    const btnSair = screen.getByRole('menuitem', { name: /sair da conta/i })
     await userEvent.click(btnSair)
 
     await waitFor(() => {
