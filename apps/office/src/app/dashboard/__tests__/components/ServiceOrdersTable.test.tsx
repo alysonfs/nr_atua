@@ -81,8 +81,8 @@ describe('ServiceOrdersTable', () => {
     await waitFor(() => expect(screen.getByRole('columnheader', { name: /nº da os no provedor/i })).toBeInTheDocument())
     expect(screen.getByRole('columnheader', { name: /^status$/i })).toBeInTheDocument()
     expect(screen.getByRole('columnheader', { name: /criada em \(provedor\)/i })).toBeInTheDocument()
-    expect(screen.getByRole('columnheader', { name: /atualizada em \(provedor\)/i })).toBeInTheDocument()
     expect(screen.getByRole('columnheader', { name: /modelo do equipamento/i })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: /nome do consumidor/i })).toBeInTheDocument()
     expect(screen.getByRole('columnheader', { name: /^provedor$/i })).toBeInTheDocument()
   })
 

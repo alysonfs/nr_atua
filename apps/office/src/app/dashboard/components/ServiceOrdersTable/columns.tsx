@@ -43,13 +43,13 @@ export function createServiceOrdersColumns(
       cell: (info) => formatDateTime(info.getValue<string | null>(), locale),
     },
     {
-      accessorKey: 'providerUpdatedAt',
-      header: t('common.providerUpdatedAt'),
-      cell: (info) => formatDateTime(info.getValue<string | null>(), locale),
-    },
-    {
       accessorKey: 'productModel',
       header: t('common.equipmentModel'),
+      cell: (info) => info.getValue<string | null>() ?? '—',
+    },
+    {
+      accessorKey: 'customerName',
+      header: t('common.consumerName'),
       cell: (info) => info.getValue<string | null>() ?? '—',
     },
     {
