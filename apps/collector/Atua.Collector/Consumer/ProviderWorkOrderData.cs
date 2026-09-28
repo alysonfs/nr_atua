@@ -35,4 +35,7 @@ public sealed record ProviderWorkOrderData(
     string? ProductCode,
     string? ProductModel,
     string? ProductStatus,
-    string? Symptom);
+    string? Symptom,
+    string? SymptomRaw,
+    string? SubStatus,
+    DateTimeOffset? NextAppointmentAt);

@@ -162,7 +162,8 @@ public class WorkOrderEndpointsTests
                 ContactEmail: null, ContactPhone: null, ContactName: null,
                 Address: null, ZipCode: null, CountryName: null, StateName: null, CityName: "Natal",
                 ProductBrand: "Consul", PdCode: null, CategoryId: null, ProductCategoryCode: null,
-                ProductCode: null, ProductModel: "CRM43", ProductStatus: null, Symptom: null),
+                ProductCode: null, ProductModel: "CRM43", ProductStatus: null, Symptom: null,
+                SymptomRaw: null, SubStatus: null, NextAppointmentAt: null),
                 DateTimeOffset.UtcNow);
             context.WorkOrders.Add(order);
             await context.SaveChangesAsync();
@@ -227,18 +228,19 @@ public class WorkOrderEndpointsTests
         {
             // Aberta há 20 dias (providerCreatedAt) — deve aparecer no filtro minAgeDays=10.
             var openOldWithProviderDate = new WorkOrder(Guid.CreateVersion7(), tenantId, integrationId, "OS-1",
-                "Designado", now.AddDays(-1));
+                "pending", now.AddDays(-1));
             openOldWithProviderDate.UpdateDetails(
                 new WorkOrderDetails(null, null, null, now.AddDays(-20), null, null, null, null, null, null, null,
-                    null, null, null, null, null, null, null, null, null, null, null, null, null),
+                    null, null, null, null, null, null, null, null, null, null, null, null, null,
+                    null, null, null),
                 now);
 
             // Sem providerCreatedAt: cai no fallback createdAt, também há 20 dias.
             var openOldFallbackCreatedAt = new WorkOrder(Guid.CreateVersion7(), tenantId, integrationId, "OS-2",
-                "Designado", now.AddDays(-20));
+                "pending", now.AddDays(-20));
 
             // Aberta há apenas 2 dias — não deve aparecer no filtro minAgeDays=10.
-            var openRecent = new WorkOrder(Guid.CreateVersion7(), tenantId, integrationId, "OS-3", "Designado",
+            var openRecent = new WorkOrder(Guid.CreateVersion7(), tenantId, integrationId, "OS-3", "pending",
                 now.AddDays(-2));
 
             // Terminal ("closed") há 20 dias — nunca deve contar como aberta, mesmo velha.
@@ -289,13 +291,13 @@ public class WorkOrderEndpointsTests
         await using (var context = CreateContext(databaseName))
         {
             // Aberta há 40 dias: conta nas 3 faixas (+5/+10/+30).
-            context.WorkOrders.Add(new WorkOrder(Guid.CreateVersion7(), tenantId, integrationId, "OS-1", "Designado",
+            context.WorkOrders.Add(new WorkOrder(Guid.CreateVersion7(), tenantId, integrationId, "OS-1", "pending",
                 now.AddDays(-40)));
             // Aberta há 8 dias: conta só na faixa +5.
-            context.WorkOrders.Add(new WorkOrder(Guid.CreateVersion7(), tenantId, integrationId, "OS-2", "Designado",
+            context.WorkOrders.Add(new WorkOrder(Guid.CreateVersion7(), tenantId, integrationId, "OS-2", "pending",
                 now.AddDays(-8)));
             // Aberta há 2 dias: não conta em nenhuma faixa.
-            context.WorkOrders.Add(new WorkOrder(Guid.CreateVersion7(), tenantId, integrationId, "OS-3", "Designado",
+            context.WorkOrders.Add(new WorkOrder(Guid.CreateVersion7(), tenantId, integrationId, "OS-3", "pending",
                 now.AddDays(-2)));
             // Terminal ("Payment Approved") há 40 dias: nunca conta como aberta.
             context.WorkOrders.Add(new WorkOrder(Guid.CreateVersion7(), tenantId, integrationId, "OS-4",
@@ -496,7 +498,8 @@ public class WorkOrderEndpointsTests
                 ContactEmail: "maria@example.com", ContactPhone: "+5584999999999", ContactName: "Maria Souza",
                 Address: "Rua A, 123", ZipCode: "59000000", CountryName: "Brasil", StateName: "RN", CityName: "Natal",
                 ProductBrand: "Consul", PdCode: "PD1", CategoryId: "CAT1", ProductCategoryCode: "PCC1",
-                ProductCode: "PC1", ProductModel: "CRM43", ProductStatus: "Ativo", Symptom: "Não gela"),
+                ProductCode: "PC1", ProductModel: "CRM43", ProductStatus: "Ativo", Symptom: "Não gela",
+                SymptomRaw: null, SubStatus: null, NextAppointmentAt: null),
                 changedAt);
             order.UpdateStatus("Em Andamento", changedAt);
             context.WorkOrders.Add(order);
@@ -574,6 +577,9 @@ public class WorkOrderEndpointsTests
         builder.Services.AddScoped<IWorkOrderAgingSummaryQuery, WorkOrderAgingSummaryQueryHandler>();
         builder.Services.AddScoped<IWorkOrderDetailQuery, WorkOrderDetailQueryHandler>();
         builder.Services.AddScoped<IWorkOrderMonthlyTrendQuery, WorkOrderMonthlyTrendQueryHandler>();
+        builder.Services.AddScoped<IWorkOrderCriticalitySummaryQuery, WorkOrderCriticalitySummaryQueryHandler>();
+        builder.Services.AddScoped<IWorkOrderNextAppointmentSummaryQuery, WorkOrderNextAppointmentSummaryQueryHandler>();
+        builder.Services.AddScoped<IWorkOrderSubStatusSummaryQuery, WorkOrderSubStatusSummaryQueryHandler>();
         builder.Services.AddSingleton(TimeProvider.System);
         builder.Services.AddAuthorization(options =>
         {

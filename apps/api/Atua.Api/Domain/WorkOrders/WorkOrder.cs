@@ -129,6 +129,15 @@ public sealed class WorkOrder
     /// </summary>
     public string? Symptom { get; private set; }
 
+    /// <summary>Valor cru do campo <c>symptom</c> do provedor (RF-028), distinto de <see cref="Symptom"/> (<c>symptomDescription</c>).</summary>
+    public string? SymptomRaw { get; private set; }
+
+    /// <summary>Substatus da OS (<c>pendingReason</c> do provedor, RF-031) — texto livre, nullable.</summary>
+    public string? SubStatus { get; private set; }
+
+    /// <summary>Data/hora do próximo atendimento agendado (<c>visitStartTime</c> do provedor, RF-030).</summary>
+    public DateTimeOffset? NextAppointmentAt { get; private set; }
+
     /// <summary>
     /// Sinaliza se esta OS precisa ter detalhe buscado via <c>queryOneWorkOrder</c> na
     /// próxima oportunidade de coleta (RF-026/ADR-031). Decidido pelo Consumer em cada
@@ -207,6 +216,9 @@ public sealed class WorkOrder
         ProductModel = details.ProductModel;
         ProductStatus = details.ProductStatus;
         Symptom = details.Symptom;
+        SymptomRaw = details.SymptomRaw;
+        SubStatus = details.SubStatus;
+        NextAppointmentAt = details.NextAppointmentAt;
         UpdatedAt = now;
     }
 }
@@ -240,4 +252,7 @@ public sealed record WorkOrderDetails(
     string? ProductCode,
     string? ProductModel,
     string? ProductStatus,
-    string? Symptom);
+    string? Symptom,
+    string? SymptomRaw,
+    string? SubStatus,
+    DateTimeOffset? NextAppointmentAt);

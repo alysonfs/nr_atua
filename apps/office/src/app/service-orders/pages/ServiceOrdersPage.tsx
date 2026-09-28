@@ -8,13 +8,19 @@ import { useMyTenants } from '../../office/hooks/useTenants'
 /** Status inicial exibido na tabela quando a página é aberta sem filtro na URL. */
 const DEFAULT_STATUS = 'assigned'
 
+const NEXT_APPOINTMENT_FILTERS = new Set(['overdue', 'due-today', 'due-tomorrow'])
+const CRITICALITY_FILTERS = new Set(['critical', 'at-risk'])
+
 /**
- * Página `/service-orders`: lista de ordens de serviço, com dois modos de
+ * Página `/service-orders`: lista de ordens de serviço, com quatro modos de
  * filtro mutuamente exclusivos — por status exato (cards de resumo, nesta
- * mesma página) ou por tempo mínimo de abertura/aging (drill-down vindo dos
- * cards do Dashboard). O filtro é dirigido pela URL (`useSearchParams`) para
- * permitir deep-link a partir do Dashboard (`?minAgeDays=N`) e navegação
- * compartilhável/"voltar" do navegador.
+ * mesma página), por tempo mínimo de abertura/aging, por prazo de próximo
+ * atendimento (RF-030) ou por criticidade (RF-033), estes três últimos
+ * vindos de drill-down dos cards do Dashboard. O filtro é dirigido pela URL
+ * (`useSearchParams`) para permitir deep-link a partir do Dashboard (ex.:
+ * `?minAgeDays=N`, `?nextAppointmentFilter=overdue`,
+ * `?criticalityFilter=critical`) e navegação compartilhável/"voltar" do
+ * navegador.
  */
 export function ServiceOrdersPage() {
   const { t } = useTranslation()
@@ -25,7 +31,18 @@ export function ServiceOrdersPage() {
   const minAgeDays = minAgeDaysParam ? Number(minAgeDaysParam) : undefined
   const isValidMinAgeDays = typeof minAgeDays === 'number' && Number.isFinite(minAgeDays) && minAgeDays > 0
 
-  const status = isValidMinAgeDays ? undefined : (searchParams.get('status') ?? DEFAULT_STATUS)
+  const nextAppointmentFilterParam = searchParams.get('nextAppointmentFilter')
+  const isValidNextAppointmentFilter = Boolean(
+    nextAppointmentFilterParam && NEXT_APPOINTMENT_FILTERS.has(nextAppointmentFilterParam),
+  )
+
+  const criticalityFilterParam = searchParams.get('criticalityFilter')
+  const isValidCriticalityFilter = Boolean(
+    criticalityFilterParam && CRITICALITY_FILTERS.has(criticalityFilterParam),
+  )
+
+  const hasDrillDownFilter = isValidMinAgeDays || isValidNextAppointmentFilter || isValidCriticalityFilter
+  const status = hasDrillDownFilter ? undefined : (searchParams.get('status') ?? DEFAULT_STATUS)
 
   const handleSelectStatus = useCallback(
     (nextStatus: string) => {
@@ -34,10 +51,20 @@ export function ServiceOrdersPage() {
     [setSearchParams],
   )
 
-  const filterProps = useMemo(
-    () => (isValidMinAgeDays ? { minAgeDays } : { status }),
-    [isValidMinAgeDays, minAgeDays, status],
-  )
+  const filterProps = useMemo(() => {
+    if (isValidMinAgeDays) return { minAgeDays }
+    if (isValidNextAppointmentFilter) return { nextAppointmentFilter: nextAppointmentFilterParam! }
+    if (isValidCriticalityFilter) return { criticalityFilter: criticalityFilterParam! }
+    return { status }
+  }, [
+    isValidMinAgeDays,
+    minAgeDays,
+    isValidNextAppointmentFilter,
+    nextAppointmentFilterParam,
+    isValidCriticalityFilter,
+    criticalityFilterParam,
+    status,
+  ])
 
   return (
     <div className="grid w-full grid-cols-12 gap-4">

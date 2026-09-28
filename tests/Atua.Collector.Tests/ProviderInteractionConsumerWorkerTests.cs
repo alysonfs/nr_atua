@@ -158,7 +158,10 @@ public class ProviderInteractionConsumerWorkerTests
         ProductCode: null,
         ProductModel: null,
         ProductStatus: null,
-        Symptom: null);
+        Symptom: null,
+        SymptomRaw: null,
+        SubStatus: null,
+        NextAppointmentAt: null);
 
     [Fact]
     public async Task CaminhoCompleto_ProcessaERemoveInteracaoDepoisDoCommit()

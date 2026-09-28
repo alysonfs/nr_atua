@@ -149,6 +149,9 @@ builder.Services.AddScoped<IWorkOrderStatusSummaryQuery, WorkOrderStatusSummaryQ
 builder.Services.AddScoped<IWorkOrderAgingSummaryQuery, WorkOrderAgingSummaryQueryHandler>();
 builder.Services.AddScoped<IWorkOrderDetailQuery, WorkOrderDetailQueryHandler>();
 builder.Services.AddScoped<IWorkOrderMonthlyTrendQuery, WorkOrderMonthlyTrendQueryHandler>();
+builder.Services.AddScoped<IWorkOrderCriticalitySummaryQuery, WorkOrderCriticalitySummaryQueryHandler>();
+builder.Services.AddScoped<IWorkOrderNextAppointmentSummaryQuery, WorkOrderNextAppointmentSummaryQueryHandler>();
+builder.Services.AddScoped<IWorkOrderSubStatusSummaryQuery, WorkOrderSubStatusSummaryQueryHandler>();
 builder.Services.AddScoped<IServiceCredentialService>();
 builder.Services.AddScoped<IServiceCredentialValidationService>();
 builder.Services.AddScoped<ICollectorEligibilityEvaluator, CollectorEligibilityEvaluator>();

@@ -54,6 +54,7 @@ public sealed class WorkOrderDetailQueryHandler(AtuaDbContext dbContext) : IWork
             workOrder.ProductModel,
             workOrder.ProductStatus,
             workOrder.Symptom,
+            workOrder.SymptomRaw,
             history);
     }
 }

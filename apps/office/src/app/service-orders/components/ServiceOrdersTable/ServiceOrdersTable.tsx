@@ -7,36 +7,53 @@ import { DataTable } from '../../../../shared/components/ui/Table'
 
 const PAGE_SIZE_OPTIONS = [10, 15, 20, 25, 50] as const
 
+/** Converte um valor kebab-case de filtro (ex.: "due-today") para camelCase (ex.: "dueToday"). */
+function toCamelCase(value: string): string {
+  return value.replace(/-([a-z])/g, (_, letter: string) => letter.toUpperCase())
+}
+
 interface ServiceOrdersTableProps {
   /** Tenant ativo do usuário (ver useMyTenants().defaultTenantId). */
   tenantId: string | null
-  /** Status exato a filtrar (mutuamente exclusivo com minAgeDays). */
+  /** Status exato a filtrar (mutuamente exclusivo com os demais filtros). */
   status?: string
-  /** Dias mínimos de abertura a filtrar — aging (mutuamente exclusivo com status). */
+  /** Dias mínimos de abertura a filtrar — aging (mutuamente exclusivo com os demais). */
   minAgeDays?: number
+  /** Filtro de prazo de próximo atendimento (RF-030.5) — mutuamente exclusivo com os demais. */
+  nextAppointmentFilter?: string
+  /** Filtro de criticidade (RF-033.4) — mutuamente exclusivo com os demais. */
+  criticalityFilter?: string
 }
 
 /**
  * Seção "Ordens de serviço" da página `/service-orders`: lista paginada de
- * OS filtradas pelo status selecionado nos cards de resumo OU pela faixa de
- * aging vinda de um drill-down do Dashboard.
+ * OS filtradas pelo status selecionado nos cards de resumo OU por um
+ * drill-down vindo do Dashboard (aging, prazo de atendimento ou
+ * criticidade).
  *
- * Integra com GET /api/tenants/{tenantId}/work-orders?status=|minAgeDays=&page=&pageSize=
+ * Integra com
+ * GET /api/tenants/{tenantId}/work-orders?status=|minAgeDays=|nextAppointmentFilter=|criticalityFilter=&page=&pageSize=
  * (ver useWorkOrdersByStatus).
  */
-export function ServiceOrdersTable({ tenantId, status, minAgeDays }: ServiceOrdersTableProps) {
+export function ServiceOrdersTable({
+  tenantId,
+  status,
+  minAgeDays,
+  nextAppointmentFilter,
+  criticalityFilter,
+}: ServiceOrdersTableProps) {
   const { i18n, t } = useTranslation()
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState<number>(PAGE_SIZE_OPTIONS[1])
 
-  // Filtro trocado (novo card clicado ou navegação por aging): reinicia para a primeira página.
+  // Filtro trocado (novo card clicado ou navegação por drill-down): reinicia para a primeira página.
   useEffect(() => {
     setPage(1)
-  }, [status, minAgeDays])
+  }, [status, minAgeDays, nextAppointmentFilter, criticalityFilter])
 
   const { orders, totalCount, isLoading, isError } = useWorkOrdersByStatus(
     tenantId,
-    { status, minAgeDays },
+    { status, minAgeDays, nextAppointmentFilter, criticalityFilter },
     page,
     pageSize,
   )
@@ -53,11 +70,23 @@ export function ServiceOrdersTable({ tenantId, status, minAgeDays }: ServiceOrde
 
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize))
 
+  const heading = status
+    ? t('dashboard.ordersTitle', { status })
+    : minAgeDays
+      ? t('serviceOrders.ordersTitleByAging', { days: minAgeDays })
+      : nextAppointmentFilter
+        ? t('serviceOrders.ordersTitleByFilter', {
+            label: t(`serviceOrders.nextAppointmentFilterLabels.${toCamelCase(nextAppointmentFilter)}`),
+          })
+        : t('serviceOrders.ordersTitleByFilter', {
+            label: t(`serviceOrders.criticalityFilterLabels.${toCamelCase(criticalityFilter ?? '')}`),
+          })
+
   return (
     <section aria-labelledby="service-orders-heading" className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 id="service-orders-heading" className="text-sm font-semibold text-slate-700">
-          {status ? t('dashboard.ordersTitle', { status }) : t('serviceOrders.ordersTitleByAging', { days: minAgeDays })}
+          {heading}
         </h2>
 
         <label className="flex items-center gap-2 text-xs text-slate-600">

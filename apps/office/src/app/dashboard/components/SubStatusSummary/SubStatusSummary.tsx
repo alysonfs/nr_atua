@@ -1,0 +1,53 @@
+import { useTranslation } from 'react-i18next'
+import { Card } from '../../../../shared/components/ui/Card'
+import { useWorkOrderSubStatusSummary } from '../../hooks/useWorkOrderSubStatusSummary'
+import { SubStatusSummaryChart } from './SubStatusSummaryChart'
+
+interface SubStatusSummaryProps {
+  /** Tenant ativo do usuário (ver useMyTenants().defaultTenantId). */
+  tenantId: string | null
+}
+
+/**
+ * Seção "OS por substatus" do Dashboard (RF-032): card com um gráfico de
+ * barras do total de OS Em Aberto agrupado por substatus, colorido por
+ * responsável (RF-031.2).
+ */
+export function SubStatusSummary({ tenantId }: SubStatusSummaryProps) {
+  const { t } = useTranslation()
+  const { groups, isLoading, isError } = useWorkOrderSubStatusSummary(tenantId)
+
+  return (
+    <section aria-labelledby="substatus-summary-heading" className="space-y-3">
+      <h2 id="substatus-summary-heading" className="text-sm font-semibold text-slate-700">
+        {t('dashboard.subStatus.title')}
+      </h2>
+
+      {isLoading && (
+        <p className="rounded-md border border-slate-200 bg-white px-4 py-3 text-sm text-slate-500">
+          {t('dashboard.subStatus.loading')}
+        </p>
+      )}
+
+      {!isLoading && isError && (
+        <p role="alert" className="rounded-md border-l-4 border-red-500 bg-white p-4 text-sm text-red-800 shadow-sm">
+          {t('dashboard.subStatus.error')}
+        </p>
+      )}
+
+      {!isLoading && !isError && groups.length === 0 && (
+        <p className="rounded-md border border-slate-200 bg-white px-4 py-3 text-sm text-slate-500">
+          {t('dashboard.subStatus.empty')}
+        </p>
+      )}
+
+      {!isLoading && !isError && groups.length > 0 && (
+        <Card>
+          <Card.Body>
+            <SubStatusSummaryChart groups={groups} />
+          </Card.Body>
+        </Card>
+      )}
+    </section>
+  )
+}

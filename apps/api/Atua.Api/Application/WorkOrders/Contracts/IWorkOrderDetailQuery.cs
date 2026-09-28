@@ -40,6 +40,7 @@ public sealed record WorkOrderDetailResult(
     string? ProductModel,
     string? ProductStatus,
     string? Symptom,
+    string? SymptomRaw,
     IReadOnlyList<WorkOrderHistoryEntryResult> History);
 
 /// <summary>Entrada de histórico de status de uma OS, ordenada da mais antiga para a mais recente.</summary>

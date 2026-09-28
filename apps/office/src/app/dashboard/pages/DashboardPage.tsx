@@ -1,5 +1,8 @@
 import { useMemo } from 'react'
 import { AgingSummaryCards } from '../components/AgingSummaryCards'
+import { NextAppointmentSummaryCards } from '../components/NextAppointmentSummaryCards'
+import { CriticalitySummaryCards } from '../components/CriticalitySummaryCards'
+import { SubStatusSummary } from '../components/SubStatusSummary'
 import { RevenueTrendChart } from '../components/charts/RevenueTrendChart'
 import { StatusDistributionChart } from '../components/charts/StatusDistributionChart'
 import { useMyTenants } from '../../office/hooks/useTenants'
@@ -203,6 +206,18 @@ export function DashboardPage() {
 
           <div className="col-span-12">
             <AgingSummaryCards tenantId={defaultTenantId} />
+          </div>
+
+          <div className="col-span-12">
+            <NextAppointmentSummaryCards tenantId={defaultTenantId} />
+          </div>
+
+          <div className="col-span-12">
+            <CriticalitySummaryCards tenantId={defaultTenantId} />
+          </div>
+
+          <div className="col-span-12">
+            <SubStatusSummary tenantId={defaultTenantId} />
           </div>
         </>
       )}

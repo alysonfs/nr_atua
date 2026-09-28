@@ -129,6 +129,15 @@ public sealed class WorkOrderHistory
     /// <summary>Sintoma relatado pelo consumidor no momento desta entrada — ver <see cref="WorkOrder.Symptom"/>.</summary>
     public string? Symptom { get; private set; }
 
+    /// <summary>Valor cru de <c>symptom</c> no momento desta entrada — ver <see cref="WorkOrder.SymptomRaw"/>.</summary>
+    public string? SymptomRaw { get; private set; }
+
+    /// <summary>Substatus da OS no momento desta entrada — ver <see cref="WorkOrder.SubStatus"/>.</summary>
+    public string? SubStatus { get; private set; }
+
+    /// <summary>Data/hora do próximo atendimento no momento desta entrada — ver <see cref="WorkOrder.NextAppointmentAt"/>.</summary>
+    public DateTimeOffset? NextAppointmentAt { get; private set; }
+
     /// <summary>Preenche os campos descritivos desta entrada de histórico (imutável após criação).</summary>
     public void ApplyDetails(WorkOrderDetails details)
     {
@@ -156,5 +165,8 @@ public sealed class WorkOrderHistory
         ProductModel = details.ProductModel;
         ProductStatus = details.ProductStatus;
         Symptom = details.Symptom;
+        SymptomRaw = details.SymptomRaw;
+        SubStatus = details.SubStatus;
+        NextAppointmentAt = details.NextAppointmentAt;
     }
 }

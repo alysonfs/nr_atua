@@ -711,6 +711,9 @@ namespace Atua.Api.Infrastructure.Persistence.Migrations
                         .HasColumnType("boolean")
                         .HasDefaultValue(false);
 
+                    b.Property<DateTimeOffset?>("NextAppointmentAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<string>("PdCode")
                         .HasColumnType("text");
 
@@ -745,7 +748,13 @@ namespace Atua.Api.Infrastructure.Persistence.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<string>("SubStatus")
+                        .HasColumnType("text");
+
                     b.Property<string>("Symptom")
+                        .HasColumnType("text");
+
+                    b.Property<string>("SymptomRaw")
                         .HasColumnType("text");
 
                     b.Property<Guid>("TenantId")
@@ -825,6 +834,9 @@ namespace Atua.Api.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("IntegrationId")
                         .HasColumnType("uuid");
 
+                    b.Property<DateTimeOffset?>("NextAppointmentAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<string>("PdCode")
                         .HasColumnType("text");
 
@@ -859,7 +871,13 @@ namespace Atua.Api.Infrastructure.Persistence.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<string>("SubStatus")
+                        .HasColumnType("text");
+
                     b.Property<string>("Symptom")
+                        .HasColumnType("text");
+
+                    b.Property<string>("SymptomRaw")
                         .HasColumnType("text");
 
                     b.Property<Guid>("TenantId")

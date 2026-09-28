@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using Atua.Api.Application.WorkOrders.Contracts;
+using Atua.Api.Domain.WorkOrders;
 using Atua.Api.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
@@ -24,6 +25,15 @@ public static class WorkOrderEndpoints
             .RequireAuthorization("BrowserSession");
 
         endpoints.MapGet("/api/tenants/{tenantId:guid}/work-orders/aging-summary", GetAgingSummary)
+            .RequireAuthorization("BrowserSession");
+
+        endpoints.MapGet("/api/tenants/{tenantId:guid}/work-orders/next-appointment-summary", GetNextAppointmentSummary)
+            .RequireAuthorization("BrowserSession");
+
+        endpoints.MapGet("/api/tenants/{tenantId:guid}/work-orders/substatus-summary", GetSubStatusSummary)
+            .RequireAuthorization("BrowserSession");
+
+        endpoints.MapGet("/api/tenants/{tenantId:guid}/work-orders/criticality-summary", GetCriticalitySummary)
             .RequireAuthorization("BrowserSession");
 
         endpoints.MapGet("/api/tenants/{tenantId:guid}/work-orders/metrics-summary", GetMetricsSummary)
@@ -58,16 +68,29 @@ public static class WorkOrderEndpoints
         return Results.Ok(response);
     }
 
-    private static async Task<IResult> GetListByStatus(Guid tenantId, string? status, int? minAgeDays, int? page,
-        int? pageSize, ClaimsPrincipal user, AtuaDbContext db, IWorkOrderListByStatusQuery query,
-        TimeProvider timeProvider, CancellationToken cancellationToken)
+    private static async Task<IResult> GetListByStatus(Guid tenantId, string? status, int? minAgeDays,
+        string? nextAppointmentFilter, string? criticalityFilter, int? page, int? pageSize, ClaimsPrincipal user,
+        AtuaDbContext db, IWorkOrderListByStatusQuery query, TimeProvider timeProvider,
+        CancellationToken cancellationToken)
     {
         var userId = GetGuidClaim(user, "sub");
         if (userId is null) return Results.Unauthorized();
 
         var hasStatus = !string.IsNullOrWhiteSpace(status);
         var hasMinAgeDays = minAgeDays is not null;
-        if (hasStatus == hasMinAgeDays || (hasMinAgeDays && minAgeDays <= 0))
+
+        if (!TryParseNextAppointmentFilter(nextAppointmentFilter, out var parsedNextAppointmentFilter))
+        {
+            return Results.BadRequest(new { error = "invalid_filter" });
+        }
+        if (!TryParseCriticalityFilter(criticalityFilter, out var parsedCriticalityFilter))
+        {
+            return Results.BadRequest(new { error = "invalid_filter" });
+        }
+
+        var filterCount = new[] { hasStatus, hasMinAgeDays, parsedNextAppointmentFilter is not null,
+            parsedCriticalityFilter is not null }.Count(hasFilter => hasFilter);
+        if (filterCount != 1 || (hasMinAgeDays && minAgeDays <= 0))
         {
             return Results.BadRequest(new { error = "invalid_filter" });
         }
@@ -79,16 +102,15 @@ public static class WorkOrderEndpoints
             return Results.BadRequest(new { error = "invalid_pagination" });
         }
 
-        var isMember = await db.TenantMemberships.AsNoTracking().AnyAsync(
-            membership => membership.UserId == userId.Value && membership.TenantId == tenantId,
-            cancellationToken);
-        if (!isMember) return Results.Forbid();
+        var tenant = await GetTenantIfMemberAsync(db, tenantId, userId.Value, cancellationToken);
+        if (tenant is null) return Results.Forbid();
 
         var result = await query.ExecuteAsync(tenantId, hasStatus ? status : null, hasMinAgeDays ? minAgeDays : null,
-            effectivePage, effectivePageSize, timeProvider.GetUtcNow(), cancellationToken);
+            parsedNextAppointmentFilter, parsedCriticalityFilter, tenant.TimeZoneId, effectivePage, effectivePageSize,
+            timeProvider.GetUtcNow(), cancellationToken);
 
-        var response = new WorkOrderListResponse(result.Status, result.MinAgeDays, result.Page, result.PageSize,
-            result.TotalCount,
+        var response = new WorkOrderListResponse(result.Status, result.MinAgeDays, result.NextAppointmentFilter,
+            result.CriticalityFilter, result.Page, result.PageSize, result.TotalCount,
             result.Items
                 .Select(item => new WorkOrderListItem(item.Id, item.WorkOrderProviderId, item.WorkOrderProviderNo,
                     item.ServiceRequestId, item.Amount,
@@ -97,6 +119,35 @@ public static class WorkOrderEndpoints
                 .ToArray());
 
         return Results.Ok(response);
+    }
+
+    private static bool TryParseNextAppointmentFilter(string? value, out EWorkOrderNextAppointmentFilter? result)
+    {
+        result = null;
+        if (string.IsNullOrWhiteSpace(value)) return true;
+
+        result = value switch
+        {
+            "overdue" => EWorkOrderNextAppointmentFilter.Overdue,
+            "due-today" => EWorkOrderNextAppointmentFilter.DueToday,
+            "due-tomorrow" => EWorkOrderNextAppointmentFilter.DueTomorrow,
+            _ => (EWorkOrderNextAppointmentFilter?)null,
+        };
+        return result is not null;
+    }
+
+    private static bool TryParseCriticalityFilter(string? value, out EWorkOrderCriticalityFilter? result)
+    {
+        result = null;
+        if (string.IsNullOrWhiteSpace(value)) return true;
+
+        result = value switch
+        {
+            "critical" => EWorkOrderCriticalityFilter.Critical,
+            "at-risk" => EWorkOrderCriticalityFilter.AtRisk,
+            _ => (EWorkOrderCriticalityFilter?)null,
+        };
+        return result is not null;
     }
 
     private static async Task<IResult> GetAgingSummary(Guid tenantId, ClaimsPrincipal user, AtuaDbContext db,
@@ -114,6 +165,60 @@ public static class WorkOrderEndpoints
 
         return Results.Ok(new WorkOrderAgingSummaryResponse(result.MoreThan5Days, result.MoreThan10Days,
             result.MoreThan30Days));
+    }
+
+    private static async Task<IResult> GetNextAppointmentSummary(Guid tenantId, ClaimsPrincipal user, AtuaDbContext db,
+        IWorkOrderNextAppointmentSummaryQuery query, TimeProvider timeProvider, CancellationToken cancellationToken)
+    {
+        var userId = GetGuidClaim(user, "sub");
+        if (userId is null) return Results.Unauthorized();
+
+        var tenant = await GetTenantIfMemberAsync(db, tenantId, userId.Value, cancellationToken);
+        if (tenant is null) return Results.Forbid();
+
+        var result = await query.ExecuteAsync(tenantId, tenant.TimeZoneId, timeProvider.GetUtcNow(),
+            cancellationToken);
+
+        return Results.Ok(new WorkOrderNextAppointmentSummaryResponse(result.Overdue, result.DueToday,
+            result.DueTomorrow));
+    }
+
+    private static async Task<IResult> GetSubStatusSummary(Guid tenantId, ClaimsPrincipal user, AtuaDbContext db,
+        IWorkOrderSubStatusSummaryQuery query, CancellationToken cancellationToken)
+    {
+        var userId = GetGuidClaim(user, "sub");
+        if (userId is null) return Results.Unauthorized();
+
+        var isMember = await db.TenantMemberships.AsNoTracking().AnyAsync(
+            membership => membership.UserId == userId.Value && membership.TenantId == tenantId,
+            cancellationToken);
+        if (!isMember) return Results.Forbid();
+
+        var result = await query.ExecuteAsync(tenantId, cancellationToken);
+
+        var response = new WorkOrderSubStatusSummaryResponse(
+            result.Groups
+                .Select(group => new WorkOrderSubStatusCountResponse(group.SubStatus, group.Responsible.ToString(),
+                    group.Total))
+                .ToArray());
+
+        return Results.Ok(response);
+    }
+
+    private static async Task<IResult> GetCriticalitySummary(Guid tenantId, ClaimsPrincipal user, AtuaDbContext db,
+        IWorkOrderCriticalitySummaryQuery query, TimeProvider timeProvider, CancellationToken cancellationToken)
+    {
+        var userId = GetGuidClaim(user, "sub");
+        if (userId is null) return Results.Unauthorized();
+
+        var isMember = await db.TenantMemberships.AsNoTracking().AnyAsync(
+            membership => membership.UserId == userId.Value && membership.TenantId == tenantId,
+            cancellationToken);
+        if (!isMember) return Results.Forbid();
+
+        var result = await query.ExecuteAsync(tenantId, timeProvider.GetUtcNow(), cancellationToken);
+
+        return Results.Ok(new WorkOrderCriticalitySummaryResponse(result.Critical, result.AtRisk));
     }
 
     private static async Task<IResult> GetStatusSummary(Guid tenantId, ClaimsPrincipal user, AtuaDbContext db,
@@ -189,7 +294,7 @@ public static class WorkOrderEndpoints
             result.ContactEmail, result.ContactPhone, result.ContactName,
             result.Address, result.ZipCode, result.CountryName, result.StateName, result.CityName,
             result.ProductBrand, result.PdCode, result.CategoryId, result.ProductCategoryCode,
-            result.ProductCode, result.ProductModel, result.ProductStatus, result.Symptom,
+            result.ProductCode, result.ProductModel, result.ProductStatus, result.Symptom, result.SymptomRaw,
             result.History.Select(entry => new WorkOrderHistoryEntryResponse(entry.Status, entry.CreatedAt))
                 .ToArray());
 
@@ -225,10 +330,19 @@ public sealed record WorkOrderMonthlySummaryResponse(string Month, string TimeZo
 public sealed record WorkOrderStatusMonthSummary(string Status, int Total,
     IReadOnlyList<int> DailyCounts);
 
-public sealed record WorkOrderListResponse(string? Status, int? MinAgeDays, int Page, int PageSize, int TotalCount,
-    IReadOnlyList<WorkOrderListItem> Items);
+public sealed record WorkOrderListResponse(string? Status, int? MinAgeDays,
+    EWorkOrderNextAppointmentFilter? NextAppointmentFilter, EWorkOrderCriticalityFilter? CriticalityFilter,
+    int Page, int PageSize, int TotalCount, IReadOnlyList<WorkOrderListItem> Items);
 
 public sealed record WorkOrderAgingSummaryResponse(int MoreThan5Days, int MoreThan10Days, int MoreThan30Days);
+
+public sealed record WorkOrderNextAppointmentSummaryResponse(int Overdue, int DueToday, int DueTomorrow);
+
+public sealed record WorkOrderSubStatusSummaryResponse(IReadOnlyList<WorkOrderSubStatusCountResponse> Groups);
+
+public sealed record WorkOrderSubStatusCountResponse(string SubStatus, string Responsible, int Total);
+
+public sealed record WorkOrderCriticalitySummaryResponse(int Critical, int AtRisk);
 
 public sealed record WorkOrderListItem(Guid Id, string WorkOrderProviderId, string? WorkOrderProviderNo,
     string? ServiceRequestId, decimal? Amount, string Status,
@@ -254,7 +368,7 @@ public sealed record WorkOrderDetailResponse(
     string? ContactEmail, string? ContactPhone, string? ContactName,
     string? Address, string? ZipCode, string? CountryName, string? StateName, string? CityName,
     string? ProductBrand, string? PdCode, string? CategoryId, string? ProductCategoryCode,
-    string? ProductCode, string? ProductModel, string? ProductStatus, string? Symptom,
+    string? ProductCode, string? ProductModel, string? ProductStatus, string? Symptom, string? SymptomRaw,
     IReadOnlyList<WorkOrderHistoryEntryResponse> History);
 
 public sealed record WorkOrderHistoryEntryResponse(string Status, DateTimeOffset CreatedAt);

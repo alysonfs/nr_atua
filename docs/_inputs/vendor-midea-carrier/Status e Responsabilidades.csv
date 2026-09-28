@@ -1,0 +1,37 @@
+Status de Pendente,Motivo de Uso,Responsabilidade
+Acordo de ressarcimento - pendente de coleta,Caso com ressarcimento aprovado pendente de coleta do produto usado pelo Centro de Serviço,Posto Autorizado
+Acordo de ressarcimento - processo em andamento,"Caso do ressarcimento em andamento pelo Call Center. Status não deve ser aplicado sem submissão de acordo, portanto em caso de reclamação do consumidor é necessário submeter o JIRA de atrito com consumidor e usar o status correto de JIRA.",Midea - Callcenter
+Acordo de troca - pendente de execução de troca,Caso com acordo de troca aprovado pendente de coleta do produto usado pelo Centro de Serviço,Posto Autorizado
+Acordo de troca - pendente de remessa do novo produto,"Caso de acordo de troca com pendência de remessa do envio do novo produto ao Centro de Serviço pelo nosso time de Planejamento. Status é interno e existe ordem de serviço status atual, mantenha a Ordem de Serviço nesse mesmo status.",Midea - Planejamento
+Acordo de troca - processo em andamento,"Caso de acordo de troca em andamento pelo Call Center. Status não deve ser aplicado sem submissão de acordo, portanto em caso de reclamação do consumidor é necessário submeter o JIRA de atrito com consumidor e usar o status correto de JIRA.",Midea - Callcenter
+Acordo de troca - produto em trânsito,Caso de acordo de produto foi enviado pelo Call Center/Logística e temos a atualização de trânsito com previsão de entrega.,Midea - Planejamento
+Call Center - aguardando resposta de Aprovação Especial,Caso com submissão de aprovação especial pendente pelo Call Center.,Midea - Callcenter
+Call Center - Aprovação Especial respondida,"Caso com aprovação respondida pelo Call Center, dependendo se o Centro de Serviço seguir com o atendimento.",Midea - Callcenter
+Call Center - negociação de acordo em andamento,"Caso em negociação interna de acordo entre Call Center e consumidor, onde existindo resposta final o acordo poderá ou não ser submetido dentro da Ordem de Serviço. Status não deve ser aplicado sem submissão de acordo, portanto em caso de reclamação do consumidor é necessário submeter o JIRA de atrito consumidor e usar o status correto de JIRA.",Midea - Callcenter
+Consumidor - aguardando confirmação de agendamento,Caso pendente de comunicação/confirmação de agendamento pelo consumidor.,Posto Autorizado
+Consumidor - contato em andamento,Caso pendente de comunicação em andamento com o consumidor sobre algum motivo que deve ser explicado na descrição do status.,Posto Autorizado
+E-Ticket - aguardando entrega do produto pelo Correios,Chamado ainda sem entrega do produto pelos Correios para atendimento de E-ticket.,Midea - Correios
+Jira - aguardando resposta de suporte,"Caso pendente de resposta do Jira, onde o número do Jira deve ser descrito na descrição do status.",Midea - Jira
+Jira - suporte concluído aguardando atuação do Posto Autorizado,"Caso com Jira respondido, onde status é alterado pela Midea Carrier.",Posto Autorizado
+Jurídico - aguardando resposta de suporte,Caso pendente de avaliação ou resposta do time Jurídico da Midea Carrier.,Midea - Juridico
+Jurídico - suporte concluído aguardando atuação do Posto Autorizado,Caso respondido pelo Jurídico após escalada do Centro de Serviço ou por outra área.,Posto Autorizado
+Orçamento - aguardando aprovação do consumidor,Caso pendente de resposta de orçamento por parte do consumidor para Ordens de Serviço fora de garantia.,Posto Autorizado
+Orçamento - aprovação de orçamento para pagamento,"Caso com aprovação de orçamento por parte do consumidor para Ordens de Serviço fora de garantia. A partir da aprovação, o status de atendimento de visita ou reparo deve ser atualizado com o próximo etapa do Centro de Serviço.",Posto Autorizado
+Orçamento - rejeição de orçamento,"Caso com rejeição de orçamento por parte do consumidor para Ordens de Serviço fora de garantia. A partir da reprovação, o status de atendimento de visita ou devolução deve ser atualizado com a próxima etapa do Centro de Serviço.",Posto Autorizado
+Peça - material em designação ao técnico,Caso com material removido do estoque e designado ao técnico para prosseguimento da visita ao cliente ou reparo do produto.,Posto Autorizado
+Peça - material entregue,"Caso com confirmação de entrega de peça no estoque do Centro de Serviço, mas ainda sem designação de material ao técnico para atendimento.",Posto Autorizado
+Peça - pendência de entrega,Caso pendente de entrega de peça. Atualmente o status é manual e deve ser atualizado pelo Centro de Serviço. Posteriormente teremos a atualização automática do status via interface.,Midea - Planejamento
+Suporte Técnico - aguardando resposta de suporte,Caso pendente de solicitação de Suporte Técnico para solução do defeito.,Midea - Suporte tecnico
+Suporte Técnico - suporte concluído aguardando atuação do Posto Autorizado Técnico - reparo/visita em andamento,Caso respondido pelo Suporte Técnico após escalada. Caso com execução de visita no dia atual ou reparo sendo realizado em tempo real.,Posto Autorizado
+Técnico - visita futura confirmada,Caso com visita futura confirmada pelo cliente onde aguardamos a data para alteração ao status “Centro de Serviço – reparo/visita em andamento”.,Posto Autorizado
+Técnico - reparo/visita em andamento,Caso com visita confirmada pelo cliente e com a data para visita,Posto Autorizado
+Triagem - execução em andamento,Caso com execução de triagem do consumidor em andamento para detecção do defeito reclamado.,Posto Autorizado
+Balcão - Aguardando retirada do cliente,Reparo concluído pelo técnico e aguardando retirada por parte do consumidor no atendimento balcão.,Posto Autorizado
+Balcão - Reparo concluído,"Reparo concluído pelo técnico, mas pendente de validação de preenchimento dos dados pelo time administrativo para conclusão final.",Posto Autorizado
+Domicílio - Atendimento realizado,Visita de reparo domiciliar com conclusão de atendimento com produto funcionando.,Posto Autorizado
+Domicílio - Consumidor ausente,"Visita feita, porém, cliente ausente sem possibilidade de acessar o local para atendimento.",Posto Autorizado
+Domicílio - Dificuldade de acesso ao consumidor,"Visita feita, mas sem possibilidade de acessar o local de instalação do produto por falta de ferramentas ou por falta de detalhamento obtido pelo cliente no ato da triagem.",Posto Autorizado
+Domicílio - Orientação ao consumidor,"Visita realizada, porém, produto não apresenta defeito, sendo feita uma orientação de uso ao consumidor.",Posto Autorizado
+Domicílio - Recusa de visita pelo consumidor,"Técnico foi ao local agendado com o consumidor, mas houve recusa de acesso para atendimento por qualquer motivo.",Posto Autorizado
+E-Ticket - Aguardando retirada do Correios para devolução,Reparo concluído pelo técnico com produto embalado e ticket emitido para coleta/envio pelo Correios.,Midea - Correios
+E-Ticket - Reparo concluído,"Reparo concluído pelo técnico para produto recebido pelo Correios, onde temos a pendência de validação administrativa para emissão do ticket de devolução e empacotamento para coleta do Correios.",Posto Autorizado

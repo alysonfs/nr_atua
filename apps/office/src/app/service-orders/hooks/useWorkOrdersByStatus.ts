@@ -40,10 +40,16 @@ export interface WorkOrderListItem {
   providerName: string
 }
 
-/** Filtro aplicado à listagem: status exato XOR tempo mínimo de abertura (dias). */
+/**
+ * Filtro aplicado à listagem: exatamente um dos quatro campos deve ser
+ * informado — status exato, tempo mínimo de abertura (aging, RF-027),
+ * prazo de próximo atendimento (RF-030) ou criticidade (RF-033).
+ */
 export interface WorkOrdersFilter {
   status?: string
   minAgeDays?: number
+  nextAppointmentFilter?: string
+  criticalityFilter?: string
 }
 
 interface WorkOrderListResponse {
@@ -69,7 +75,7 @@ export function useWorkOrdersByStatus(
   page: number,
   pageSize: number,
 ) {
-  const { status, minAgeDays } = filter
+  const { status, minAgeDays, nextAppointmentFilter, criticalityFilter } = filter
   const [orders, setOrders] = useState<WorkOrderListItem[]>([])
   const [totalCount, setTotalCount] = useState(0)
   const [isLoading, setIsLoading] = useState(true)
@@ -81,7 +87,7 @@ export function useWorkOrdersByStatus(
     void Promise.resolve().then(async () => {
       if (isCancelled) return
 
-      if (!tenantId || (!status && !minAgeDays)) {
+      if (!tenantId || (!status && !minAgeDays && !nextAppointmentFilter && !criticalityFilter)) {
         setIsLoading(false)
         setOrders([])
         setTotalCount(0)
@@ -94,7 +100,11 @@ export function useWorkOrdersByStatus(
       try {
         const filterParam = status
           ? `status=${encodeURIComponent(status)}`
-          : `minAgeDays=${minAgeDays}`
+          : minAgeDays
+            ? `minAgeDays=${minAgeDays}`
+            : nextAppointmentFilter
+              ? `nextAppointmentFilter=${encodeURIComponent(nextAppointmentFilter)}`
+              : `criticalityFilter=${encodeURIComponent(criticalityFilter!)}`
         const response = await apiClient.get<WorkOrderListResponse>(
           `/api/tenants/${tenantId}/work-orders?${filterParam}&page=${page}&pageSize=${pageSize}`,
         )
@@ -114,7 +124,7 @@ export function useWorkOrdersByStatus(
     return () => {
       isCancelled = true
     }
-  }, [tenantId, status, minAgeDays, page, pageSize])
+  }, [tenantId, status, minAgeDays, nextAppointmentFilter, criticalityFilter, page, pageSize])
 
   return { orders, totalCount, isLoading, isError }
 }

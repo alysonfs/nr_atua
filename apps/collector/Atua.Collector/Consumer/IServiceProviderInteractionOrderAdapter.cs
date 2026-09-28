@@ -20,27 +20,6 @@ public sealed class IServiceProviderInteractionOrderAdapter : IProviderInteracti
     /// </summary>
     private const string ProviderDateFormat = "yyyy-MM-dd HH:mm:ss";
 
-    /// <summary>
-    /// Campos candidatos a carregar o sintoma relatado pelo consumidor, em ordem de
-    /// prioridade. Nas amostras capturadas até a Fase 6 (QA), <c>symptom</c> e
-    /// <c>symptomDescription</c> vieram vazios e os demais nulos — mantido como lista para
-    /// monitorar qual campo o iService de fato preenche quando o consumidor relata o sintoma.
-    /// </summary>
-    private static readonly string[] SymptomCandidateFields =
-    [
-        "symptom",
-        "symptomDescription",
-        "notes",
-        "note",
-        "remark",
-        "closeDescription",
-        "returnReason",
-        "reassigningReason",
-        "errorMessage",
-        "suggestedSolution",
-        "pendingReason",
-    ];
-
     /// <inheritdoc/>
     public IReadOnlyList<ProviderWorkOrderData> ExtractOrders(BsonArray orders)
     {
@@ -103,7 +82,10 @@ public sealed class IServiceProviderInteractionOrderAdapter : IProviderInteracti
             ProductCode: ExtractString(order, "productCode"),
             ProductModel: ExtractString(order, "productModel"),
             ProductStatus: ExtractString(order, "productStatus"),
-            Symptom: ExtractSymptom(order));
+            Symptom: ExtractString(order, "symptomDescription"),
+            SymptomRaw: ExtractString(order, "symptom"),
+            SubStatus: ExtractString(order, "pendingReason"),
+            NextAppointmentAt: ExtractDate(order, "visitStartTime"));
     }
 
     /// <summary>
@@ -245,21 +227,6 @@ public sealed class IServiceProviderInteractionOrderAdapter : IProviderInteracti
         {
             var code2 = ExtractString(order, "phoneCountryCode2");
             return code2 is not null ? $"{code2}{number2}" : number2;
-        }
-
-        return null;
-    }
-
-    /// <summary>
-    /// Percorre <see cref="SymptomCandidateFields"/> em ordem e retorna o primeiro valor
-    /// string não vazio encontrado — ver comentário em <see cref="SymptomCandidateFields"/>.
-    /// </summary>
-    private static string? ExtractSymptom(BsonDocument order)
-    {
-        foreach (var field in SymptomCandidateFields)
-        {
-            var value = ExtractString(order, field);
-            if (value is not null) return value;
         }
 
         return null;

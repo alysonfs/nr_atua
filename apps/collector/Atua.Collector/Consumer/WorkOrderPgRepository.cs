@@ -48,14 +48,29 @@ public sealed class WorkOrderPgRepository(
 
             foreach (var order in orders)
             {
-                var (workOrderId, previousStatus, isNew) =
+                var (workOrderId, previousStatus, previousSubStatus, previousNextAppointmentAt, isNew) =
                     await UpsertWorkOrderAsync(
                         conn, tx, tenantId, integrationId, order, interactionType, interactionCreatedAt, cancellationToken);
 
-                if (isNew || !string.Equals(previousStatus, order.Status, StringComparison.Ordinal))
+                // RF-031.4/RF-030 (pendência resolvida): o gatilho de work_order_histories
+                // dispara quando Status, SubStatus ou NextAppointmentAt mudarem, não apenas
+                // Status — sob pena de perder o histórico do agendamento/substatus anterior.
+                var statusChanged = !string.Equals(previousStatus, order.Status, StringComparison.Ordinal);
+                var subStatusChanged = !string.Equals(previousSubStatus, order.SubStatus, StringComparison.Ordinal);
+                var nextAppointmentChanged = previousNextAppointmentAt != order.NextAppointmentAt;
+
+                if (isNew || statusChanged || subStatusChanged || nextAppointmentChanged)
                 {
                     await InsertWorkOrderHistoryAsync(conn, tx,
                         workOrderId, interactionId, tenantId, integrationId, order, cancellationToken);
+                }
+
+                if (!WorkOrderOpenStatuses.IsOpen(order.Status) && !WorkOrderTerminalStatuses.IsTerminal(order.Status))
+                {
+                    logger.LogWarning(
+                        "[CONSUMER] Status não classificado (nem em aberto, nem terminal). " +
+                        "TenantId={TenantId} WorkOrderProviderId={WorkOrderProviderId} Status={Status}",
+                        tenantId, order.WorkOrderProviderId, order.Status);
                 }
             }
 
@@ -186,7 +201,7 @@ public sealed class WorkOrderPgRepository(
         "ContactEmail", "ContactPhone", "ContactName",
         "Address", "ZipCode", "CountryName", "StateName", "CityName",
         "ProductBrand", "PdCode", "CategoryId", "ProductCategoryCode", "ProductCode",
-        "ProductModel", "ProductStatus", "Symptom",
+        "ProductModel", "ProductStatus", "Symptom", "SymptomRaw", "SubStatus", "NextAppointmentAt",
     ];
 
     /// <summary>
@@ -219,7 +234,7 @@ public sealed class WorkOrderPgRepository(
             order.ContactEmail, order.ContactPhone, order.ContactName,
             order.Address, order.ZipCode, order.CountryName, order.StateName, order.CityName,
             order.ProductBrand, order.PdCode, order.CategoryId, order.ProductCategoryCode, order.ProductCode,
-            order.ProductModel, order.ProductStatus, order.Symptom,
+            order.ProductModel, order.ProductStatus, order.Symptom, order.SymptomRaw, order.SubStatus, order.NextAppointmentAt,
         ];
 
         for (var i = 0; i < values.Length; i++)
@@ -266,13 +281,16 @@ public sealed class WorkOrderPgRepository(
     }
 
     /// <summary>
-    /// UPSERT em work_orders. Retorna (id, statusAnterior, isNew).
+    /// UPSERT em work_orders. Retorna (id, statusAnterior, subStatusAnterior,
+    /// nextAppointmentAtAnterior, isNew) — os três últimos usados pelo chamador para decidir
+    /// se o gatilho de <c>work_order_histories</c> deve disparar (RF-031.4).
     /// Também decide <c>NeedsDetailFetch</c>/<c>DetailsFetchedAt</c> (RF-026/ADR-031, "Decisão"
     /// item 2): OS nova ou com mudança de status (exceto terminal já enriquecida) precisa de
     /// detalhe; quando a própria interação processada é um <c>detail_query</c> bem-sucedido,
     /// marca a pendência como atendida incondicionalmente.
     /// </summary>
-    private static async Task<(Guid WorkOrderId, string? PreviousStatus, bool IsNew)> UpsertWorkOrderAsync(
+    private static async Task<(Guid WorkOrderId, string? PreviousStatus, string? PreviousSubStatus,
+        DateTimeOffset? PreviousNextAppointmentAt, bool IsNew)> UpsertWorkOrderAsync(
         NpgsqlConnection conn,
         NpgsqlTransaction tx,
         Guid tenantId,
@@ -290,7 +308,7 @@ public sealed class WorkOrderPgRepository(
         await using var selectCmd = conn.CreateCommand();
         selectCmd.Transaction = tx;
         selectCmd.CommandText =
-            "SELECT \"Id\", \"Status\", \"NeedsDetailFetch\", \"DetailsFetchedAt\" FROM work_orders " +
+            "SELECT \"Id\", \"Status\", \"NeedsDetailFetch\", \"DetailsFetchedAt\", \"SubStatus\", \"NextAppointmentAt\" FROM work_orders " +
             "WHERE \"TenantId\" = @tid AND \"WorkOrderProviderId\" = @pid";
         selectCmd.Parameters.AddWithValue("@tid", tenantId);
         selectCmd.Parameters.AddWithValue("@pid", workOrderProviderId);
@@ -305,6 +323,10 @@ public sealed class WorkOrderPgRepository(
             DateTimeOffset? existingDetailsFetchedAt = await reader.IsDBNullAsync(3, cancellationToken)
                 ? null
                 : reader.GetFieldValue<DateTimeOffset>(3);
+            var existingSubStatus = await reader.IsDBNullAsync(4, cancellationToken) ? null : reader.GetString(4);
+            var existingNextAppointmentAt = await reader.IsDBNullAsync(5, cancellationToken)
+                ? null
+                : reader.GetFieldValue<DateTimeOffset?>(5);
             await reader.CloseAsync();
 
             var statusChanged = !string.Equals(existingStatus, newStatus, StringComparison.Ordinal);
@@ -344,7 +366,7 @@ public sealed class WorkOrderPgRepository(
             AddDetailParameters(updateCmd, order);
             await updateCmd.ExecuteNonQueryAsync(cancellationToken);
 
-            return (existingId, existingStatus, false);
+            return (existingId, existingStatus, existingSubStatus, existingNextAppointmentAt, false);
         }
 
         await reader.CloseAsync();
@@ -374,7 +396,7 @@ public sealed class WorkOrderPgRepository(
         AddDetailParameters(insertCmd, order);
         await insertCmd.ExecuteNonQueryAsync(cancellationToken);
 
-        return (newId, null, true);
+        return (newId, null, null, null, true);
     }
 
     /// <summary>
