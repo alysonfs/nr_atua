@@ -98,4 +98,43 @@ public class IServiceProviderInteractionOrderAdapterTests
         Assert.Equal("S****S", data.CustomerName);
         Assert.Equal("su****@hotmail.com", data.ContactEmail);
     }
+
+    [Fact]
+    public void ComPendingReasonPreenchido_UsaPendingReason()
+    {
+        var order = MaskedListOrder();
+        order["pendingReason"] = "Peça - pendência de entrega";
+        order["closeDescription"] = "Parts - delivery pending";
+
+        var result = _adapter.ExtractOrders([order]);
+
+        Assert.Equal("Peça - pendência de entrega", Assert.Single(result).SubStatus);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    public void SemPendingReason_CaiParaCloseDescription(string? pendingReason)
+    {
+        // Confirmado em produção (2026-09-28): pendingReason nunca vem preenchido para este
+        // tenant (bug/instabilidade do iService); o dado equivalente é observado em
+        // closeDescription.
+        var order = MaskedListOrder();
+        order["pendingReason"] = pendingReason is null ? BsonNull.Value : pendingReason;
+        order["closeDescription"] = "Technician - visit confirmed";
+
+        var result = _adapter.ExtractOrders([order]);
+
+        Assert.Equal("Technician - visit confirmed", Assert.Single(result).SubStatus);
+    }
+
+    [Fact]
+    public void SemPendingReasonNemCloseDescription_SubStatusFicaNulo()
+    {
+        var order = MaskedListOrder();
+
+        var result = _adapter.ExtractOrders([order]);
+
+        Assert.Null(Assert.Single(result).SubStatus);
+    }
 }

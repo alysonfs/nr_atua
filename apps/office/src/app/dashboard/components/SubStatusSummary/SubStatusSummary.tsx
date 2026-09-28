@@ -1,7 +1,7 @@
 import { useTranslation } from 'react-i18next'
 import { Card } from '../../../../shared/components/ui/Card'
 import { useWorkOrderSubStatusSummary } from '../../hooks/useWorkOrderSubStatusSummary'
-import { SubStatusSummaryChart } from './SubStatusSummaryChart'
+import { NO_SUBSTATUS_LABEL, SubStatusSummaryChart } from './SubStatusSummaryChart'
 
 interface SubStatusSummaryProps {
   /** Tenant ativo do usuário (ver useMyTenants().defaultTenantId). */
@@ -12,10 +12,19 @@ interface SubStatusSummaryProps {
  * Seção "OS por substatus" do Dashboard (RF-032): card com um gráfico de
  * barras do total de OS Em Aberto agrupado por substatus, colorido por
  * responsável (RF-031.2).
+ *
+ * O grupo "Sem substatus" (OS sem substatus mapeado) não entra no gráfico
+ * — misturado às barras com substatus reais ele não indica nenhuma ação
+ * possível — e é exibido à parte como uma nota informativa.
  */
 export function SubStatusSummary({ tenantId }: SubStatusSummaryProps) {
   const { t } = useTranslation()
   const { groups, isLoading, isError } = useWorkOrderSubStatusSummary(tenantId)
+
+  const mappedGroups = groups.filter((group) => group.subStatus !== NO_SUBSTATUS_LABEL)
+  const unmappedTotal = groups
+    .filter((group) => group.subStatus === NO_SUBSTATUS_LABEL)
+    .reduce((sum, group) => sum + group.total, 0)
 
   return (
     <section aria-labelledby="substatus-summary-heading" className="space-y-3">
@@ -42,11 +51,21 @@ export function SubStatusSummary({ tenantId }: SubStatusSummaryProps) {
       )}
 
       {!isLoading && !isError && groups.length > 0 && (
-        <Card>
-          <Card.Body>
-            <SubStatusSummaryChart groups={groups} />
-          </Card.Body>
-        </Card>
+        <>
+          {mappedGroups.length > 0 && (
+            <Card>
+              <Card.Body>
+                <SubStatusSummaryChart groups={mappedGroups} />
+              </Card.Body>
+            </Card>
+          )}
+
+          {unmappedTotal > 0 && (
+            <p className="rounded-md border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-500">
+              {t('dashboard.subStatus.unmappedNote', { count: unmappedTotal })}
+            </p>
+          )}
+        </>
       )}
     </section>
   )

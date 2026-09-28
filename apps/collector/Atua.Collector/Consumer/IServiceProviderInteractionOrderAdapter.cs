@@ -84,8 +84,23 @@ public sealed class IServiceProviderInteractionOrderAdapter : IProviderInteracti
             ProductStatus: ExtractString(order, "productStatus"),
             Symptom: ExtractString(order, "symptomDescription"),
             SymptomRaw: ExtractString(order, "symptom"),
-            SubStatus: ExtractString(order, "pendingReason"),
+            SubStatus: ExtractSubStatus(order),
             NextAppointmentAt: ExtractDate(order, "visitStartTime"));
+    }
+
+    /// <summary>
+    /// Substatus da OS (RF-031). Confirmado em produção (2026-09-28) que <c>pendingReason</c>
+    /// nunca vem preenchido para este tenant (sempre null/""), possível instabilidade/bug
+    /// temporário do iService; o valor equivalente é observado em <c>closeDescription</c>
+    /// (em inglês, apesar do nome, também aparece em OS não concluídas). Fallback para
+    /// closeDescription só quando pendingReason estiver ausente/vazio, para não perder o
+    /// dado caso o iService volte a preencher pendingReason normalmente. Tradução do texto
+    /// para pt-BR fica a cargo do i18n do Office, não é feita na persistência.
+    /// </summary>
+    private static string? ExtractSubStatus(BsonDocument order)
+    {
+        var pendingReason = ExtractString(order, "pendingReason");
+        return !string.IsNullOrWhiteSpace(pendingReason) ? pendingReason : ExtractString(order, "closeDescription");
     }
 
     /// <summary>
