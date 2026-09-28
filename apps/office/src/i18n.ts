@@ -153,6 +153,10 @@ const ptBR = {
     subtitle: 'Visão geral das ordens de serviço da sua operação.',
     loadingCompany: 'Carregando dados da sua empresa...',
     companyError: 'Não foi possível carregar os dados da sua empresa. Tente novamente mais tarde.',
+    tabs: {
+      overview: 'Visão geral',
+      details: 'Detalhamento',
+    },
     summaryTitle: 'Resumo por status',
     summaryLoading: 'Carregando resumo por status...',
     summaryError: 'Não foi possível carregar o resumo por status. Tente novamente mais tarde.',
@@ -189,6 +193,7 @@ const ptBR = {
       loading: 'Carregando gráfico de substatus...',
       error: 'Não foi possível carregar o gráfico de substatus. Tente novamente mais tarde.',
       empty: 'Nenhuma OS em aberto com substatus registrado.',
+      unmappedNote: '{{count}} OS em aberto ainda sem substatus mapeado.',
       responsibles: {
         PostoAutorizado: 'Posto Autorizado',
         MideaCallcenter: 'Midea - Callcenter',
@@ -198,6 +203,21 @@ const ptBR = {
         MideaJuridico: 'Midea - Jurídico',
         MideaSuporteTecnico: 'Midea - Suporte Técnico',
         NaoMapeado: 'Não mapeado',
+      },
+      // Confirmado em produção (2026-09-28): o iService não preenche `pendingReason` para
+      // este tenant; o Collector usa `closeDescription` (em inglês) como fallback (ver
+      // IServiceProviderInteractionOrderAdapter.ExtractSubStatus). Tradução para os valores
+      // do catálogo RF-031.2 feita aqui, não na persistência — valores sem correspondência
+      // confirmada com o catálogo aparecem sem tradução (fallback para o texto original).
+      values: {
+        'Parts - delivery pending': 'Peça - pendência de entrega',
+        'Technician - visit confirmed': 'Técnico - visita futura confirmada',
+        'Customer - waiting schedule confirmation': 'Consumidor - aguardando confirmação de agendamento',
+        'Customer - on going contact': 'Consumidor - contato em andamento',
+        'Call Center - on going agreement negotiation': 'Call Center - negociação de acordo em andamento',
+        'Call Center - special Approval answered to ASP': 'Call Center - Aprovação Especial respondida',
+        'Exchange - product in transit': 'Acordo de troca - produto em trânsito',
+        'Jira - waiting answer': 'Jira - aguardando resposta de suporte',
       },
     },
     statuses: {

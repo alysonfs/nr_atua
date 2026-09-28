@@ -22,6 +22,9 @@ const RESPONSIBLE_COLORS: Record<string, string> = {
 
 const FALLBACK_COLOR = RESPONSIBLE_COLORS.NaoMapeado
 
+/** Rótulo usado pelo backend para OS sem substatus mapeado (ver WorkOrderSubStatusSummaryQueryHandler.NoSubStatusLabel). */
+export const NO_SUBSTATUS_LABEL = 'Sem substatus'
+
 /** Cor associada a um responsável, com fallback para responsáveis desconhecidos. */
 function colorForResponsible(responsible: string): string {
   return RESPONSIBLE_COLORS[responsible] ?? FALLBACK_COLOR
@@ -41,9 +44,15 @@ interface SubStatusSummaryChartProps {
 export function SubStatusSummaryChart({ groups }: SubStatusSummaryChartProps) {
   const { t } = useTranslation()
 
-  const sorted = [...groups].sort((a, b) => b.total - a.total)
+  const sorted = groups
+    .filter((group) => group.subStatus !== NO_SUBSTATUS_LABEL)
+    .sort((a, b) => b.total - a.total)
   const colors = sorted.map((group) => colorForResponsible(group.responsible))
   const responsiblesInUse = Array.from(new Set(sorted.map((group) => group.responsible)))
+  // Substatus vindo do provedor em inglês (fallback do Collector, ver
+  // IServiceProviderInteractionOrderAdapter.ExtractSubStatus) é traduzido aqui; sem
+  // correspondência confirmada, mantém o texto original (ver dashboard.subStatus.values).
+  const translatedLabel = (subStatus: string) => t(`dashboard.subStatus.values.${subStatus}`, subStatus)
 
   const options: ApexOptions = {
     chart: { type: 'bar', toolbar: { show: false }, fontFamily: 'var(--font-sans)' },
@@ -60,7 +69,7 @@ export function SubStatusSummaryChart({ groups }: SubStatusSummaryChartProps) {
     legend: { show: false },
     grid: { borderColor: '#e2e8f0', strokeDashArray: 4 },
     xaxis: {
-      categories: sorted.map((group) => group.subStatus),
+      categories: sorted.map((group) => translatedLabel(group.subStatus)),
       axisBorder: { show: false },
       axisTicks: { show: false },
       labels: { style: { fontSize: '11px' } },
