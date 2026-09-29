@@ -193,6 +193,7 @@ const ptBR = {
       loading: 'Carregando gráfico de substatus...',
       error: 'Não foi possível carregar o gráfico de substatus. Tente novamente mais tarde.',
       empty: 'Nenhuma OS em aberto com substatus registrado.',
+      totalNote: '{{count}} OS em aberto representadas no gráfico.',
       unmappedNote: '{{count}} OS em aberto ainda sem substatus mapeado.',
       responsibles: {
         PostoAutorizado: 'Posto Autorizado',
@@ -206,17 +207,42 @@ const ptBR = {
       },
       // Confirmado em produção (2026-09-28): o iService não preenche `pendingReason` para
       // este tenant; o Collector usa `closeDescription` (em inglês) como fallback (ver
-      // IServiceProviderInteractionOrderAdapter.ExtractSubStatus). Tradução para os valores
-      // do catálogo RF-031.2 feita aqui, não na persistência — valores sem correspondência
-      // confirmada com o catálogo aparecem sem tradução (fallback para o texto original).
+      // IServiceProviderInteractionOrderAdapter.ExtractSubStatus). O backend agrupa pela
+      // categoria antes de ":" quando presente (ver WorkOrderSubStatusCatalog.NormalizeCategory),
+      // descartando o texto livre que variava por OS — por isso as chaves abaixo são só a
+      // categoria, sem o texto após ":". Tradução para os valores do catálogo RF-031.2 feita
+      // aqui, não na persistência — valores sem correspondência confirmada com o catálogo
+      // aparecem sem tradução (fallback para o texto original).
       values: {
         'Parts - delivery pending': 'Peça - pendência de entrega',
+        'Parts - material delivered': 'Peça - material entregue',
         'Technician - visit confirmed': 'Técnico - visita futura confirmada',
+        'Technician - on going repair/visit': 'Técnico - reparo/visita em andamento',
         'Customer - waiting schedule confirmation': 'Consumidor - aguardando confirmação de agendamento',
         'Customer - on going contact': 'Consumidor - contato em andamento',
+        'Customer request': 'Solicitação do consumidor',
         'Call Center - on going agreement negotiation': 'Call Center - negociação de acordo em andamento',
         'Call Center - special Approval answered to ASP': 'Call Center - Aprovação Especial respondida',
+        'Exchange - on going process': 'Troca - processo em andamento',
         'Exchange - product in transit': 'Acordo de troca - produto em trânsito',
+        'Exchange - new product order shipment pending': 'Troca - pendente de remessa do novo produto',
+        'Exchange cancelled': 'Troca cancelada',
+        'Exchange completed': 'Troca concluída',
+        'exchange or refund': 'Troca ou ressarcimento',
+        'Refund - product collection pending': 'Ressarcimento - pendente de coleta do produto',
+        'Refund - on going process': 'Ressarcimento - processo em andamento',
+        'Refund cancelled': 'Ressarcimento cancelado',
+        'Refund completed': 'Ressarcimento concluído',
+        'Triage - execution on going': 'Triagem - execução em andamento',
+        'Out of coverage': 'Fora da área de cobertura',
+        'Creation error': 'Erro de criação da OS',
+        'Duplicated request': 'Solicitação duplicada',
+        'No contact from customer': 'Sem contato com o consumidor',
+        'No defect found from triage': 'Nenhum defeito identificado na triagem',
+        'Installation cancelled due to external issue': 'Instalação cancelada por problema externo',
+        'Installation Finished': 'Instalação concluída',
+        'service finished': 'Atendimento concluído',
+        'Order completed': 'OS concluída',
         'Jira - waiting answer': 'Jira - aguardando resposta de suporte',
       },
     },

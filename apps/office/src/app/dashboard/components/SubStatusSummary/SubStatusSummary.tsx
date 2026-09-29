@@ -22,6 +22,7 @@ export function SubStatusSummary({ tenantId }: SubStatusSummaryProps) {
   const { groups, isLoading, isError } = useWorkOrderSubStatusSummary(tenantId)
 
   const mappedGroups = groups.filter((group) => group.subStatus !== NO_SUBSTATUS_LABEL)
+  const mappedTotal = mappedGroups.reduce((sum, group) => sum + group.total, 0)
   const unmappedTotal = groups
     .filter((group) => group.subStatus === NO_SUBSTATUS_LABEL)
     .reduce((sum, group) => sum + group.total, 0)
@@ -55,12 +56,16 @@ export function SubStatusSummary({ tenantId }: SubStatusSummaryProps) {
           {mappedGroups.length > 0 && (
             <Card>
               <Card.Body>
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-1 text-xs text-slate-500">
+                  <span>{t('dashboard.subStatus.totalNote', { count: mappedTotal })}</span>
+                  {unmappedTotal > 0 && <span>{t('dashboard.subStatus.unmappedNote', { count: unmappedTotal })}</span>}
+                </div>
                 <SubStatusSummaryChart groups={mappedGroups} />
               </Card.Body>
             </Card>
           )}
 
-          {unmappedTotal > 0 && (
+          {mappedGroups.length === 0 && unmappedTotal > 0 && (
             <p className="rounded-md border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-500">
               {t('dashboard.subStatus.unmappedNote', { count: unmappedTotal })}
             </p>

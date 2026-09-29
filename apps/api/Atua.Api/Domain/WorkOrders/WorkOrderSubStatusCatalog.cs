@@ -46,6 +46,42 @@ public static class WorkOrderSubStatusCatalog
             ["Domicílio - Recusa de visita pelo consumidor"] = EWorkOrderSubStatusResponsible.PostoAutorizado,
             ["E-Ticket - Aguardando retirada do Correios para devolução"] = EWorkOrderSubStatusResponsible.MideaCorreios,
             ["E-Ticket - Reparo concluído"] = EWorkOrderSubStatusResponsible.PostoAutorizado,
+
+            // Categorias do fallback em inglês (closeDescription, ver
+            // IServiceProviderInteractionOrderAdapter.ExtractSubStatus). Confirmado em
+            // produção (2026-09-28) que muitas vêm no formato "Categoria:texto livre" — o
+            // texto livre é descartado por NormalizeCategory antes de chegar aqui, por isso
+            // as chaves abaixo são só a categoria fixa, sem o texto após ":".
+            ["Customer request"] = EWorkOrderSubStatusResponsible.PostoAutorizado,
+            ["Creation error"] = EWorkOrderSubStatusResponsible.MideaCallcenter,
+            ["Duplicated request"] = EWorkOrderSubStatusResponsible.PostoAutorizado,
+            ["No contact from customer"] = EWorkOrderSubStatusResponsible.PostoAutorizado,
+            ["Out of coverage"] = EWorkOrderSubStatusResponsible.PostoAutorizado,
+            ["No defect found from triage"] = EWorkOrderSubStatusResponsible.PostoAutorizado,
+            ["Exchange - on going process"] = EWorkOrderSubStatusResponsible.MideaCallcenter,
+            ["Exchange - product in transit"] = EWorkOrderSubStatusResponsible.MideaPlanejamento,
+            ["Exchange - new product order shipment pending"] = EWorkOrderSubStatusResponsible.MideaPlanejamento,
+            ["Exchange cancelled"] = EWorkOrderSubStatusResponsible.MideaCallcenter,
+            ["Exchange completed"] = EWorkOrderSubStatusResponsible.MideaCallcenter,
+            ["exchange or refund"] = EWorkOrderSubStatusResponsible.MideaCallcenter,
+            ["Refund - product collection pending"] = EWorkOrderSubStatusResponsible.PostoAutorizado,
+            ["Refund - on going process"] = EWorkOrderSubStatusResponsible.MideaCallcenter,
+            ["Refund cancelled"] = EWorkOrderSubStatusResponsible.MideaCallcenter,
+            ["Refund completed"] = EWorkOrderSubStatusResponsible.MideaCallcenter,
+            ["Parts - delivery pending"] = EWorkOrderSubStatusResponsible.MideaPlanejamento,
+            ["Parts - material delivered"] = EWorkOrderSubStatusResponsible.PostoAutorizado,
+            ["Triage - execution on going"] = EWorkOrderSubStatusResponsible.PostoAutorizado,
+            ["Technician - on going repair/visit"] = EWorkOrderSubStatusResponsible.PostoAutorizado,
+            ["Technician - visit confirmed"] = EWorkOrderSubStatusResponsible.PostoAutorizado,
+            ["Installation cancelled due to external issue"] = EWorkOrderSubStatusResponsible.PostoAutorizado,
+            ["Installation Finished"] = EWorkOrderSubStatusResponsible.PostoAutorizado,
+            ["service finished"] = EWorkOrderSubStatusResponsible.PostoAutorizado,
+            ["Order completed"] = EWorkOrderSubStatusResponsible.PostoAutorizado,
+            ["Customer - waiting schedule confirmation"] = EWorkOrderSubStatusResponsible.PostoAutorizado,
+            ["Customer - on going contact"] = EWorkOrderSubStatusResponsible.PostoAutorizado,
+            ["Call Center - on going agreement negotiation"] = EWorkOrderSubStatusResponsible.MideaCallcenter,
+            ["Call Center - special Approval answered to ASP"] = EWorkOrderSubStatusResponsible.MideaCallcenter,
+            ["Jira - waiting answer"] = EWorkOrderSubStatusResponsible.MideaJira,
         };
 
     public static EWorkOrderSubStatusResponsible Resolve(string? subStatus) =>
@@ -54,4 +90,18 @@ public static class WorkOrderSubStatusCatalog
             : EWorkOrderSubStatusResponsible.NaoMapeado;
 
     public static bool IsKnown(string subStatus) => Responsibles.ContainsKey(subStatus);
+
+    /// <summary>
+    /// Reduz o substatus bruto à sua categoria estável para agrupar/resolver responsável.
+    /// O fallback em inglês (closeDescription) costuma vir como "Categoria:texto livre"
+    /// (ex.: "Customer request:Cliente não deseja..."), onde o texto livre é único por OS —
+    /// sem essa normalização cada OS viraria seu próprio grupo no gráfico (RF-032). Valores
+    /// sem ":" (pendingReason em pt-BR, ou categorias fixas do closeDescription como
+    /// "Exchange - on going process") voltam inalterados.
+    /// </summary>
+    public static string NormalizeCategory(string subStatus)
+    {
+        var colonIndex = subStatus.IndexOf(':');
+        return colonIndex > 0 ? subStatus[..colonIndex].Trim() : subStatus.Trim();
+    }
 }

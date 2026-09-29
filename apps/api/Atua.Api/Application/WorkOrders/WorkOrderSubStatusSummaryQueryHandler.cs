@@ -19,17 +19,24 @@ public sealed class WorkOrderSubStatusSummaryQueryHandler(AtuaDbContext dbContex
     {
         var openStatuses = WorkOrderOpenStatuses.Values;
 
-        var groups = await dbContext.WorkOrders.AsNoTracking()
+        var rawGroups = await dbContext.WorkOrders.AsNoTracking()
             .Where(workOrder => workOrder.TenantId == tenantId && openStatuses.Contains(workOrder.Status))
             .GroupBy(workOrder => workOrder.SubStatus)
             .Select(group => new { SubStatus = group.Key, Total = group.Count() })
             .ToListAsync(cancellationToken);
 
-        var result = groups
-            .Select(group => new WorkOrderSubStatusCount(
-                group.SubStatus ?? NoSubStatusLabel,
-                WorkOrderSubStatusCatalog.Resolve(group.SubStatus),
-                group.Total))
+        // Reagrupa em memória por categoria normalizada (ver
+        // WorkOrderSubStatusCatalog.NormalizeCategory): o fallback em inglês
+        // (closeDescription) traz texto livre único por OS junto da categoria, que o SQL
+        // GroupBy acima ainda não separou.
+        var result = rawGroups
+            .GroupBy(group => group.SubStatus is null
+                ? NoSubStatusLabel
+                : WorkOrderSubStatusCatalog.NormalizeCategory(group.SubStatus))
+            .Select(categoryGroup => new WorkOrderSubStatusCount(
+                categoryGroup.Key,
+                WorkOrderSubStatusCatalog.Resolve(categoryGroup.Key),
+                categoryGroup.Sum(group => group.Total)))
             .ToList();
 
         return new WorkOrderSubStatusSummaryResult(result);
