@@ -4,6 +4,8 @@
 
 Definir como o `orchestrator` deve selecionar modelos de IA ao acionar subagentes e como gerenciar compactação de contexto em sessões longas.
 
+> Regras de economia de token (orçamento default, `reasoning_effort`, resultado resumido, proibições de contexto) estão em [token-economy.md](./token-economy.md) e complementam este protocolo. Formato de mensagens: [communication.md](./communication.md); estados: [workflow.md](./workflow.md).
+
 ## 2. Princípio fundamental
 
 O campo `model:` no frontmatter de `.github/agents/*.agent.md` declara apenas a INTENÇÃO do agente.
@@ -45,6 +47,8 @@ Use modelo econômico para tarefas em que o defeito é detectado facilmente na r
 ## 4. Seleção de modelo por agente
 
 Recomendação de custo-benefício por agente (válido em 30/08/2026; pode variar conforme modelos evoluem):
+
+Além do modelo, toda delegação DEVE informar `reasoning_effort` (`low`, `medium` ou `high`), conforme o mapa de [token-economy.md §3](./token-economy.md). Na dúvida, usar o menor nível que atenda à tarefa; modelo econômico usa `low` por padrão.
 
 ### 4.1. Agentes com modelo forte
 
@@ -99,6 +103,7 @@ Ao delegar, o `orchestrator` deve sempre indicar explicitamente o modelo:
 Tipo: WORK_REQUEST
 Tarefa: <tarefa>
 Modelo: <modelo-forte | modelo-econômico>
+Reasoning-effort: <low | medium | high>
 Objetivo: <objetivo>
 ...
 ```
@@ -109,6 +114,7 @@ Exemplo:
 Tipo: WORK_REQUEST
 Tarefa: Implementar autenticação OAuth.
 Modelo: modelo-forte
+Reasoning-effort: high
 Objetivo: Permitir login via Google.
 ...
 ```
@@ -119,6 +125,7 @@ Outro exemplo:
 Tipo: WORK_REQUEST
 Tarefa: Documentar API de autenticação.
 Modelo: modelo-econômico
+Reasoning-effort: low
 Objetivo: Descrever endpoints, payloads e respostas.
 ...
 ```
@@ -149,6 +156,8 @@ O `orchestrator` NÃO deve executar leitura extensa de:
 - logs de build;
 - saídas de comando;
 - relatórios grandes.
+
+Limite explícito: o `orchestrator` só pode ler diretamente até **50 linhas** por arquivo/saída; acima disso, deve delegar.
 
 Esse trabalho vai para o subagente responsável, que:
 
@@ -316,6 +325,8 @@ Antes de delegar, o `orchestrator` deve considerar:
 - [ ] Essa informação está em documentação viva? Sim → citar, não reler.
 - [ ] Essa decisão já foi tomada? Sim → reler a decisão, não rediscutir.
 - [ ] Preciso de informação do usuário? Sim → perguntar antes de delegar.
+- [ ] A delegação informa `Modelo:` e `Reasoning-effort:`? Não → completar antes de enviar.
+- [ ] O orçamento de tool calls respeita o default de [token-economy.md §5.1](./token-economy.md) (4; leitura/parsing 3; exploratória até 8 com justificativa)?
 
 ## 10. Regra final
 
