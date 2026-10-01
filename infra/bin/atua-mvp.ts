@@ -39,10 +39,20 @@ const dataStack = new AtuaDataStack(app, 'AtuaDataStack', {
   },
 });
 
+// Recomendação 1 de corte de custo (Cost Explorer, set/2026): permite rodar
+// o Collector na mesma instância da API (uma única t3.micro) em vez de duas.
+// Default false — preserva a topologia atual de duas instâncias. Ativação
+// explícita via contexto CDK: `-c collocateCollector=true` (nunca por
+// alteração silenciosa deste arquivo). Ver infra/lib/atua-compute-stack.ts e
+// docs/architecture/aws-ambiente-mvp.md.
+const collocateCollector = app.node.tryGetContext('collocateCollector') === 'true' || app.node.tryGetContext('collocateCollector') === true;
+
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 const computeStack = new AtuaComputeStack(app, 'AtuaComputeStack', {
   env,
-  description: 'ATUA MVP - Compute (API Master). EFÊMERO: destruído/recriado no ciclo down/up. Sem Collector nesta leva.',
+  description: collocateCollector
+    ? 'ATUA MVP - Compute (API Master + Collector colocados na mesma instância t3.micro). EFÊMERO: destruído/recriado no ciclo down/up.'
+    : 'ATUA MVP - Compute (API Master + Collector em instâncias separadas). EFÊMERO: destruído/recriado no ciclo down/up.',
   vpc: networkStack.vpc,
   sgApi: networkStack.sgApi,
   sgCollector: networkStack.sgCollector,
@@ -52,6 +62,7 @@ const computeStack = new AtuaComputeStack(app, 'AtuaComputeStack', {
   appSecret: dataStack.appSecret,
   keyPair: networkStack.keyPair,
   credentialCipherKey: dataStack.credentialCipherKey,
+  collocateCollector,
   tags: {
     Project: 'atua',
     Environment: 'dev-mvp',

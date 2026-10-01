@@ -160,6 +160,86 @@ privadas são isoladas, sem saída para a internet).
 
 ---
 
+## 4.1 Recomendação de corte de custo — topologia colocada (`collocateCollector`)
+
+**Status: preparado no CDK, NÃO aplicado em produção.** Requer aprovação
+explícita antes de `cdk deploy`/`make up` (ver docs/architecture/aws-ambiente-mvp.md).
+
+Análise do Cost Explorer (set/2026, ~US$ 2,50/dia com tudo ligado) e o
+período 12–16/09 (ambiente rodou com apenas 1 instância) mostraram que o
+Collector-base pode rodar **na mesma instância `atua-api-master`** em vez
+de uma segunda t3.micro dedicada (`atua-collector-base`). Economia
+estimada: **~US$ 17-18/mês** (EC2 ~US$ 12,10 + IP público ~US$ 3,60 + EBS
+~US$ 2,00), além de eliminar por completo o excedente de Free Tier descrito
+acima (⚠️ Consumo dobrado).
+
+`AtuaComputeStack` agora aceita a prop `collocateCollector` (default
+`false`, preserva a topologia atual de duas instâncias). Para ativar:
+
+```bash
+cd infra
+# Dry-run — apenas gera o template, NÃO aplica nada na AWS:
+pnpm --filter @atua/infra exec cdk synth AtuaComputeStack -c collocateCollector=true
+
+# Deploy real (SOMENTE após validação e aprovação explícita — troca de
+# topologia exige destruir e recriar a AtuaComputeStack):
+pnpm --filter @atua/infra exec cdk deploy AtuaComputeStack -c collocateCollector=true --require-approval never
+```
+
+O que muda quando `collocateCollector=true`:
+
+- **Uma única instância** `atua-api-master` (t3.micro) recebe os dois
+  Security Groups (`sgApi` **e** `sgCollector` anexados via
+  `addSecurityGroup`) e a `apiRole` (que já lê os 3 secrets — RDS, Mongo e
+  App — e o bucket de releases, portanto já cobre o que o Collector
+  precisa; trade-off aceito: nessa topologia o processo do Collector roda
+  numa instância cuja role também tem acesso a KMS/`atua/app-secrets`, que
+  ele não usa — ver `infra/lib/atua-compute-stack.ts`).
+- O `user-data` combinado instala runtime .NET uma única vez
+  (`aspnetcore-runtime-10.0` cobre o runtime base exigido pelo Worker),
+  cria um **swapfile de 1GiB** (rede de segurança contra OOM-kill, já que
+  API + Worker + Chromium headless dividem os mesmos 1GiB de RAM da
+  t3.micro) e sobe os dois serviços systemd (`atua-api` e
+  `atua-collector`) lado a lado.
+- `CollectorWorker__ApiBaseUrl` passa a ser `http://127.0.0.1` (mesma
+  instância), em vez do IP privado de uma segunda instância.
+- Os outputs `CollectorInstanceId`/`CollectorPublicIp` passam a apontar
+  para a **mesma** instância da API — os scripts de
+  `.github/skills/atua-deploy` (`redeploy-live.sh collector`,
+  `tail-logs.sh collector`) continuam funcionando sem alteração, pois
+  resolvem o IP via esses outputs.
+- Novo output `ComputeTopology` indica qual topologia está ativa no
+  template sintetizado/deployado.
+
+⚠️ **Risco de memória não validado empiricamente**: 1GiB de RAM física
+dividido entre ASP.NET Core, o Worker .NET e o Chromium headless do
+Playwright é uma margem apertada. O swapfile mitiga picos transitórios,
+mas **não substitui validação real pós-rollout**. Antes de considerar a
+topologia colocada estável, valide:
+
+1. Memória livre (`free -h`) em repouso e durante um ciclo de coleta
+   (`make collector-trigger-cycle`);
+2. Que o ciclo de coleta completa sem o Worker ser OOM-killed
+   (`sudo journalctl -u atua-collector` sem mensagens de kill/restart
+   inesperado);
+3. Que a API continua respondendo com latência normal durante uma coleta
+   ativa (Chromium consumindo CPU/memória).
+
+Se a validação apontar pressão de memória excessiva, os próximos ajustes
+recomendados (não aplicados automaticamente) são limites `MemoryMax=`
+por serviço systemd, calibrados com os dados reais de uso — não definidos
+a priori neste PR por falta de medição empírica.
+
+**Rollback**: a topologia é definida inteiramente por uma prop do CDK
+(`collocateCollector`). Reverter é remover o `-c collocateCollector=true`
+(ou setar `=false`) e rodar `cdk deploy AtuaComputeStack` novamente — a
+`AtuaComputeStack` é destruída/recriada no ciclo normal `make down`/`make
+up`, então a troca de topologia é apenas mais uma recriação dessa stack
+efêmera (sem impacto em `AtuaNetworkStack`/`AtuaDataStack`, que são
+persistentes e não são tocadas por essa prop).
+
+---
+
 ## 5. Dependência de arquitetura de aplicação (confirmada)
 
 A API Master é assumida como **stateless**: sessão via JWT persistida no
@@ -223,11 +303,75 @@ A API escuta em `http://0.0.0.0:80` (porta 80 liberada no Security Group `sgApi`
 
 ### Collector (atua-collector-base)
 
-A instância `atua-collector-base` tem um `user-data` **absolutamente
-mínimo**: apenas grava uma linha de log confirmando o boot
-(`/var/log/atua-collector-boot.log`). Nenhum pacote, script, cron ou
-dependência de scraping é instalado. Sua IAM role (`atua-collector-ec2-role`)
-não tem nenhuma policy anexada — sem acesso a secrets, S3 ou RDS.
+> **Nota de atualização (corte de custo, set/2026):** a descrição abaixo
+> refere-se à topologia PADRÃO (duas instâncias). Para a topologia
+> alternativa de instância única, ver §4.1 (`collocateCollector`).
+
+A instância `atua-collector-base` roda o Agente Coletor real
+(RF-009/016/017, ADR-023): Worker .NET com Microsoft.Playwright
+(Chromium headless) e consumer de Change Streams do MongoDB. Seu
+`user-data` instala o runtime .NET, as bibliotecas do Chromium headless,
+lê os secrets de Mongo/RDS, escreve `/etc/atua-collector.env`, instala e
+habilita a unit systemd `atua-collector.service` (fonte de verdade em
+`infra/systemd/atua-collector.service`), sincroniza
+`s3://atua-<account-id>-releases/collector-latest/` para
+`/opt/atua-collector`, instala os browsers do Playwright e **inicia o
+serviço somente se o artefato (`Atua.Collector.dll`) estiver presente**.
+Sua IAM role (`atua-collector-ec2-role`) lê apenas os secrets de
+Mongo/RDS e o bucket de releases — sem acesso a KMS nem ao secret
+`atua/app-secrets` (D9 — Variante B).
+
+#### Credenciais de serviço do Collector (service_credentials)
+
+As 3 credenciais que o Collector usa para chamar a API interna
+(`CollectorWorker__ClaimServiceToken`, `CollectorWorker__CompleteServiceToken`,
+`CollectorWorker__EligibilityServiceToken`) são geradas pela skill
+`.github/skills/atua-seed-collector-credentials` e gravadas (hash SHA-256)
+na tabela `service_credentials` do RDS.
+
+**Por que não ficam em `/etc/atua-collector.env`:** esse arquivo é
+reescrito do zero pelo `user-data` a cada boot/recriação da instância
+(topologia colocada ou não), apagando qualquer token colado manualmente
+nele. Os tokens de serviço, portanto, ficam em um arquivo **separado** e
+não gerenciado pelo CDK/user-data:
+
+* Arquivo: `/etc/atua-collector.tokens.env` (root:root, `600`), fora do
+  repositório e fora do alcance do `user-data`.
+* Carregado via drop-in systemd:
+  `/etc/systemd/system/atua-collector.service.d/tokens.conf` com
+  `EnvironmentFile=/etc/atua-collector.tokens.env`.
+* Sobrevive a `systemctl restart`/reboot da unit, mas **não sobrevive** à
+  destruição/recriação da instância EC2 (ela é efêmera) — após um novo
+  `make up`/recriação do Compute, os tokens precisam ser reinstalados
+  manualmente seguindo os passos abaixo.
+
+**Como regenerar/reinstalar (requer aprovação explícita):**
+
+1. Rodar `.github/skills/atua-seed-collector-credentials/scripts/seed-collector-credentials.sh`
+   (gera 3 credenciais novas; usar `--revoke-existing` apenas se as
+   antigas devem ser invalidadas) com saída redirecionada para um arquivo
+   local temporário com `chmod 600` — nunca imprimir os tokens no
+   terminal/chat/logs.
+2. Extrair as 3 linhas `CollectorWorker__*Token` para um arquivo
+   `KEY=VALUE` (sem aspas, sem `export`).
+3. Copiar esse arquivo via `scp` para a instância, mover com
+   `sudo install -m 600 -o root -g root` para
+   `/etc/atua-collector.tokens.env`, e apagar o arquivo temporário remoto.
+4. Garantir o drop-in `tokens.conf` (criar se ainda não existir, ver
+   acima), rodar `sudo systemctl daemon-reload && sudo systemctl restart atua-collector`.
+5. Validar com `.github/skills/atua-seed-collector-credentials/scripts/list-collector-credentials.sh`
+   que as credenciais esperadas estão `ativa` e acompanhar
+   `journalctl -u atua-collector` por ausência de `401`.
+6. Apagar o arquivo temporário local com segurança (`rm`) e confirmar que
+   nenhum token ficou em histórico de shell, logs ou documentação.
+
+**Melhoria futura sugerida (não aplicada):** mover esses 3 tokens para
+AWS Secrets Manager ou SSM Parameter Store (`SecureString`), com o
+`user-data`/um script de bootstrap buscando-os no boot via IAM role —
+elimina a dependência de reinstalação manual pós-recriação da instância,
+ao custo de ~US$ 0,40/mês por secret no Secrets Manager (ou gratuito via
+SSM Parameter Store Standard). Decisão de infraestrutura a ser avaliada
+e registrada em ADR separado antes de implementar.
 
 ---
 

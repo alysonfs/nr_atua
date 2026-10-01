@@ -132,15 +132,172 @@ O valor foi ajustado para **1 dia** (commit `ba2583a`).
 **Status:** Implementado. Recursos **efêmeros** — destruídos por `make down`
 e recriados por `make up`; os IDs e IPs abaixo mudam a cada ciclo.
 
+**Atualizado em 2026-09-30 (topologia colocada ativa — ver nota abaixo):**
+
+| Instância | ID (2026-09-30) | IP público (2026-09-30) | Tipo | Estado | Topologia |
+|---|---|---|---|---|---|
+| API + Collector (colocados) | `i-0f32f8f0cd771c01f` | `54.233.12.205` | `t3.micro` | `running` | `collocated` |
+
+Não há Elastic IP: os IPs públicos são dinâmicos e trocam a cada recriação
+(e também a cada `cloud-init clean && reboot` forçado, como ocorreu nesta
+sessão).
+
+A tabela de duas instâncias (histórica, válida até 30/09/2026) era:
+
 | Instância | ID (2026-08-30) | IP público (2026-08-30) | Tipo | Estado |
 |---|---|---|---|---|
 | API Master | `i-0b991614473e5be48` | `18.231.108.178` | `t3.micro` | `running` |
 | Collector (base) | `i-09334d266a60f8e38` | `18.231.109.150` | `t3.micro` | `running` |
 
-Não há Elastic IP: os IPs públicos são dinâmicos e trocam a cada recriação.
+A instância Collector, quando em topologia de duas instâncias, é apenas
+**SO + rede** — nenhuma lógica de coleta, scraping ou agendamento foi
+implantada (ver `infra/README.md` §6). Na topologia colocada (atual),
+API e Collector rodam como dois serviços `systemd` (`atua-api`,
+`atua-collector`) na mesma instância.
 
-A instância Collector é apenas **SO + rede** — nenhuma lógica de coleta,
-scraping ou agendamento foi implantada (ver `infra/README.md` §6).
+> **Nota (2026-09-29, preparação — NÃO aplicado na AWS):** o CDK foi
+> preparado para suportar uma topologia alternativa de **instância
+> única** (Collector rodando na mesma EC2 da API), via a prop
+> `collocateCollector` de `AtuaComputeStack` (default `false`, preserva a
+> topologia de duas instâncias descrita acima). É a Recomendação 1 de
+> corte de custo da análise Cost Explorer de set/2026 (~US$ 17-18/mês de
+> economia). Nenhum recurso real foi criado, alterado ou destruído por
+> essa preparação — a tabela acima continua refletindo o estado
+> efetivamente provisionado. Ativar essa topologia exige destruir e
+> recriar `AtuaComputeStack` e aprovação humana explícita. Detalhes
+> completos, plano de rollout/rollback e critérios de validação (memória
+> livre, ciclo de coleta, logs) em `infra/README.md` §4.1.
+
+> **Atualização (2026-09-30, tentativa de ativação real — BLOCKED,
+> nenhuma mudança aplicada):** o orchestrator autorizou explicitamente a
+> ativação da Recomendação 1 (`cdk deploy AtuaComputeStack
+> -c collocateCollector=true`). Antes de agir, o estado real da AWS foi
+> verificado (somente leitura) e **contradisse a hipótese de ambiente
+> parado desde 25/09**: `AtuaComputeStack` seguia `CREATE_COMPLETE` com
+> as duas instâncias descritas na tabela acima em `running` (sem
+> reinício desde o lançamento original), RDS `atua-postgres-mvp` em
+> `available` e `https://api.atyno.com.br/health` respondendo HTTP 200.
+> O `cdk diff` confirmou escopo isolado à `AtuaComputeStack` (Network e
+> Data sem diferenças). O `cdk deploy` falhou com `UPDATE_FAILED —
+> "User data is limited to 16384 bytes"`: o `UserData` fundido (boot da
+> API + boot do Collector, incluindo instalação do Chromium do
+> Playwright) excede o limite rígido de 16 KiB do EC2. CloudFormation
+> executou rollback automático (`UPDATE_ROLLBACK_COMPLETE`) sem afetar
+> as instâncias originais nem qualquer recurso de Network/Data/RDS/KMS.
+> **A tabela acima continua refletindo o estado real e efetivamente
+> provisionado** — a topologia colocada segue NÃO aplicada. Detalhes da
+> causa raiz e alternativas de correção do `UserData` em
+> `docs/decisions/ADR-034-topologia-colocada-api-collector-corte-de-custo.md`
+> **Atualização (2026-09-30, ativação real concluída e validada):** o
+> defeito de `UserData` > 16 KiB descrito acima foi corrigido
+> externalizando o bootstrap do Collector para um objeto S3
+> (`releasesBucket`), lido pela própria instância no boot. A topologia
+> colocada foi ativada com sucesso: `cdk deploy AtuaComputeStack
+> -c collocateCollector=true` destruiu as duas instâncias antigas e
+> criou a instância única `i-0f32f8f0cd771c01f` (`54.233.12.205`).
+> `AtuaNetworkStack` e `AtuaDataStack` confirmados sem diferenças (RDS
+> e KMS intocados). Validado: `UserData` final ≈10,1–10,7 KB (bem
+> abaixo do limite), `https://api.atyno.com.br/health` → 200, ambos os
+> serviços `systemd` (`atua-api`, `atua-collector`) `active (running)`
+> sem restarts nem OOM-kill, memória ~185–197Mi de 916Mi (abaixo do
+> baseline da topologia de duas instâncias: API 257Mi + Collector 292Mi).
+> **Atualização (2026-09-30, validação funcional concluída):** a
+> "ressalva" registrada anteriormente aqui (connection string Postgres
+> aparentemente corrompida em runtime) foi investigada até a causa raiz
+> e **corrigida**. Não era um defeito de código nem do `UserData`: as
+> units `systemd` já estavam `enabled` de uma sessão de depuração manual
+> anterior e foram iniciadas pelo boot normal **antes** do estágio
+> `cloud-final` do `cloud-init` reescrever `/etc/atua-api.env` /
+> `/etc/atua-collector.env` com o valor correto do secret — os processos
+> ficaram com um ambiente residual (`Password=` com placeholder de uma
+> sessão manual anterior) na memória, enquanto o arquivo em disco já
+> estava correto. Corrigido com `systemctl restart` dos dois serviços
+> (ação operacional, sem alteração de código/CDK, sem troca de senha do
+> RDS). Validado pós-restart: SHA-256 do campo `Password=` em
+> `/proc/<PID>/environ` de ambos os processos bate com o SHA-256 do
+> secret; `journalctl` sem `ArgumentException`; `GET /health` → 200;
+> `make collector-trigger-cycle` executado do início ao fim (signin,
+> desativação/reativação da integração, novo comando `Pending`);
+> `free -h` monitorado por 60s durante o ciclo sem uso de swap e memória
+> estável (~230Mi de 916Mi usados). Único log residual é um `401` em
+> `/commands/claim`, débito técnico pré-existente e documentado
+> (`ServiceCredential` vazio, ADR-021), fora do escopo de infraestrutura.
+> Recomendação de robustez registrada (trocar `systemctl start` por
+> `systemctl restart` no `UserData` para eliminar esta classe de risco
+> em reboots futuros) e item de higiene de SGs (regras de SSH temporárias
+> de depuração ainda presentes) — ambos pendentes de decisão do
+> `orchestrator`. Detalhes completos, evidências e comandos de
+> diagnóstico em
+> `docs/decisions/ADR-034-topologia-colocada-api-collector-corte-de-custo.md`
+> (seção "Defeito de aplicação — causa raiz real encontrada e corrigida
+> (30/09/2026)").
+>
+> **Atualização (2026-09-30, aprovação executada — código e SGs; deploy
+> pendente):** as duas recomendações acima foram aprovadas pelo usuário.
+> (1) `systemctl start` → `systemctl restart` aplicado no `UserData` da
+> API e do Collector (`infra/lib/atua-compute-stack.ts`), validado com
+> `tsc --noEmit` e `cdk synth AtuaComputeStack` nas duas topologias
+> (UserData final seguiu bem abaixo do limite de 16 KiB). **`cdk deploy`
+> não foi executado nesta rodada**: `cdk diff` revelou que
+> `ec2.MachineImage.latestAmazonLinux2023()` resolveu uma AMI mais nova
+> que a da instância em produção, o que forçaria `ImageId requires
+> replacement` — ou seja, o próximo deploy recriaria a instância
+> (`i-0f32f8f0cd771c01f`, novo IP) em vez de apenas reiniciar o serviço,
+> contrariando a premissa de "reboot in-place" desta tarefa. Decisão
+> necessária do `orchestrator`/operador antes do deploy: pinar a AMI
+> atual (evitar recriações não intencionais a cada synth) ou aceitar a
+> recriação (a stack já é tratada como efêmera) e seguir o roteiro
+> completo de pós-deploy (`make sync-api-domain`, checagem de hash do
+> secret em `/proc/<pid>/environ`, `/health`, `journalctl`,
+> `make collector-trigger-cycle`, `free -h`). (2) Auditoria de ingress
+> SSH (somente leitura) nos SGs `sg-09f1ffef1774526c1` e
+> `sg-0fbd7bac215fedb3a` confirmou 2 regras residuais fora do CDK
+> (`186.236.211.186/32`, descrição "temp-servicecredential*") — ambas
+> **removidas**. A regra `186.236.210.61/32` (também fora do CDK, e
+> descrita como debug residual no SG do Collector) **não foi removida**
+> por ser o IP público atual da sessão operacional usada nesta execução
+> (confirmado por checagem externa de IP) — reportada para decisão
+> (declarar no CDK ou remover mediante confirmação do operador).
+>
+> **Atualização (2026-10-01, AMI pinada e deploy aplicado):** a AMI foi
+> fixada no CDK via contexto `pinnedAmiId` (default =
+> `ami-069bb7e5cd028c614`, a AMI confirmada da instância viva
+> `i-0f32f8f0cd771c01f`), substituindo
+> `ec2.MachineImage.latestAmazonLinux2023()` nas 3 declarações de
+> `ec2.Instance` em `infra/lib/atua-compute-stack.ts`. `tsc --noEmit` e
+> `cdk synth` das duas topologias OK; `ImageId` confirmado fixo
+> (`ami-069bb7e5cd028c614`) no template sintetizado. `cdk diff
+> AtuaComputeStack -c collocateCollector=true` mostrou somente a
+> mudança de `UserData` (`systemctl start` → `restart`, já aprovada
+> acima) e remoção do parâmetro SSM de AMI dinâmica não mais
+> referenciado — **sem** `ImageId` e **sem** replacement de instância.
+> `cdk deploy` aplicado: CloudFormation atualizou o `UserData` via
+> stop/start in-place (`Replacement: Conditional`, não efetivado — o ID
+> da instância não mudou). Esse stop/start trocou o IP público (sem
+> Elastic IP, por design) de `54.233.12.205` para `18.231.123.4`;
+> `make sync-api-domain` rodado para atualizar
+> `api-origin.atyno.com.br`. Como o stop/start por si só não reexecuta
+> o `UserData` (cloud-init só roda user-data uma vez por `instance-id`),
+> foi necessário `cloud-init clean --logs && reboot` (autorizado) para o
+> novo `UserData` rodar de fato. Validação pós-reboot: `cloud-init
+> status` = `done`; `atua-api`/`atua-collector` ativos; `/health`
+> (porta 80) = HTTP 200; hash SHA-256 de `Authentication__SigningKey`
+> em `/proc/<pid>/environ` do `atua-api` idêntico ao hash do
+> `jwtSigningKey` no secret `atua/app-secrets` (sem expor o valor);
+> `journalctl` sem erros de conexão persistentes (um timeout de DNS do
+> MongoDB Atlas visto apenas nos primeiros segundos pós-boot,
+> auto-recuperado); `make collector-trigger-cycle` disparou ciclo com
+> sucesso (único log residual é o `401` pré-existente e já documentado
+> de `ServiceCredential` vazio); `free -h` ~472Mi disponíveis, swap 0
+> usado. Detalhes completos em
+> `docs/decisions/ADR-034-topologia-colocada-api-collector-corte-de-custo.md`
+> (seção "AMI fixada (pin) no CDK"). Item de higiene de SG
+> (`186.236.210.61/32` fora do CDK) segue pendente de decisão, não
+> alterado nesta execução.
+> `cdk diff AtuaNetworkStack` → sem diferenças; `detect-stack-drift`
+> confirma que o único drift remanescente nos SGs é exatamente essa
+> regra preservada. Detalhes em
+> `docs/decisions/ADR-034-topologia-colocada-api-collector-corte-de-custo.md`.
 
 ---
 

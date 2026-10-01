@@ -28,7 +28,7 @@ OFFICE_API_BASE_URL ?= https://api.atyno.com.br
 
 ACCOUNT_ID := $(shell aws sts get-caller-identity --query Account --output text --region $(REGION) 2>/dev/null)
 
-.PHONY: install synth diff bootstrap-cdk deploy-domain sync-api-domain up down destroy destroy-all-data status rds-bootstrap rds-up rds-down retrieve-keypair deploy-landing deploy-office deploy-manager deploy-tecnica deploy-api deploy-collector redeploy-api redeploy-collector collector-trigger-cycle logs-api logs-collector logs-api-follow logs-collector-follow mongo-peek mongo-peek-all pg-peek pg-peek-all
+.PHONY: install synth diff bootstrap-cdk deploy-domain sync-api-domain up down destroy destroy-all-data status rds-bootstrap rds-up rds-down retrieve-keypair deploy-landing deploy-office deploy-manager deploy-tecnica deploy-api deploy-collector deploy-collector-bootstrap redeploy-api redeploy-collector collector-trigger-cycle logs-api logs-collector logs-api-follow logs-collector-follow mongo-peek mongo-peek-all pg-peek pg-peek-all
 
 ## Instala dependências (pnpm, alinhado ao monorepo)
 install:
@@ -263,7 +263,29 @@ deploy-collector:
 	@echo "Artefato publicado. Rode 'make up' para subir/recriar a EC2 com o novo artefato."
 	@echo "Ou, com a EC2 já no ar, sincronize e reinicie manualmente o serviço (ver comentário acima)."
 
-# Scripts de deploy/logs vivem na skill Batuta `atua-deploy` (não em
+## Publica o script de bootstrap do Collector (ADR-034) usado SOMENTE pela
+## topologia colocada (API + Collector na mesma instância t3.micro,
+## `collocateCollector=true`). O script é GERADO por `cdk synth`
+## (ver infra/lib/atua-compute-stack.ts, writeCollectorBootstrapScript)
+## em infra/dist/collector-bootstrap.sh — este alvo sempre regenera o
+## arquivo antes de publicá-lo, para garantir que o objeto no S3 reflita
+## o código-fonte atual.
+## CRÍTICO: rode este alvo ANTES de qualquer
+## `cdk deploy AtuaComputeStack -c collocateCollector=true`/`make up`
+## com a topologia colocada — o UserData da instância única baixa este
+## objeto no boot e falha (com mensagem clara) se ele não existir ou
+## estiver desatualizado.
+deploy-collector-bootstrap:
+	@echo "Gerando infra/dist/collector-bootstrap.sh (cdk synth -c collocateCollector=true)..."
+	pnpm --filter @atua/infra exec cdk synth AtuaComputeStack -c collocateCollector=true > /dev/null
+	@test -s dist/collector-bootstrap.sh || { echo "ERRO: dist/collector-bootstrap.sh nao foi gerado pelo cdk synth."; exit 1; }
+	@echo "Publicando em s3://atua-$(ACCOUNT_ID)-releases/bootstrap/collector-bootstrap.sh ..."
+	aws s3 cp dist/collector-bootstrap.sh \
+	  s3://atua-$(ACCOUNT_ID)-releases/bootstrap/collector-bootstrap.sh \
+	  --region $(REGION)
+	@echo "Script publicado. Necessario antes de 'cdk deploy AtuaComputeStack -c collocateCollector=true'."
+
+# Scripts de deploy/logs vivem na skill Batuta 'atua-deploy' (não em
 # infra/scripts/), para serem reutilizáveis e documentados junto ao
 # framework multi-agente. Ver .github/skills/atua-deploy/SKILL.md.
 DEPLOY_SKILL_SCRIPTS := ../.github/skills/atua-deploy/scripts
