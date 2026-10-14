@@ -52,6 +52,8 @@ public sealed class AtuaDbContext(DbContextOptions<AtuaDbContext> options) : DbC
 
     public DbSet<Triagem> Triagens => Set<Triagem>();
 
+    public DbSet<TriagemTriggerOutbox> TriagemTriggerOutboxes => Set<TriagemTriggerOutbox>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         ConfigureUser(modelBuilder.Entity<User>());
@@ -73,6 +75,7 @@ public sealed class AtuaDbContext(DbContextOptions<AtuaDbContext> options) : DbC
         ConfigureWorkOrderHistory(modelBuilder.Entity<WorkOrderHistory>());
         ConfigureConsumerState(modelBuilder.Entity<ConsumerState>());
         ConfigureTriagem(modelBuilder.Entity<Triagem>());
+        ConfigureTriagemTriggerOutbox(modelBuilder.Entity<TriagemTriggerOutbox>());
     }
 
     private static void ConfigureAuthSession(EntityTypeBuilder<AuthSession> builder)
@@ -499,6 +502,70 @@ public sealed class AtuaDbContext(DbContextOptions<AtuaDbContext> options) : DbC
         builder.HasOne<Integration>().WithMany().HasForeignKey(triagem => triagem.IntegrationId)
             .OnDelete(DeleteBehavior.Restrict);
         builder.HasOne<WorkOrder>().WithMany().HasForeignKey(triagem => triagem.WorkOrderId)
+            .OnDelete(DeleteBehavior.Restrict);
+    }
+
+    /// <summary>
+    /// Mapeamento da outbox do gatilho de triagem (ADR-041). Nenhum binário é
+    /// persistido aqui — somente identificadores, timestamps e o status de
+    /// processamento.
+    /// </summary>
+    private static void ConfigureTriagemTriggerOutbox(EntityTypeBuilder<TriagemTriggerOutbox> builder)
+    {
+        builder.ToTable(TriagemOutboxPersistenceSchema.TableName);
+        builder.HasKey(outbox => outbox.Id);
+        builder.Property(outbox => outbox.Id).ValueGeneratedNever();
+
+        builder.Property(outbox => outbox.WorkOrderProviderId).HasMaxLength(256).IsRequired();
+        builder.Property(outbox => outbox.OccurredAtUtc).IsRequired();
+        builder.Property(outbox => outbox.Status).HasConversion<string>().HasMaxLength(16).IsRequired();
+        builder.Property(outbox => outbox.AttemptCount).IsRequired();
+        builder.Property(outbox => outbox.NextAttemptAtUtc).IsRequired();
+        builder.Property(outbox => outbox.ProcessedAtUtc);
+        builder.Property(outbox => outbox.LastErrorCode).HasConversion<string>().HasMaxLength(32);
+        builder.Property(outbox => outbox.CreatedAtUtc).IsRequired();
+
+        // ClaimedAtUtc dobra como token de concorrência otimista: muda a
+        // cada claim (ClaimBatchSql), então um worker com lease expirada que
+        // tente gravar depois de a linha já ter sido reivindicada de novo
+        // falha com DbUpdateConcurrencyException em vez de sobrescrever
+        // silenciosamente (mesmo princípio de ConcurrencyToken já usado em
+        // ImmediateCollectionCommand, adaptado a uma coluna com significado
+        // de negócio em vez de um token dedicado).
+        builder.Property(outbox => outbox.ClaimedAtUtc).IsConcurrencyToken();
+        builder.Property(outbox => outbox.ClaimExpiresAtUtc);
+
+        // Chave de claim/idempotência — mesma tripla de Triagem (ADR-039/ADR-040).
+        // Alvo do ON CONFLICT DO NOTHING usado pelo Collector: no máximo uma
+        // linha de outbox é criada por OS, para sempre.
+        builder.HasIndex(outbox => new { outbox.TenantId, outbox.IntegrationId, outbox.WorkOrderProviderId })
+            .IsUnique()
+            .HasDatabaseName(TriagemOutboxPersistenceSchema.IdempotencyUniqueIndexName);
+
+        // Consultado a cada ciclo de drenagem (ClaimBatchSql) — cobre o ramo
+        // Pending vencido.
+        builder.HasIndex(outbox => new { outbox.Status, outbox.NextAttemptAtUtc })
+            .HasDatabaseName(TriagemOutboxPersistenceSchema.ClaimDueIndexName);
+
+        // Índice parcial — cobre o ramo Processing com lease expirada
+        // (ClaimBatchSql), mesmo padrão do índice parcial de NeedsDetailFetch
+        // em ConfigureWorkOrder.
+        builder.HasIndex(outbox => outbox.ClaimExpiresAtUtc)
+            .HasDatabaseName(TriagemOutboxPersistenceSchema.ClaimLeaseIndexName)
+            .HasFilter("\"Status\" = 'Processing'");
+
+        builder.HasIndex(outbox => outbox.TenantId);
+        builder.HasIndex(outbox => outbox.IntegrationId);
+        // Somente rastreabilidade (ver resumo da classe) — não participa do claim.
+        builder.HasIndex(outbox => outbox.WorkOrderId)
+            .HasDatabaseName("ix_triagem_trigger_outbox_work_order_id");
+
+        // Mesmo padrão de Triagem/WorkOrder: obrigatório, delete Restrict —
+        // uma OS/integração nunca é removida silenciosamente sob uma linha
+        // de outbox pendente/processada.
+        builder.HasOne<Integration>().WithMany().HasForeignKey(outbox => outbox.IntegrationId)
+            .OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne<WorkOrder>().WithMany().HasForeignKey(outbox => outbox.WorkOrderId)
             .OnDelete(DeleteBehavior.Restrict);
     }
 

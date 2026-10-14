@@ -723,6 +723,79 @@ namespace Atua.Api.Infrastructure.Persistence.Migrations
                     b.ToTable("triagens", (string)null);
                 });
 
+            modelBuilder.Entity("Atua.Api.Domain.Triagens.TriagemTriggerOutbox", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("AttemptCount")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTimeOffset?>("ClaimExpiresAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset?>("ClaimedAtUtc")
+                        .IsConcurrencyToken()
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("IntegrationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("LastErrorCode")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<DateTimeOffset>("NextAttemptAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset>("OccurredAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset?>("ProcessedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("WorkOrderId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("WorkOrderProviderId")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ClaimExpiresAtUtc")
+                        .HasDatabaseName("ix_triagem_trigger_outbox_claim_lease")
+                        .HasFilter("\"Status\" = 'Processing'");
+
+                    b.HasIndex("IntegrationId");
+
+                    b.HasIndex("TenantId");
+
+                    b.HasIndex("WorkOrderId")
+                        .HasDatabaseName("ix_triagem_trigger_outbox_work_order_id");
+
+                    b.HasIndex("Status", "NextAttemptAtUtc")
+                        .HasDatabaseName("ix_triagem_trigger_outbox_claim_due");
+
+                    b.HasIndex("TenantId", "IntegrationId", "WorkOrderProviderId")
+                        .IsUnique()
+                        .HasDatabaseName("uq_triagem_trigger_outbox_tenant_integration_workorder");
+
+                    b.ToTable("triagem_trigger_outbox", (string)null);
+                });
+
             modelBuilder.Entity("Atua.Api.Domain.WorkOrders.ConsumerState", b =>
                 {
                     b.Property<string>("ConsumerId")
@@ -1160,6 +1233,21 @@ namespace Atua.Api.Infrastructure.Persistence.Migrations
                 });
 
             modelBuilder.Entity("Atua.Api.Domain.Triagens.Triagem", b =>
+                {
+                    b.HasOne("Atua.Api.Domain.Integrations.Integration", null)
+                        .WithMany()
+                        .HasForeignKey("IntegrationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Atua.Api.Domain.WorkOrders.WorkOrder", null)
+                        .WithMany()
+                        .HasForeignKey("WorkOrderId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Atua.Api.Domain.Triagens.TriagemTriggerOutbox", b =>
                 {
                     b.HasOne("Atua.Api.Domain.Integrations.Integration", null)
                         .WithMany()
