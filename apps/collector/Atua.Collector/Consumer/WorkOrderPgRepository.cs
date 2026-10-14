@@ -72,6 +72,18 @@ public sealed class WorkOrderPgRepository(
                         "TenantId={TenantId} WorkOrderProviderId={WorkOrderProviderId} Status={Status}",
                         tenantId, order.WorkOrderProviderId, order.Status);
                 }
+
+                // ADR-041: grava a intenção de início de triagem na mesma transação do
+                // upsert/histórico, independentemente de isNew/statusChanged — para que uma OS
+                // já "assigned" antes deste deploy também gere a intenção na próxima vez que
+                // aparecer em qualquer interação. ON CONFLICT DO NOTHING garante no máximo uma
+                // linha por OS (chave tenant+integration+WorkOrderProviderId), para sempre.
+                if (TriagemTriggerEligibility.IsEligible(order.Status))
+                {
+                    await InsertTriagemTriggerOutboxAsync(
+                        conn, tx, tenantId, integrationId, workOrderId, order.WorkOrderProviderId,
+                        interactionCreatedAt, cancellationToken);
+                }
             }
 
             await UpsertConsumerStateAsync(conn, tx, consumerId, resumeToken, interactionCreatedAt, cancellationToken);
@@ -434,6 +446,36 @@ public sealed class WorkOrderPgRepository(
         cmd.Parameters.AddWithValue("@status", order.Status);
         cmd.Parameters.AddWithValue("@now", now);
         AddDetailParameters(cmd, order);
+        await cmd.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Grava a intenção Pending de início de triagem (ADR-041) na mesma transação do
+    /// upsert/histórico desta OS — ver <see cref="TriagemTriggerOutboxSql"/> para o contrato
+    /// de schema compartilhado com a Master API. Falhar aqui propaga a exceção para
+    /// <see cref="ProcessInteractionAsync"/>, que faz rollback de upserts, histórico e resume
+    /// token já realizados nesta transação (nenhuma gravação parcial).
+    /// </summary>
+    private static async Task InsertTriagemTriggerOutboxAsync(
+        NpgsqlConnection conn,
+        NpgsqlTransaction tx,
+        Guid tenantId,
+        Guid integrationId,
+        Guid workOrderId,
+        string workOrderProviderId,
+        DateTimeOffset interactionCreatedAt,
+        CancellationToken cancellationToken)
+    {
+        await using var cmd = conn.CreateCommand();
+        cmd.Transaction = tx;
+        cmd.CommandText = TriagemTriggerOutboxSql.InsertPendingCommandText;
+        cmd.Parameters.AddWithValue("@id", Guid.CreateVersion7());
+        cmd.Parameters.AddWithValue("@tid", tenantId);
+        cmd.Parameters.AddWithValue("@iid", integrationId);
+        cmd.Parameters.AddWithValue("@woid", workOrderId);
+        cmd.Parameters.AddWithValue("@pid", workOrderProviderId);
+        cmd.Parameters.AddWithValue("@occurredAt", interactionCreatedAt);
+        cmd.Parameters.AddWithValue("@now", DateTimeOffset.UtcNow);
         await cmd.ExecuteNonQueryAsync(cancellationToken);
     }
 
