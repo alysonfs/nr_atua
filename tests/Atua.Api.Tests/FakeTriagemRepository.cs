@@ -30,4 +30,11 @@ internal sealed class FakeTriagemRepository : ITriagemRepository
 
         return Task.FromResult(new TriagemGetOrAddResult(stored, created));
     }
+
+    public Task<Triagem?> FindByKeyAsync(TriagemIdempotencyKey key, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        return Task.FromResult(_store.TryGetValue(key, out var stored) ? stored : null);
+    }
 }
