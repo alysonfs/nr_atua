@@ -13,6 +13,13 @@ namespace Atua.Api.Endpoints;
 ///
 /// Rota: <c>POST /api/internal/triagens/start</c>.
 ///
+/// Desde o ADR-041, o fluxo automático de início de triagem NÃO chama mais
+/// esta rota: o Collector grava a intenção em <c>triagem_trigger_outbox</c>
+/// e o <c>TriagemOutboxDrainWorker</c>, hospedado nesta Master API, chama
+/// <see cref="StartTriagemUseCase"/> diretamente, em processo. Esta rota
+/// permanece ativa apenas para uso manual/QA/reprocessamento pontual
+/// (ex.: reenviar o gatilho de uma OS específica fora do fluxo automático).
+///
 /// Tenant e integração vêm exclusivamente dos claims da credencial
 /// autenticada — nunca do corpo da requisição — para impedir que um
 /// chamador referencie uma OS de outro tenant/integração. O corpo contém
@@ -29,14 +36,21 @@ public static class TriagemEndpoints
         endpoints.MapPost("/api/internal/triagens/start", StartAsync)
             .RequireAuthorization("TriageStart")
             .WithName("StartTriagem")
-            .WithSummary("Inicia idempotentemente a triagem automatizada de uma OS elegível.")
+            .WithSummary(
+                "[Manual/QA/reprocessamento] Inicia idempotentemente a triagem automatizada de uma " +
+                "OS elegível. Desde o ADR-041, o fluxo automático não chama mais esta rota.")
             .WithDescription(
-                "Aceita o gatilho de início da triagem uma única vez por OS elegível (tenant + " +
-                "integração da credencial de serviço + WorkOrderProviderId do corpo). Reentregas do " +
-                "mesmo gatilho retornam 200 com o estado atual, sem recriar nem resetar estado já " +
-                "avançado. O Location retornado em 201 identifica o recurso interno da triagem " +
-                "(/api/internal/triagens/{id}); este incremento não expõe um GET para esse recurso — " +
-                "fica para um incremento futuro, quando houver um consumidor real para ele.")
+                "Uso manual/QA/reprocessamento: desde o ADR-041, o início automático da triagem é " +
+                "disparado pelo TriagemOutboxDrainWorker (outbox PostgreSQL escrita pelo Collector), " +
+                "não mais por esta rota. Esta rota permanece disponível para reenviar o gatilho de " +
+                "uma OS específica fora do fluxo automático (ex.: QA, suporte, reprocessamento " +
+                "pontual). Aceita o gatilho de início da triagem uma única vez por OS elegível " +
+                "(tenant + integração da credencial de serviço + WorkOrderProviderId do corpo). " +
+                "Reentregas do mesmo gatilho retornam 200 com o estado atual, sem recriar nem " +
+                "resetar estado já avançado. O Location retornado em 201 identifica o recurso " +
+                "interno da triagem (/api/internal/triagens/{id}); este incremento não expõe um GET " +
+                "para esse recurso — fica para um incremento futuro, quando houver um consumidor " +
+                "real para ele.")
             .Produces<StartTriagemResponse>(StatusCodes.Status201Created)
             .Produces<StartTriagemResponse>(StatusCodes.Status200OK)
             .Produces(StatusCodes.Status400BadRequest)

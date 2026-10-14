@@ -18,6 +18,7 @@ using Atua.Api.Infrastructure.Persistence;
 using Atua.Api.Infrastructure.Security;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -177,6 +178,16 @@ builder.Services.AddHostedService<RecurrentCollectionSchedulerJob>();
 builder.Services.AddScoped<ITriagemRepository, TriagemRepository>();
 builder.Services.AddScoped<ITriagemEligibleWorkOrderQuery, TriagemEligibleWorkOrderQueryHandler>();
 builder.Services.AddScoped<StartTriagemUseCase>();
+
+// ADR-041: drenagem da outbox do gatilho de triagem gravada pelo Collector.
+builder.Services.AddOptions<TriagemOutboxOptions>()
+    .Bind(builder.Configuration.GetSection(TriagemOutboxOptions.SectionName))
+    .ValidateDataAnnotations()
+    .ValidateOnStart();
+builder.Services.AddSingleton<IValidateOptions<TriagemOutboxOptions>, TriagemOutboxOptionsValidator>();
+builder.Services.AddScoped<ITriagemOutboxRepository, TriagemOutboxRepository>();
+builder.Services.AddScoped<TriagemOutboxDrainService>();
+builder.Services.AddHostedService<TriagemOutboxDrainWorker>();
 
 // CORS: as origens de produção são injetadas pelo user-data da EC2 via
 // Cors__AllowedOrigins__*. O fallback aberto abaixo existe apenas para
