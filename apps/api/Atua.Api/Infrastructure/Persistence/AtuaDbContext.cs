@@ -1,10 +1,13 @@
+using System.Text.Json;
 using Atua.Api.Domain.Billing;
 using Atua.Api.Domain.Identity;
 using Atua.Api.Domain.Integrations;
 using Atua.Api.Domain.Integrations.CollectorControl;
 using Atua.Api.Domain.Tenants;
+using Atua.Api.Domain.Triagens;
 using Atua.Api.Domain.WorkOrders;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
 namespace Atua.Api.Infrastructure.Persistence;
@@ -47,6 +50,8 @@ public sealed class AtuaDbContext(DbContextOptions<AtuaDbContext> options) : DbC
 
     public DbSet<ConsumerState> ConsumerStates => Set<ConsumerState>();
 
+    public DbSet<Triagem> Triagens => Set<Triagem>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         ConfigureUser(modelBuilder.Entity<User>());
@@ -67,6 +72,7 @@ public sealed class AtuaDbContext(DbContextOptions<AtuaDbContext> options) : DbC
         ConfigureWorkOrder(modelBuilder.Entity<WorkOrder>());
         ConfigureWorkOrderHistory(modelBuilder.Entity<WorkOrderHistory>());
         ConfigureConsumerState(modelBuilder.Entity<ConsumerState>());
+        ConfigureTriagem(modelBuilder.Entity<Triagem>());
     }
 
     private static void ConfigureAuthSession(EntityTypeBuilder<AuthSession> builder)
@@ -420,5 +426,123 @@ public sealed class AtuaDbContext(DbContextOptions<AtuaDbContext> options) : DbC
         // marca d'água de provider_interactions processadas (ADR-030, decisão 2)
         builder.Property(cs => cs.LastProcessedInteractionCreatedAt)
             .HasColumnType("timestamptz");
+    }
+
+    /// <summary>
+    /// Mapeamento do agregado Triagem (ADR-040). Persiste o agregado inteiro
+    /// necessário à reidratação — nenhum binário de mídia é armazenado aqui
+    /// (os binários permanecem em S3; ver <see cref="Triagem.MidiaDefeitoTipo"/>,
+    /// que guarda somente o tipo).
+    /// </summary>
+    private static void ConfigureTriagem(EntityTypeBuilder<Triagem> builder)
+    {
+        builder.ToTable("triagens");
+        builder.HasKey(triagem => triagem.Id);
+        builder.Property(triagem => triagem.Id).ValueGeneratedNever();
+
+        builder.Property(triagem => triagem.Status).HasConversion<string>().HasMaxLength(32)
+            .IsRequired();
+        builder.Property(triagem => triagem.CreatedAtUtc).IsRequired();
+        builder.Property(triagem => triagem.UpdatedAtUtc).IsRequired();
+
+        // Checklist mínimo (metadados apenas — ver resumo da classe acima).
+        builder.Property(triagem => triagem.DescricaoDefeito).HasMaxLength(4_000);
+        builder.Property(triagem => triagem.NotaFiscalLegivel).IsRequired();
+        builder.Property(triagem => triagem.EtiquetaModelo).HasMaxLength(256);
+        builder.Property(triagem => triagem.EtiquetaSerie).HasMaxLength(256);
+        builder.Property(triagem => triagem.MidiaDefeitoTipo).HasConversion<string>().HasMaxLength(16);
+        builder.Property(triagem => triagem.EnderecoCompleto).HasMaxLength(1_000);
+        builder.Property(triagem => triagem.PontoReferencia).HasMaxLength(1_000);
+        builder.Property(triagem => triagem.Localizacao).HasMaxLength(1_000);
+
+        builder.Property(triagem => triagem.DesviosConsecutivos).IsRequired();
+
+        // Contadores de tentativa inválida por item do checklist (campo
+        // privado `_tentativasInvalidasPorItem`, exposto como
+        // IReadOnlyDictionary somente leitura). Mapeado diretamente pelo
+        // nome do campo — sem propriedade pública de escrita — e serializado
+        // como JSONB, com ValueComparer próprio para que o change tracker
+        // detecte mutações do dicionário (mesmo padrão de persistência JSON
+        // já usado em ConsumerState.ResumeToken).
+        var tentativasInvalidasComparer = new ValueComparer<Dictionary<ETriagemChecklistItem, int>>(
+            (left, right) => DictionariesIguais(left, right),
+            dictionary => ComputeDictionaryHashCode(dictionary),
+            dictionary => new Dictionary<ETriagemChecklistItem, int>(dictionary));
+
+        builder.Property<Dictionary<ETriagemChecklistItem, int>>("_tentativasInvalidasPorItem")
+            .HasColumnName("TentativasInvalidasPorItem")
+            .HasConversion(
+                dictionary => JsonSerializer.Serialize(dictionary, (JsonSerializerOptions?)null),
+                json => DeserializeTentativasInvalidasPorItem(json))
+            .Metadata.SetValueComparer(tentativasInvalidasComparer);
+        builder.Property<Dictionary<ETriagemChecklistItem, int>>("_tentativasInvalidasPorItem")
+            .HasColumnType("jsonb").IsRequired();
+
+        // Chave de idempotência (ADR-039/ADR-040): tenant + integração + OS
+        // externa. WorkOrderProviderId é persistido como shadow property —
+        // ver TriagemPersistenceSchema para a justificativa da escolha.
+        builder.Property<string>(TriagemPersistenceSchema.WorkOrderProviderIdShadowPropertyName)
+            .HasMaxLength(256).IsRequired();
+        builder.HasIndex(nameof(Triagem.TenantId), nameof(Triagem.IntegrationId),
+                TriagemPersistenceSchema.WorkOrderProviderIdShadowPropertyName)
+            .IsUnique()
+            .HasDatabaseName(TriagemPersistenceSchema.IdempotencyUniqueIndexName);
+
+        // Consultas do pool de operadores e isolamento multi-tenant (ADR-040,
+        // "Motivos": facilita consultas do pool; TenantId redundante para
+        // isolamento, mesmo padrão de WorkOrder).
+        builder.HasIndex(triagem => triagem.TenantId);
+        builder.HasIndex(triagem => triagem.IntegrationId);
+
+        // Mesmo padrão de WorkOrder: obrigatório, sem FK para Tenant (redundante
+        // apenas para isolamento, ver doc da propriedade).
+        builder.HasOne<Integration>().WithMany().HasForeignKey(triagem => triagem.IntegrationId)
+            .OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne<WorkOrder>().WithMany().HasForeignKey(triagem => triagem.WorkOrderId)
+            .OnDelete(DeleteBehavior.Restrict);
+    }
+
+    private static Dictionary<ETriagemChecklistItem, int> DeserializeTentativasInvalidasPorItem(string json) =>
+        JsonSerializer.Deserialize<Dictionary<ETriagemChecklistItem, int>>(json, (JsonSerializerOptions?)null)
+        // JSON literal "null" é desserializado como `null` pelo
+        // System.Text.Json sem lançar — mas um valor nulo para
+        // TentativasInvalidasPorItem é dado corrompido/inválido, não um
+        // estado válido de "sem tentativas" (esse caso é representado por
+        // "{}", que já é suportado). Falhar explicitamente aqui evita
+        // mascarar perda de contadores de tentativas inválidas da triagem
+        // como se fossem zero.
+        ?? throw new JsonException(
+            "TentativasInvalidasPorItem armazenado como JSON nulo é inválido: os contadores de tentativas " +
+            "inválidas da triagem foram perdidos ou corrompidos. Um dicionário vazio válido deve ser " +
+            "representado como \"{}\".");
+
+    private static bool DictionariesIguais(Dictionary<ETriagemChecklistItem, int>? left,
+        Dictionary<ETriagemChecklistItem, int>? right)
+    {
+        if (ReferenceEquals(left, right)) return true;
+        if (left is null || right is null) return false;
+        if (left.Count != right.Count) return false;
+
+        foreach (var (item, tentativas) in left)
+        {
+            if (!right.TryGetValue(item, out var outraTentativas) || tentativas != outraTentativas)
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static int ComputeDictionaryHashCode(Dictionary<ETriagemChecklistItem, int> dictionary)
+    {
+        var hash = new HashCode();
+        foreach (var (item, tentativas) in dictionary.OrderBy(pair => pair.Key))
+        {
+            hash.Add(item);
+            hash.Add(tentativas);
+        }
+
+        return hash.ToHashCode();
     }
 }

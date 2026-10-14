@@ -7,6 +7,8 @@ using Atua.Api.Application.Identity;
 using Atua.Api.Application.Integrations;
 using Atua.Api.Application.Integrations.CollectorControl;
 using Atua.Api.Application.Tenants;
+using Atua.Api.Application.Triagens;
+using Atua.Api.Application.Triagens.Contracts;
 using Atua.Api.Application.WorkOrders;
 using Atua.Api.Application.WorkOrders.Contracts;
 using Atua.Api.Endpoints;
@@ -166,6 +168,10 @@ builder.Services.AddHostedService<ClaimTimeoutJob>();
 builder.Services.AddScoped<RecurrentCollectionIntervalService>();
 builder.Services.AddScoped<RecurrentCollectionSchedulerService>();
 builder.Services.AddHostedService<RecurrentCollectionSchedulerJob>();
+
+// ADR-040: mesmo lifetime de AtuaDbContext (Scoped) — a implementação usa o
+// DbContext injetado diretamente, sem estado próprio.
+builder.Services.AddScoped<ITriagemRepository, TriagemRepository>();
 
 // CORS: as origens de produção são injetadas pelo user-data da EC2 via
 // Cors__AllowedOrigins__*. O fallback aberto abaixo existe apenas para
