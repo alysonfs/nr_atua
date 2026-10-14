@@ -1,6 +1,22 @@
 @Atua.Api_HostAddress = http://localhost:5240
+@Atua.Api.ServiceCredentialToken = {{serviceCredentialToken}}
 
 GET {{Atua.Api_HostAddress}}/weatherforecast/
 Accept: application/json
+
+###
+
+# Início idempotente da triagem (ADR-039; arquitetura, seção 3, itens 2/3).
+# Autorizado via credencial de serviço com escopo exclusivo "triage.start".
+# Tenant e integração vêm dos claims da credencial — não do corpo.
+# Reentregas do mesmo WorkOrderProviderId retornam 200 com o estado atual;
+# a primeira chamada retorna 201 com Location do recurso interno da triagem.
+POST {{Atua.Api_HostAddress}}/api/internal/triagens/start
+Content-Type: application/json
+Authorization: Bearer {{Atua.Api.ServiceCredentialToken}}
+
+{
+  "workOrderProviderId": "OS-EXT-1"
+}
 
 ###

@@ -92,6 +92,9 @@ builder.Services.AddAuthorization(options =>
     options.AddPolicy("CollectorCommandComplete", policy =>
         policy.AddAuthenticationSchemes(ServiceCredentialAuthenticationHandler.SchemeName)
             .RequireClaim("scope", ServiceCredentialAuthenticationHandler.CompleteScope));
+    options.AddPolicy("TriageStart", policy =>
+        policy.AddAuthenticationSchemes(ServiceCredentialAuthenticationHandler.SchemeName)
+            .RequireClaim("scope", ServiceCredentialAuthenticationHandler.TriageStartScope));
 });
 
 builder.Services.AddSingleton<IAmazonSimpleEmailServiceV2, AmazonSimpleEmailServiceV2Client>();
@@ -172,6 +175,8 @@ builder.Services.AddHostedService<RecurrentCollectionSchedulerJob>();
 // ADR-040: mesmo lifetime de AtuaDbContext (Scoped) — a implementação usa o
 // DbContext injetado diretamente, sem estado próprio.
 builder.Services.AddScoped<ITriagemRepository, TriagemRepository>();
+builder.Services.AddScoped<ITriagemEligibleWorkOrderQuery, TriagemEligibleWorkOrderQueryHandler>();
+builder.Services.AddScoped<StartTriagemUseCase>();
 
 // CORS: as origens de produção são injetadas pelo user-data da EC2 via
 // Cors__AllowedOrigins__*. O fallback aberto abaixo existe apenas para
@@ -239,5 +244,6 @@ app.MapCollectorEligibilityEndpoints();
 app.MapCollectorCommandEndpoints();
 app.MapRecurrentCollectionIntervalEndpoints();
 app.MapWorkOrderEndpoints();
+app.MapTriagemEndpoints();
 
 app.Run();

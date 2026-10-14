@@ -20,6 +20,13 @@ public sealed class ServiceCredentialAuthenticationHandler(
     public const string ClaimScope = "collector.command.claim";
     public const string CompleteScope = "collector.command.complete";
 
+    /// <summary>
+    /// Escopo exclusivo do início da triagem (<c>POST /api/internal/triagens/start</c>).
+    /// Não reutiliza os escopos do Agente Coletor — é um domínio de
+    /// autorização independente.
+    /// </summary>
+    public const string TriageStartScope = "triage.start";
+
     protected override async Task<AuthenticateResult> HandleAuthenticateAsync()
     {
         var authorization = Request.Headers.Authorization.ToString();
