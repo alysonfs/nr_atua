@@ -32,6 +32,19 @@ public interface ITriagemRepository
     /// </param>
     Task<TriagemGetOrAddResult> GetOrAddAsync(TriagemIdempotencyKey key, Triagem candidate,
         CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Consulta a triagem já registrada para <paramref name="key"/>, sem
+    /// efeito colateral (ADR-039: reentrega da mesma chave retorna o
+    /// resultado conhecido). Retorna <c>null</c> quando nenhuma triagem
+    /// existir ainda para a chave.
+    /// </summary>
+    /// <param name="key">Chave estável de idempotência (tenant + integração + OS).</param>
+    /// <param name="cancellationToken">
+    /// Quando cancelado antes da conclusão da consulta, nenhum resultado
+    /// deve ser observado como efeito desta chamada.
+    /// </param>
+    Task<Triagem?> FindByKeyAsync(TriagemIdempotencyKey key, CancellationToken cancellationToken);
 }
 
 /// <summary>

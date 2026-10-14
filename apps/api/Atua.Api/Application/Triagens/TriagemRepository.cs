@@ -62,7 +62,7 @@ public sealed class TriagemRepository(AtuaDbContext dbContext) : ITriagemReposit
         }
     }
 
-    private Task<Triagem?> FindByKeyAsync(TriagemIdempotencyKey key, CancellationToken cancellationToken) =>
+    public Task<Triagem?> FindByKeyAsync(TriagemIdempotencyKey key, CancellationToken cancellationToken) =>
         dbContext.Triagens.FirstOrDefaultAsync(triagem =>
                 triagem.TenantId == key.TenantId
                 && triagem.IntegrationId == key.IntegrationId
