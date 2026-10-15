@@ -5,6 +5,7 @@ using System.Text.Encodings.Web;
 using Atua.Api.Application.Triagens;
 using Atua.Api.Application.Triagens.Contracts;
 using Atua.Api.Domain.Integrations;
+using Atua.Api.Domain.Triagens;
 using Atua.Api.Domain.Tenants;
 using Atua.Api.Domain.WorkOrders;
 using Atua.Api.Endpoints;
@@ -48,7 +49,10 @@ public class TriagemEndpointsTests
         var body = await response.Content.ReadFromJsonAsync<StartTriagemResponse>();
         Assert.NotNull(body);
         Assert.True(body!.Created);
-        Assert.Equal("AguardandoEnvio", body.Status);
+        // Canal fake padrão responde com sucesso — o endpoint já reflete o
+        // template enviado (ADR-039/arquitetura seção 5.3), não mais apenas
+        // AguardandoEnvio.
+        Assert.Equal("ContatoIniciado", body.Status);
         Assert.Contains(body.TriagemId.ToString(), response.Headers.Location!.ToString());
     }
 
@@ -148,11 +152,41 @@ public class TriagemEndpointsTests
         Assert.Equal(["WorkOrderProviderId"], properties);
     }
 
+    [Fact]
+    public async Task CanalRetornaFalhaPermanente_Retorna201ComStatusFalhaDeContatoEPersisteNoBanco()
+    {
+        // Regressão do endpoint com persistência real via EF InMemory: prova
+        // que o resultado estruturado do canal (falha definitiva) é
+        // persistido como transição de estado através do contrato HTTP
+        // existente, sem alterar o contrato (ainda 201 + corpo com Status).
+        var channel = new FakeTriagemChannel();
+        var (app, databaseName) = await CreateApplicationAsync(channel);
+        await using var appDisposable = app;
+        var seed = await SeedWorkOrderAsync(databaseName, status: "assigned");
+        var key = new TriagemIdempotencyKey(seed.TenantId, seed.IntegrationId, "OS-EXT-1");
+        channel.ConfigureResult(key.ToString(),
+            TriagemChannelSendResult.PermanentFailure("template-rejeitado", "Número de contato inválido."));
+        var client = CreateClient(app, seed.TenantId, seed.IntegrationId, ServiceCredentialAuthenticationHandler.TriageStartScope);
+
+        var response = await client.PostAsJsonAsync("/api/internal/triagens/start",
+            new StartTriagemRequest { WorkOrderProviderId = "OS-EXT-1" });
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        var body = await response.Content.ReadFromJsonAsync<StartTriagemResponse>();
+        Assert.NotNull(body);
+        Assert.Equal("FalhaDeContato", body!.Status);
+
+        await using var context = CreateContext(databaseName);
+        var stored = await context.Triagens.SingleAsync(triagem => triagem.Id == body.TriagemId);
+        Assert.Equal(ETriagemStatus.FalhaDeContato, stored.Status);
+    }
+
     // -------------------------------------------------------------------
     // Infraestrutura de teste
     // -------------------------------------------------------------------
 
-    private static async Task<(WebApplication App, string DatabaseName)> CreateApplicationAsync()
+    private static async Task<(WebApplication App, string DatabaseName)> CreateApplicationAsync(
+        ITriagemChannel? channel = null)
     {
         var builder = WebApplication.CreateBuilder();
         builder.WebHost.UseTestServer();
@@ -162,6 +196,7 @@ public class TriagemEndpointsTests
         builder.Services.AddSingleton(TimeProvider.System);
         builder.Services.AddScoped<ITriagemRepository, TriagemRepository>();
         builder.Services.AddScoped<ITriagemEligibleWorkOrderQuery, TriagemEligibleWorkOrderQueryHandler>();
+        builder.Services.AddSingleton<ITriagemChannel>(channel ?? new FakeTriagemChannel());
         builder.Services.AddScoped<StartTriagemUseCase>();
         builder.Services.AddAuthentication("Test")
             .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>("Test", _ => { });
