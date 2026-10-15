@@ -448,6 +448,11 @@ public sealed class AtuaDbContext(DbContextOptions<AtuaDbContext> options) : DbC
         builder.Property(triagem => triagem.CreatedAtUtc).IsRequired();
         builder.Property(triagem => triagem.UpdatedAtUtc).IsRequired();
 
+        // Concorrência otimista (mesmo padrão de CollectorActivation/
+        // ImmediateCollectionCommand): arbitra duas persistências
+        // concorrentes da mesma triagem sem lock em memória.
+        builder.Property(triagem => triagem.ConcurrencyToken).IsConcurrencyToken();
+
         // Checklist mínimo (metadados apenas — ver resumo da classe acima).
         builder.Property(triagem => triagem.DescricaoDefeito).HasMaxLength(4_000);
         builder.Property(triagem => triagem.NotaFiscalLegivel).IsRequired();
