@@ -45,6 +45,26 @@ public interface ITriagemRepository
     /// deve ser observado como efeito desta chamada.
     /// </param>
     Task<Triagem?> FindByKeyAsync(TriagemIdempotencyKey key, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Persiste uma transição de estado já aplicada em memória a
+    /// <paramref name="triagem"/> (ex.: <c>MarcarContatoIniciado</c>,
+    /// <c>MarcarFalhaDeContato</c>), usando concorrência otimista via
+    /// <see cref="Triagem.ConcurrencyToken"/>.
+    ///
+    /// Em conflito — outro processo já persistiu uma transição concorrente
+    /// para a mesma triagem — lança <see cref="TriagemConcurrencyConflictException"/>.
+    /// O chamador nunca deve repetir o efeito externo (chamada ao canal) ao
+    /// tratar esse conflito: deve apenas recarregar a instância vencedora
+    /// (ex.: via <see cref="FindByKeyAsync"/>) e adotar o resultado já
+    /// persistido — ver <c>StartTriagemUseCase</c>.
+    /// </summary>
+    /// <param name="triagem">
+    /// Instância já tracked/conhecida por este repositório (retornada por
+    /// <see cref="GetOrAddAsync"/> ou <see cref="FindByKeyAsync"/>), com a
+    /// transição já aplicada pelos métodos de domínio de <see cref="Triagem"/>.
+    /// </param>
+    Task SaveTransitionAsync(Triagem triagem, CancellationToken cancellationToken);
 }
 
 /// <summary>

@@ -49,6 +49,18 @@ public sealed class Triagem
 
     public DateTimeOffset UpdatedAtUtc { get; private set; }
 
+    /// <summary>
+    /// Token de concorrência otimista (mesmo padrão de
+    /// <see cref="Atua.Api.Domain.Integrations.CollectorControl.CollectorActivation.ConcurrencyToken"/>
+    /// e de <see cref="Atua.Api.Domain.Integrations.CollectorControl.ImmediateCollectionCommand.ConcurrencyToken"/>).
+    /// Regenerado a cada mutação — garante que duas persistências
+    /// concorrentes da mesma triagem (ex.: resolução de corrida de
+    /// <c>GetOrAddAsync</c> seguida de envio do template por dois
+    /// chamadores) sejam arbitradas pelo banco, nunca por um lock em
+    /// memória.
+    /// </summary>
+    public Guid ConcurrencyToken { get; private set; } = Guid.NewGuid();
+
     // ------------------------------------------------------------------
     // Checklist mínimo (épico, pergunta 10 resolvida em 2026-10-13).
     // Somente metadados são armazenados — nenhum binário de mídia.
@@ -304,5 +316,9 @@ public sealed class Triagem
         }
     }
 
-    private void Touch(DateTimeOffset now) => UpdatedAtUtc = now;
+    private void Touch(DateTimeOffset now)
+    {
+        UpdatedAtUtc = now;
+        ConcurrencyToken = Guid.NewGuid();
+    }
 }

@@ -177,6 +177,12 @@ builder.Services.AddHostedService<RecurrentCollectionSchedulerJob>();
 // DbContext injetado diretamente, sem estado próprio.
 builder.Services.AddScoped<ITriagemRepository, TriagemRepository>();
 builder.Services.AddScoped<ITriagemEligibleWorkOrderQuery, TriagemEligibleWorkOrderQueryHandler>();
+// Canal fake in-process (arquitetura, seção 2.4/5.3) — não representa
+// Baileys/WhatsApp real. TODO: substituir quando o canal real e o texto do
+// template estiverem aprovados pelo PO. Singleton: a deduplicação por chave
+// de idempotência (ADR-039) precisa de estado compartilhado entre chamadas
+// concorrentes no mesmo processo.
+builder.Services.AddSingleton<ITriagemChannel, FakeTriagemChannel>();
 builder.Services.AddScoped<StartTriagemUseCase>();
 
 // ADR-041: drenagem da outbox do gatilho de triagem gravada pelo Collector.

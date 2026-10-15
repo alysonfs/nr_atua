@@ -70,6 +70,25 @@ public sealed class TriagemRepository(AtuaDbContext dbContext) : ITriagemReposit
                     == key.WorkOrderProviderId,
             cancellationToken);
 
+    public async Task SaveTransitionAsync(Triagem triagem, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException exception)
+        {
+            // Outro processo já persistiu uma transição concorrente para
+            // esta mesma triagem (ConcurrencyToken divergente). Destrava a
+            // entidade rejeitada do change tracker — ela nunca deve ser
+            // reusada para uma nova tentativa de gravação por este
+            // DbContext — e sinaliza um tipo de domínio para o chamador,
+            // sem vazar o tipo de exceção do EF Core além deste repositório.
+            dbContext.Entry(triagem).State = EntityState.Detached;
+            throw new TriagemConcurrencyConflictException(triagem.Id, exception);
+        }
+    }
+
     /// <summary>
     /// Classifica exclusivamente a violação da restrição única de
     /// idempotência da triagem (SQLSTATE 23505 +
