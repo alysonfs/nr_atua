@@ -727,6 +727,89 @@ namespace Atua.Api.Infrastructure.Persistence.Migrations
                     b.ToTable("triagens", (string)null);
                 });
 
+            modelBuilder.Entity("Atua.Api.Domain.Triagens.TriagemChannelCommand", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("AttemptCount")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTimeOffset?>("ClaimExpiresAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset?>("ClaimedAtUtc")
+                        .IsConcurrencyToken()
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset?>("CompletedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("CorrelationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("IdempotencyKey")
+                        .IsRequired()
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)");
+
+                    b.Property<Guid>("IntegrationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("LastErrorCode")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<string>("TemplateId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<int>("TemplateVersion")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("TriagemId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("WorkOrderId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ClaimExpiresAtUtc")
+                        .HasDatabaseName("ix_triagem_channel_commands_claim_lease")
+                        .HasFilter("\"Status\" = 'Claimed'");
+
+                    b.HasIndex("IdempotencyKey")
+                        .IsUnique()
+                        .HasDatabaseName("uq_triagem_channel_commands_idempotency_key");
+
+                    b.HasIndex("IntegrationId");
+
+                    b.HasIndex("TenantId");
+
+                    b.HasIndex("TriagemId")
+                        .HasDatabaseName("ix_triagem_channel_commands_triagem_id");
+
+                    b.HasIndex("WorkOrderId");
+
+                    b.HasIndex("TenantId", "IntegrationId", "Status")
+                        .HasDatabaseName("ix_triagem_channel_commands_claim_due");
+
+                    b.ToTable("triagem_channel_commands", (string)null);
+                });
+
             modelBuilder.Entity("Atua.Api.Domain.Triagens.TriagemTriggerOutbox", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1241,6 +1324,27 @@ namespace Atua.Api.Infrastructure.Persistence.Migrations
                     b.HasOne("Atua.Api.Domain.Integrations.Integration", null)
                         .WithMany()
                         .HasForeignKey("IntegrationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Atua.Api.Domain.WorkOrders.WorkOrder", null)
+                        .WithMany()
+                        .HasForeignKey("WorkOrderId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Atua.Api.Domain.Triagens.TriagemChannelCommand", b =>
+                {
+                    b.HasOne("Atua.Api.Domain.Integrations.Integration", null)
+                        .WithMany()
+                        .HasForeignKey("IntegrationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Atua.Api.Domain.Triagens.Triagem", null)
+                        .WithMany()
+                        .HasForeignKey("TriagemId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 

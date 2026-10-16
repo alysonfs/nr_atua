@@ -54,6 +54,8 @@ public sealed class AtuaDbContext(DbContextOptions<AtuaDbContext> options) : DbC
 
     public DbSet<TriagemTriggerOutbox> TriagemTriggerOutboxes => Set<TriagemTriggerOutbox>();
 
+    public DbSet<TriagemChannelCommand> TriagemChannelCommands => Set<TriagemChannelCommand>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         ConfigureUser(modelBuilder.Entity<User>());
@@ -76,6 +78,7 @@ public sealed class AtuaDbContext(DbContextOptions<AtuaDbContext> options) : DbC
         ConfigureConsumerState(modelBuilder.Entity<ConsumerState>());
         ConfigureTriagem(modelBuilder.Entity<Triagem>());
         ConfigureTriagemTriggerOutbox(modelBuilder.Entity<TriagemTriggerOutbox>());
+        ConfigureTriagemChannelCommand(modelBuilder.Entity<TriagemChannelCommand>());
     }
 
     private static void ConfigureAuthSession(EntityTypeBuilder<AuthSession> builder)
@@ -571,6 +574,68 @@ public sealed class AtuaDbContext(DbContextOptions<AtuaDbContext> options) : DbC
         builder.HasOne<Integration>().WithMany().HasForeignKey(outbox => outbox.IntegrationId)
             .OnDelete(DeleteBehavior.Restrict);
         builder.HasOne<WorkOrder>().WithMany().HasForeignKey(outbox => outbox.WorkOrderId)
+            .OnDelete(DeleteBehavior.Restrict);
+    }
+
+    /// <summary>
+    /// Mapeamento do comando de canal (ADR-042). Nenhuma credencial ou
+    /// conteúdo de mensagem é persistido aqui — apenas identificadores,
+    /// versão/id abstratos do template e metadados de claim/lease.
+    /// </summary>
+    private static void ConfigureTriagemChannelCommand(EntityTypeBuilder<TriagemChannelCommand> builder)
+    {
+        builder.ToTable(TriagemChannelCommandPersistenceSchema.TableName);
+        builder.HasKey(command => command.Id);
+        builder.Property(command => command.Id).ValueGeneratedNever();
+
+        builder.Property(command => command.TemplateId).HasMaxLength(128).IsRequired();
+        builder.Property(command => command.TemplateVersion).IsRequired();
+        builder.Property(command => command.IdempotencyKey).HasMaxLength(512).IsRequired();
+        builder.Property(command => command.CorrelationId).IsRequired();
+        builder.Property(command => command.Status).HasConversion<string>().HasMaxLength(16).IsRequired();
+        builder.Property(command => command.AttemptCount).IsRequired();
+        builder.Property(command => command.LastErrorCode).HasMaxLength(64);
+        builder.Property(command => command.CreatedAtUtc).IsRequired();
+
+        // ClaimedAtUtc dobra como token de concorrência otimista — mesmo
+        // padrão de TriagemTriggerOutbox.ClaimedAtUtc: muda a cada claim,
+        // protegendo contra uma instância do canal com lease expirada que
+        // tente gravar depois de o comando já ter sido reivindicado de novo.
+        builder.Property(command => command.ClaimedAtUtc).IsConcurrencyToken();
+        builder.Property(command => command.ClaimExpiresAtUtc);
+        builder.Property(command => command.CompletedAtUtc);
+
+        // Chave de idempotência (ADR-039/ADR-042) — no máximo um comando de
+        // canal por triagem/gatilho, para sempre.
+        builder.HasIndex(command => command.IdempotencyKey)
+            .IsUnique()
+            .HasDatabaseName(TriagemChannelCommandPersistenceSchema.IdempotencyUniqueIndexName);
+
+        // Consultado a cada claim (ClaimNextSql) — restringe à
+        // tenant/integração da credencial de serviço.
+        builder.HasIndex(command => new { command.TenantId, command.IntegrationId, command.Status })
+            .HasDatabaseName(TriagemChannelCommandPersistenceSchema.ClaimDueIndexName);
+
+        // Índice parcial — cobre o ramo Claimed com lease expirada
+        // (ClaimNextSql), mesmo padrão do índice parcial de
+        // TriagemTriggerOutbox.ClaimExpiresAtUtc.
+        builder.HasIndex(command => command.ClaimExpiresAtUtc)
+            .HasDatabaseName(TriagemChannelCommandPersistenceSchema.ClaimLeaseIndexName)
+            .HasFilter("\"Status\" = 'Claimed'");
+
+        builder.HasIndex(command => command.TenantId);
+        builder.HasIndex(command => command.IntegrationId);
+        builder.HasIndex(command => command.TriagemId)
+            .HasDatabaseName("ix_triagem_channel_commands_triagem_id");
+
+        // Mesmo padrão de Triagem/TriagemTriggerOutbox: obrigatório, delete
+        // Restrict — uma integração/OS/triagem nunca é removida
+        // silenciosamente sob um comando de canal pendente/processado.
+        builder.HasOne<Integration>().WithMany().HasForeignKey(command => command.IntegrationId)
+            .OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne<WorkOrder>().WithMany().HasForeignKey(command => command.WorkOrderId)
+            .OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne<Triagem>().WithMany().HasForeignKey(command => command.TriagemId)
             .OnDelete(DeleteBehavior.Restrict);
     }
 
