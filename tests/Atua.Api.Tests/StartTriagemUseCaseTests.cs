@@ -6,65 +6,76 @@ namespace Atua.Api.Tests;
 
 /// <summary>
 /// Testes do caso de uso idempotente de início da triagem (ADR-039,
-/// arquitetura seção 3, itens 2/3, 5.3). O WorkOrderId interno nunca é
-/// recebido do chamador: é sempre resolvido por
+/// arquitetura seção 3, itens 2/3, 5.3; ADR-042). O WorkOrderId interno
+/// nunca é recebido do chamador: é sempre resolvido por
 /// <see cref="FakeTriagemEligibleWorkOrderQuery"/> (tenant + integração +
 /// WorkOrderProviderId), que também determina elegibilidade.
 /// <see cref="FakeTriagemRepository"/> substitui um armazenamento físico
 /// (clona a cada leitura e arbitra concorrência por token, como o
-/// PostgreSQL real). <see cref="FakeTriagemChannel"/> substitui o canal
-/// (dedup por chave de idempotência, como exigido pelo ADR-039). Desde que
-/// <c>StartTriagemUseCase</c> emite o <c>SendTemplate</c> e persiste o
-/// resultado, uma criação bem-sucedida avança sincronamente de
-/// <see cref="ETriagemStatus.AguardandoEnvio"/> para
-/// <see cref="ETriagemStatus.ContatoIniciado"/> dentro da mesma chamada.
+/// PostgreSQL real).
+///
+/// Desde o ADR-042, <c>StartTriagemUseCase</c> NUNCA chama o canal em
+/// processo: uma criação bem-sucedida apenas persiste a triagem
+/// (<see cref="ETriagemStatus.AguardandoEnvio"/>) e um
+/// <see cref="TriagemChannelCommand"/> atomicamente na mesma chamada — quem
+/// avança a triagem para <see cref="ETriagemStatus.ContatoIniciado"/> ou
+/// <see cref="ETriagemStatus.FalhaDeContato"/> é o fluxo claim/complete
+/// (<see cref="TriagemChannelCommandService"/>), testado separadamente em
+/// <c>TriagemChannelCommandServiceTests</c>.
 /// </summary>
 public class StartTriagemUseCaseTests
 {
     private static readonly DateTimeOffset Now = new(2026, 10, 13, 12, 0, 0, TimeSpan.Zero);
 
     private static StartTriagemUseCase CreateUseCase(FakeTriagemRepository repository,
-        FakeTriagemEligibleWorkOrderQuery workOrderQuery, DateTimeOffset? now = null,
-        ITriagemChannel? channel = null) =>
-        new(workOrderQuery, repository, channel ?? new FakeTriagemChannel(), new FakeTimeProvider(now ?? Now));
+        FakeTriagemEligibleWorkOrderQuery workOrderQuery, DateTimeOffset? now = null) =>
+        new(workOrderQuery, repository, new FakeTimeProvider(now ?? Now));
 
     [Fact]
-    public async Task OsElegivelAssigned_PrimeiraExecucao_CriaTriagemEEnviaTemplateComSucesso()
+    public async Task OsElegivelAssigned_PrimeiraExecucao_CriaTriagemAguardandoEnvioEComandoDeCanalAtomico()
     {
         var repository = new FakeTriagemRepository();
         var workOrderQuery = new FakeTriagemEligibleWorkOrderQuery();
-        var channel = new FakeTriagemChannel();
         var tenantId = Guid.NewGuid();
         var integrationId = Guid.NewGuid();
         var workOrderId = Guid.NewGuid();
         workOrderQuery.Seed(tenantId, integrationId, "OS-1", workOrderId, "assigned");
-        var useCase = CreateUseCase(repository, workOrderQuery, channel: channel);
+        var useCase = CreateUseCase(repository, workOrderQuery);
 
         var result = await useCase.ExecuteAsync(tenantId, integrationId, "OS-1", CancellationToken.None);
 
         Assert.Equal(EStartTriagemOutcome.Created, result.Outcome);
-        // O envio padrão do FakeTriagemChannel é sucesso — a triagem já
-        // avança para ContatoIniciado dentro da mesma chamada que a criou
-        // (arquitetura, seção 5.3: a Master API decide quando emitir
-        // SendTemplate; aqui ela o faz imediatamente após aceitar o
-        // gatilho).
-        Assert.Equal(ETriagemStatus.ContatoIniciado, result.Status);
+        // Desde o ADR-042, nenhuma chamada síncrona ao canal ocorre: a
+        // triagem permanece AguardandoEnvio até que o processo do canal
+        // reivindique (claim) e conclua (complete) o comando.
+        Assert.Equal(ETriagemStatus.AguardandoEnvio, result.Status);
         Assert.NotNull(result.TriagemId);
         Assert.NotEqual(Guid.Empty, result.TriagemId!.Value);
-        Assert.Equal(1, channel.RealSendCount);
+
+        // O comando de canal foi persistido atomicamente com a triagem
+        // (ADR-042: "mesma transação que registra o aceite idempotente").
+        Assert.True(repository.ChannelCommandsByTriagemId.TryGetValue(result.TriagemId.Value, out var command));
+        Assert.Equal(tenantId, command!.TenantId);
+        Assert.Equal(integrationId, command.IntegrationId);
+        Assert.Equal(result.TriagemId.Value, command.TriagemId);
+        Assert.Equal(workOrderId, command.WorkOrderId);
+        Assert.Equal(TriagemChannelTemplates.InitialContactTemplateId, command.TemplateId);
+        Assert.Equal(TriagemChannelTemplates.InitialContactTemplateVersion, command.TemplateVersion);
+        Assert.Equal(new TriagemIdempotencyKey(tenantId, integrationId, "OS-1").ToString(), command.IdempotencyKey);
+        Assert.Equal(ETriagemChannelCommandStatus.Pending, command.Status);
+        Assert.NotEqual(Guid.Empty, command.CorrelationId);
     }
 
     [Fact]
-    public async Task MesmaOsElegivel_RepeticaoSequencial_RetornaExistingSemReenviarAoCanal()
+    public async Task MesmaOsElegivel_RepeticaoSequencial_RetornaExistingSemCriarNovoComandoDeCanal()
     {
         var repository = new FakeTriagemRepository();
         var workOrderQuery = new FakeTriagemEligibleWorkOrderQuery();
-        var channel = new FakeTriagemChannel();
         var tenantId = Guid.NewGuid();
         var integrationId = Guid.NewGuid();
         var workOrderId = Guid.NewGuid();
         workOrderQuery.Seed(tenantId, integrationId, "OS-1", workOrderId, "assigned");
-        var useCase = CreateUseCase(repository, workOrderQuery, channel: channel);
+        var useCase = CreateUseCase(repository, workOrderQuery);
 
         var first = await useCase.ExecuteAsync(tenantId, integrationId, "OS-1", CancellationToken.None);
         var second = await useCase.ExecuteAsync(tenantId, integrationId, "OS-1", CancellationToken.None);
@@ -72,23 +83,22 @@ public class StartTriagemUseCaseTests
         Assert.Equal(EStartTriagemOutcome.Created, first.Outcome);
         Assert.Equal(EStartTriagemOutcome.Existing, second.Outcome);
         Assert.Equal(first.TriagemId, second.TriagemId);
-        // Estado já avançado (ContatoIniciado) além de AguardandoEnvio —
-        // curto-circuito: a reentrega nunca reenvia o template.
-        Assert.Equal(ETriagemStatus.ContatoIniciado, second.Status);
-        Assert.Equal(1, channel.RealSendCount);
+        Assert.Equal(ETriagemStatus.AguardandoEnvio, second.Status);
+        // Exatamente um comando de canal persistido para a triagem — a
+        // reentrega nunca reenfileira.
+        Assert.Single(repository.ChannelCommandsByTriagemId);
     }
 
     [Fact]
-    public async Task ChamadasConcorrentesComMesmaChaveElegivel_ProduzemExatamenteUmCreated()
+    public async Task ChamadasConcorrentesComMesmaChaveElegivel_ProduzemExatamenteUmCreatedEUmComandoDeCanal()
     {
         var repository = new FakeTriagemRepository();
         var workOrderQuery = new FakeTriagemEligibleWorkOrderQuery();
-        var channel = new FakeTriagemChannel();
         var tenantId = Guid.NewGuid();
         var integrationId = Guid.NewGuid();
         var workOrderId = Guid.NewGuid();
         workOrderQuery.Seed(tenantId, integrationId, "OS-concorrente", workOrderId, "assigned");
-        var useCase = CreateUseCase(repository, workOrderQuery, channel: channel);
+        var useCase = CreateUseCase(repository, workOrderQuery);
         const int concurrency = 50;
 
         var tasks = Enumerable.Range(0, concurrency)
@@ -101,13 +111,11 @@ public class StartTriagemUseCaseTests
         Assert.Equal(concurrency, results.Count(result => result.Outcome is EStartTriagemOutcome.Created
             or EStartTriagemOutcome.Existing));
         Assert.Single(results.Select(result => result.TriagemId).Distinct());
-        // Todas as 50 chamadas convergem para o mesmo estado final e o canal
-        // fake — que deduplica por chave de idempotência mesmo sob
-        // concorrência real (Task.WhenAll) — só executa o envio de fato uma
-        // única vez, independentemente de qual execução "ganhou" a
-        // persistência otimista.
-        Assert.All(results, result => Assert.Equal(ETriagemStatus.ContatoIniciado, result.Status));
-        Assert.Equal(1, channel.RealSendCount);
+        Assert.All(results, result => Assert.Equal(ETriagemStatus.AguardandoEnvio, result.Status));
+        // Mesmo sob 50 chamadas concorrentes, no máximo um comando de canal
+        // é persistido para a chave — garantido pela mesma unicidade
+        // (índice único em IdempotencyKey) que protege a triagem.
+        Assert.Single(repository.ChannelCommandsByTriagemId);
     }
 
     [Fact]
@@ -261,14 +269,15 @@ public class StartTriagemUseCaseTests
 
         var first = await useCase.ExecuteAsync(tenantId, integrationId, "OS-1", CancellationToken.None);
 
-        // A primeira execução já envia o template com sucesso (fake padrão)
-        // e persiste a transição para ContatoIniciado — avançamos
-        // manualmente mais um estado (EmColeta) para comprovar que o caso de
-        // uso nunca "reseta" um estado já avançado além de AguardandoEnvio.
+        // Avançamos manualmente o estado (como faria TriagemChannelCommandService
+        // ao concluir o comando com sucesso, e depois IniciarColeta) para
+        // comprovar que o caso de uso nunca "reseta" um estado já avançado
+        // além de AguardandoEnvio.
         var key = new TriagemIdempotencyKey(tenantId, integrationId, "OS-1");
         var stored = await repository.FindByKeyAsync(key, CancellationToken.None);
         Assert.NotNull(stored);
-        stored!.IniciarColeta(Now);
+        stored!.MarcarContatoIniciado(Now);
+        stored.IniciarColeta(Now);
         await repository.SaveTransitionAsync(stored, CancellationToken.None);
 
         var second = await useCase.ExecuteAsync(tenantId, integrationId, "OS-1", CancellationToken.None);
@@ -391,10 +400,7 @@ public class StartTriagemUseCaseTests
         Assert.Equal(EStartTriagemOutcome.Created, first.Outcome);
         Assert.Equal(EStartTriagemOutcome.Existing, second.Outcome);
         Assert.Equal(first.TriagemId, second.TriagemId);
-        // A primeira execução já envia o template (fake padrão = sucesso) e
-        // avança para ContatoIniciado; a reentrega apenas devolve o estado
-        // já alcançado, sem reconsultar a OS nem reenviar.
-        Assert.Equal(ETriagemStatus.ContatoIniciado, second.Status);
+        Assert.Equal(ETriagemStatus.AguardandoEnvio, second.Status);
     }
 
     [Fact]
@@ -426,161 +432,32 @@ public class StartTriagemUseCaseTests
     }
 
     [Fact]
-    public async Task CanalRetornaFalhaPermanente_PersisteMarcarFalhaDeContato()
-    {
-        var repository = new FakeTriagemRepository();
-        var workOrderQuery = new FakeTriagemEligibleWorkOrderQuery();
-        var channel = new FakeTriagemChannel();
-        var tenantId = Guid.NewGuid();
-        var integrationId = Guid.NewGuid();
-        var workOrderId = Guid.NewGuid();
-        workOrderQuery.Seed(tenantId, integrationId, "OS-1", workOrderId, "assigned");
-        var key = new TriagemIdempotencyKey(tenantId, integrationId, "OS-1");
-        channel.ConfigureResult(key.ToString(),
-            TriagemChannelSendResult.PermanentFailure("template-rejeitado", "Número de contato inválido."));
-        var useCase = CreateUseCase(repository, workOrderQuery, channel: channel);
-
-        var result = await useCase.ExecuteAsync(tenantId, integrationId, "OS-1", CancellationToken.None);
-
-        Assert.Equal(EStartTriagemOutcome.Created, result.Outcome);
-        Assert.Equal(ETriagemStatus.FalhaDeContato, result.Status);
-
-        var stored = await repository.FindByKeyAsync(key, CancellationToken.None);
-        Assert.NotNull(stored);
-        Assert.Equal(ETriagemStatus.FalhaDeContato, stored!.Status);
-        Assert.Equal(1, channel.RealSendCount);
-    }
-
-    [Fact]
-    public async Task CanalRetornaFalhaTransitoria_MantemAguardandoEnvioELancaExcecaoTipada()
-    {
-        var repository = new FakeTriagemRepository();
-        var workOrderQuery = new FakeTriagemEligibleWorkOrderQuery();
-        var channel = new FakeTriagemChannel();
-        var tenantId = Guid.NewGuid();
-        var integrationId = Guid.NewGuid();
-        var workOrderId = Guid.NewGuid();
-        workOrderQuery.Seed(tenantId, integrationId, "OS-1", workOrderId, "assigned");
-        var key = new TriagemIdempotencyKey(tenantId, integrationId, "OS-1");
-        channel.ConfigureResult(key.ToString(),
-            TriagemChannelSendResult.TransientFailure("timeout-provedor", "Tempo esgotado ao contatar o provedor."));
-        var useCase = CreateUseCase(repository, workOrderQuery, channel: channel);
-
-        var exception = await Assert.ThrowsAsync<TriagemChannelTransientFailureException>(() =>
-            useCase.ExecuteAsync(tenantId, integrationId, "OS-1", CancellationToken.None));
-        Assert.Equal("timeout-provedor", exception.ChannelErrorCode);
-
-        // Nenhuma transição foi persistida: a triagem permanece
-        // AguardandoEnvio, preservando a mesma chave de idempotência para
-        // que a outbox (ADR-041) possa classificar esta exceção e reagendar
-        // retentativa.
-        var stored = await repository.FindByKeyAsync(key, CancellationToken.None);
-        Assert.NotNull(stored);
-        Assert.Equal(ETriagemStatus.AguardandoEnvio, stored!.Status);
-    }
-
-    [Fact]
-    public async Task FalhaTransitoriaSeguidaDeRetomada_ReenviaComMesmaChaveEConcluiComSucesso()
-    {
-        // "Replay resolvido": a primeira tentativa falha transitoriamente
-        // (ex.: timeout do provedor); uma reentrega subsequente do mesmo
-        // gatilho (mesma chave) retoma o envio — a triagem segue
-        // AguardandoEnvio entre as duas tentativas — e conclui com sucesso.
-        var repository = new FakeTriagemRepository();
-        var workOrderQuery = new FakeTriagemEligibleWorkOrderQuery();
-        var channel = new FakeTriagemChannel();
-        var tenantId = Guid.NewGuid();
-        var integrationId = Guid.NewGuid();
-        var workOrderId = Guid.NewGuid();
-        workOrderQuery.Seed(tenantId, integrationId, "OS-1", workOrderId, "assigned");
-        var key = new TriagemIdempotencyKey(tenantId, integrationId, "OS-1");
-        channel.ConfigureResult(key.ToString(),
-            TriagemChannelSendResult.TransientFailure("timeout-provedor", "Tempo esgotado."));
-        var useCase = CreateUseCase(repository, workOrderQuery, channel: channel);
-
-        await Assert.ThrowsAsync<TriagemChannelTransientFailureException>(() =>
-            useCase.ExecuteAsync(tenantId, integrationId, "OS-1", CancellationToken.None));
-
-        // O mesmo canal singleton passa a responder com sucesso na
-        // retentativa. Falha transitória não pode ficar memorizada, pois o
-        // worker reutiliza a mesma instância enquanto reagenda a outbox.
-        channel.ConfigureResult(key.ToString(), TriagemChannelSendResult.Success("fake-retry-success"));
-
-        var retried = await useCase.ExecuteAsync(tenantId, integrationId, "OS-1", CancellationToken.None);
-
-        Assert.Equal(EStartTriagemOutcome.Existing, retried.Outcome);
-        Assert.Equal(ETriagemStatus.ContatoIniciado, retried.Status);
-        Assert.Equal(2, channel.RealSendCount);
-
-        var stored = await repository.FindByKeyAsync(key, CancellationToken.None);
-        Assert.NotNull(stored);
-        Assert.Equal(ETriagemStatus.ContatoIniciado, stored!.Status);
-    }
-
-    [Fact]
-    public async Task CrashRetryComNovaInstanciaDeCanal_NaoReenviaQuandoJaContatoIniciado()
-    {
-        // Simula reentrega após "crash" do worker da outbox (ADR-041): uma
-        // nova instância do canal (processo reiniciado, sem cache de
-        // deduplicação em memória do incremento anterior) nunca é chamada
-        // porque a triagem já persistiu ContatoIniciado antes do reinício —
-        // a deduplicação real vem do ESTADO PERSISTIDO, não do cache do
-        // canal.
-        var repository = new FakeTriagemRepository();
-        var workOrderQuery = new FakeTriagemEligibleWorkOrderQuery();
-        var firstChannel = new FakeTriagemChannel();
-        var tenantId = Guid.NewGuid();
-        var integrationId = Guid.NewGuid();
-        var workOrderId = Guid.NewGuid();
-        workOrderQuery.Seed(tenantId, integrationId, "OS-1", workOrderId, "assigned");
-        var useCase = CreateUseCase(repository, workOrderQuery, channel: firstChannel);
-
-        var first = await useCase.ExecuteAsync(tenantId, integrationId, "OS-1", CancellationToken.None);
-        Assert.Equal(ETriagemStatus.ContatoIniciado, first.Status);
-        Assert.Equal(1, firstChannel.RealSendCount);
-
-        // "Processo reiniciado": nova instância do canal, sem qualquer
-        // estado de deduplicação compartilhado com a anterior.
-        var afterCrashChannel = new FakeTriagemChannel();
-        var afterCrashUseCase = CreateUseCase(repository, workOrderQuery, channel: afterCrashChannel);
-
-        var second = await afterCrashUseCase.ExecuteAsync(tenantId, integrationId, "OS-1", CancellationToken.None);
-
-        Assert.Equal(EStartTriagemOutcome.Existing, second.Outcome);
-        Assert.Equal(first.TriagemId, second.TriagemId);
-        Assert.Equal(ETriagemStatus.ContatoIniciado, second.Status);
-        Assert.Equal(0, afterCrashChannel.RealSendCount);
-    }
-
-    [Fact]
-    public async Task ConflitoDePersistenciaForcado_NaoRepeteChamadaAoCanalERecarregaEstadoPersistido()
+    public async Task ConflitoDePersistenciaForcado_NaoRepeteACriacaoERecarregaEstadoPersistido()
     {
         // Força deterministicamente o branch de conflito otimista em
         // SaveTransitionAsync (sem depender de orquestrar threads reais) e
-        // comprova que o caso de uso nunca relança a exceção ao chamador nem
-        // repete a chamada ao canal — apenas recarrega o estado já
-        // persistido para a chave.
+        // comprova que o caso de uso nunca relança a exceção ao chamador —
+        // apenas recarrega o estado já persistido para a chave. Note que
+        // este cenário específico (conflito simulado em SaveTransitionAsync,
+        // não em GetOrAddWithChannelCommandAsync) é residual do fake: a
+        // implementação atual de StartTriagemUseCase não chama
+        // SaveTransitionAsync, então o contador de conflitos configurado
+        // nunca é consumido — o teste apenas comprova que a execução
+        // simples permanece correta mesmo com o fake configurado para
+        // simular conflitos em um método que não é mais exercitado por este
+        // caso de uso.
         var repository = new FakeTriagemRepository { ConflictsToSimulateOnSaveTransition = 1 };
         var workOrderQuery = new FakeTriagemEligibleWorkOrderQuery();
-        var channel = new FakeTriagemChannel();
         var tenantId = Guid.NewGuid();
         var integrationId = Guid.NewGuid();
         var workOrderId = Guid.NewGuid();
         workOrderQuery.Seed(tenantId, integrationId, "OS-1", workOrderId, "assigned");
-        var useCase = CreateUseCase(repository, workOrderQuery, channel: channel);
+        var useCase = CreateUseCase(repository, workOrderQuery);
 
         var result = await useCase.ExecuteAsync(tenantId, integrationId, "OS-1", CancellationToken.None);
 
         Assert.Equal(EStartTriagemOutcome.Created, result.Outcome);
-        Assert.Equal(1, channel.RealSendCount);
-        Assert.Equal(1, repository.SaveTransitionCallCount);
-        // Nada mais persistiu uma transição concorrente de verdade neste
-        // teste determinístico — o reload reflete o próprio registro criado
-        // (ainda AguardandoEnvio), provando apenas que o caminho de conflito
-        // é tratado sem lançar e sem repetir o canal. O cenário em que o
-        // reload reflete um vencedor DIFERENTE é coberto pelo teste de
-        // concorrência real (50 chamadas) e por
-        // FakeTriagemRepositoryTests.
+        Assert.Equal(0, repository.SaveTransitionCallCount);
         Assert.Equal(ETriagemStatus.AguardandoEnvio, result.Status);
     }
 }
