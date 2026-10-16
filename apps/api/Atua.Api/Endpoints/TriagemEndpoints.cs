@@ -99,6 +99,13 @@ public static class TriagemEndpoints
                 Status = StatusCodes.Status409Conflict,
             }),
 
+            EStartTriagemOutcome.TemplateNotConfigured => TypedResults.Conflict(new ProblemDetails
+            {
+                Title = "Triage message template not configured",
+                Detail = "Não existe uma versão publicada e ativa do template de contato inicial.",
+                Status = StatusCodes.Status409Conflict,
+            }),
+
             EStartTriagemOutcome.Created => TypedResults.Created(
                 $"/api/internal/triagens/{result.TriagemId!.Value}",
                 ToResponse(result, created: true)),

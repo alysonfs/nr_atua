@@ -23,7 +23,7 @@ internal sealed class FakeTriagemEligibleWorkOrderQuery : ITriagemEligibleWorkOr
 
     public void Seed(Guid tenantId, Guid integrationId, string workOrderProviderId, Guid workOrderId, string status) =>
         _workOrders[(tenantId, integrationId, workOrderProviderId)] =
-            new TriagemEligibleWorkOrderLookupResult(workOrderId, status);
+            new TriagemEligibleWorkOrderLookupResult(workOrderId, status, workOrderProviderId);
 
     /// <summary>Remove a OS previamente semeada, simulando que ela deixou de ser encontrada.</summary>
     public void Remove(Guid tenantId, Guid integrationId, string workOrderProviderId) =>

@@ -37,7 +37,7 @@ public class TriagemChannelCommandServiceTests
         var key = new TriagemIdempotencyKey(tenantId, integrationId, $"OS-{Guid.NewGuid()}");
         var candidate = new Triagem(triagemId, tenantId, integrationId, workOrderId, createdAtUtc);
         var command = new TriagemChannelCommand(Guid.NewGuid(), tenantId, integrationId, triagemId, workOrderId,
-            "modelo-contato-inicial", 1, key.ToString(), Guid.NewGuid(), createdAtUtc);
+            "modelo-contato-inicial", 1, "conteúdo renderizado", key.ToString(), Guid.NewGuid(), createdAtUtc);
 
         await triagemRepository.GetOrAddWithChannelCommandAsync(key, candidate, command, CancellationToken.None);
         commandRepository.Add(command);

@@ -35,6 +35,7 @@ namespace Atua.Api.Application.Triagens;
 public sealed class StartTriagemUseCase(
     ITriagemEligibleWorkOrderQuery workOrderQuery,
     ITriagemRepository triagemRepository,
+    ITriagemMessageTemplateResolver templateRenderer,
     TimeProvider timeProvider)
 {
     public async Task<StartTriagemResult> ExecuteAsync(Guid tenantId, Guid integrationId,
@@ -84,6 +85,19 @@ public sealed class StartTriagemUseCase(
             return StartTriagemResult.WorkOrderNotEligible();
         }
 
+        var template = await templateRenderer.ResolveInitialContactAsync(
+            tenantId,
+            integrationId,
+            workOrder.WorkOrderProviderId,
+            workOrder.WorkOrderProviderNo,
+            workOrder.ProductBrand,
+            workOrder.ProductModel,
+            cancellationToken);
+        if (template is null)
+        {
+            return StartTriagemResult.TemplateNotConfigured();
+        }
+
         var now = timeProvider.GetUtcNow();
         var triagemId = Guid.CreateVersion7();
         var candidate = new Triagem(triagemId, tenantId, integrationId, workOrder.WorkOrderId, now);
@@ -94,8 +108,9 @@ public sealed class StartTriagemUseCase(
             integrationId,
             triagemId,
             workOrder.WorkOrderId,
-            TriagemChannelTemplates.InitialContactTemplateId,
-            TriagemChannelTemplates.InitialContactTemplateVersion,
+            template.TemplateVersionId.ToString(),
+            template.Version,
+            template.RenderedContent,
             key.ToString(),
             Guid.CreateVersion7(),
             now);
@@ -134,4 +149,7 @@ public sealed record StartTriagemResult(EStartTriagemOutcome Outcome, Guid? Tria
 
     public static StartTriagemResult WorkOrderNotEligible() =>
         new(EStartTriagemOutcome.WorkOrderNotEligible, null, null);
+
+    public static StartTriagemResult TemplateNotConfigured() =>
+        new(EStartTriagemOutcome.TemplateNotConfigured, null, null);
 }

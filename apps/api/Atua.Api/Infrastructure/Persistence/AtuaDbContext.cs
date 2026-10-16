@@ -56,6 +56,8 @@ public sealed class AtuaDbContext(DbContextOptions<AtuaDbContext> options) : DbC
 
     public DbSet<TriagemChannelCommand> TriagemChannelCommands => Set<TriagemChannelCommand>();
 
+    public DbSet<TriagemMessageTemplate> TriagemMessageTemplates => Set<TriagemMessageTemplate>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         ConfigureUser(modelBuilder.Entity<User>());
@@ -79,6 +81,7 @@ public sealed class AtuaDbContext(DbContextOptions<AtuaDbContext> options) : DbC
         ConfigureTriagem(modelBuilder.Entity<Triagem>());
         ConfigureTriagemTriggerOutbox(modelBuilder.Entity<TriagemTriggerOutbox>());
         ConfigureTriagemChannelCommand(modelBuilder.Entity<TriagemChannelCommand>());
+        ConfigureTriagemMessageTemplate(modelBuilder.Entity<TriagemMessageTemplate>());
     }
 
     private static void ConfigureAuthSession(EntityTypeBuilder<AuthSession> builder)
@@ -578,9 +581,9 @@ public sealed class AtuaDbContext(DbContextOptions<AtuaDbContext> options) : DbC
     }
 
     /// <summary>
-    /// Mapeamento do comando de canal (ADR-042). Nenhuma credencial ou
-    /// conteúdo de mensagem é persistido aqui — apenas identificadores,
-    /// versão/id abstratos do template e metadados de claim/lease.
+    /// Mapeamento do comando de canal (ADR-042). Nenhuma credencial é
+    /// persistida aqui. O conteúdo renderizado é um snapshot imutável da
+    /// versão selecionada no aceite da triagem.
     /// </summary>
     private static void ConfigureTriagemChannelCommand(EntityTypeBuilder<TriagemChannelCommand> builder)
     {
@@ -590,6 +593,7 @@ public sealed class AtuaDbContext(DbContextOptions<AtuaDbContext> options) : DbC
 
         builder.Property(command => command.TemplateId).HasMaxLength(128).IsRequired();
         builder.Property(command => command.TemplateVersion).IsRequired();
+        builder.Property(command => command.RenderedContent).HasMaxLength(8_000).IsRequired();
         builder.Property(command => command.IdempotencyKey).HasMaxLength(512).IsRequired();
         builder.Property(command => command.CorrelationId).IsRequired();
         builder.Property(command => command.Status).HasConversion<string>().HasMaxLength(16).IsRequired();
@@ -636,6 +640,41 @@ public sealed class AtuaDbContext(DbContextOptions<AtuaDbContext> options) : DbC
         builder.HasOne<WorkOrder>().WithMany().HasForeignKey(command => command.WorkOrderId)
             .OnDelete(DeleteBehavior.Restrict);
         builder.HasOne<Triagem>().WithMany().HasForeignKey(command => command.TriagemId)
+            .OnDelete(DeleteBehavior.Restrict);
+    }
+
+    private static void ConfigureTriagemMessageTemplate(EntityTypeBuilder<TriagemMessageTemplate> builder)
+    {
+        builder.ToTable("triagem_message_templates");
+        builder.HasKey(template => template.Id);
+        builder.Property(template => template.Id).ValueGeneratedNever();
+        builder.Property(template => template.Type).HasConversion<string>().HasMaxLength(32).IsRequired();
+        builder.Property(template => template.Version).IsRequired();
+        builder.Property(template => template.Content).HasMaxLength(8_000).IsRequired();
+        builder.Property(template => template.Status).HasConversion<string>().HasMaxLength(16).IsRequired();
+        builder.Property(template => template.IsActive).IsRequired();
+        builder.Property(template => template.CreatedAtUtc).IsRequired();
+        builder.Property(template => template.UpdatedAtUtc).IsRequired();
+        builder.Property(template => template.PublishedAtUtc);
+        builder.Property(template => template.ConcurrencyToken).IsConcurrencyToken().IsRequired();
+
+        builder.HasIndex(template =>
+                new { template.TenantId, template.IntegrationId, template.Type, template.Version })
+            .IsUnique()
+            .HasDatabaseName("ux_triagem_message_templates_version");
+        builder.HasIndex(template =>
+                new { template.TenantId, template.IntegrationId, template.Type, template.Status })
+            .IsUnique()
+            .HasFilter("\"Status\" = 'Draft'")
+            .HasDatabaseName("ux_triagem_message_templates_draft");
+        builder.HasIndex(template => new { template.TenantId, template.IntegrationId, template.Type })
+            .IsUnique()
+            .HasFilter("\"Status\" = 'Published' AND \"IsActive\" = TRUE")
+            .HasDatabaseName("ux_triagem_message_templates_active");
+
+        builder.HasOne<Tenant>().WithMany().HasForeignKey(template => template.TenantId)
+            .OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne<Integration>().WithMany().HasForeignKey(template => template.IntegrationId)
             .OnDelete(DeleteBehavior.Restrict);
     }
 

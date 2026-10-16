@@ -197,6 +197,7 @@ public class TriagemEndpointsTests
         builder.Services.AddSingleton(TimeProvider.System);
         builder.Services.AddScoped<ITriagemRepository, TriagemRepository>();
         builder.Services.AddScoped<ITriagemEligibleWorkOrderQuery, TriagemEligibleWorkOrderQueryHandler>();
+        builder.Services.AddSingleton<ITriagemMessageTemplateResolver, FakeTriagemMessageTemplateResolver>();
         builder.Services.AddScoped<StartTriagemUseCase>();
         builder.Services.AddAuthentication("Test")
             .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>("Test", _ => { });

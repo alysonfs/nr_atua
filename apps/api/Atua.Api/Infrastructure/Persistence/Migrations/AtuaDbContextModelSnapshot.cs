@@ -763,6 +763,11 @@ namespace Atua.Api.Infrastructure.Persistence.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)");
 
+                    b.Property<string>("RenderedContent")
+                        .IsRequired()
+                        .HasMaxLength(8000)
+                        .HasColumnType("character varying(8000)");
+
                     b.Property<string>("Status")
                         .IsRequired()
                         .HasMaxLength(16)
@@ -808,6 +813,72 @@ namespace Atua.Api.Infrastructure.Persistence.Migrations
                         .HasDatabaseName("ix_triagem_channel_commands_claim_due");
 
                     b.ToTable("triagem_channel_commands", (string)null);
+                });
+
+            modelBuilder.Entity("Atua.Api.Domain.Triagens.TriagemMessageTemplate", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("ConcurrencyToken")
+                        .IsConcurrencyToken()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Content")
+                        .IsRequired()
+                        .HasMaxLength(8000)
+                        .HasColumnType("character varying(8000)");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("IntegrationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTimeOffset?>("PublishedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("Version")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("IntegrationId");
+
+                    b.HasIndex("TenantId", "IntegrationId", "Type")
+                        .IsUnique()
+                        .HasDatabaseName("ux_triagem_message_templates_active")
+                        .HasFilter("\"Status\" = 'Published' AND \"IsActive\" = TRUE");
+
+                    b.HasIndex("TenantId", "IntegrationId", "Type", "Status")
+                        .IsUnique()
+                        .HasDatabaseName("ux_triagem_message_templates_draft")
+                        .HasFilter("\"Status\" = 'Draft'");
+
+                    b.HasIndex("TenantId", "IntegrationId", "Type", "Version")
+                        .IsUnique()
+                        .HasDatabaseName("ux_triagem_message_templates_version");
+
+                    b.ToTable("triagem_message_templates", (string)null);
                 });
 
             modelBuilder.Entity("Atua.Api.Domain.Triagens.TriagemTriggerOutbox", b =>
@@ -1351,6 +1422,21 @@ namespace Atua.Api.Infrastructure.Persistence.Migrations
                     b.HasOne("Atua.Api.Domain.WorkOrders.WorkOrder", null)
                         .WithMany()
                         .HasForeignKey("WorkOrderId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Atua.Api.Domain.Triagens.TriagemMessageTemplate", b =>
+                {
+                    b.HasOne("Atua.Api.Domain.Integrations.Integration", null)
+                        .WithMany()
+                        .HasForeignKey("IntegrationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Atua.Api.Domain.Tenants.Tenant", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });

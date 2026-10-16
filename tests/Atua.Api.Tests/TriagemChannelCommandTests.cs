@@ -13,7 +13,7 @@ public class TriagemChannelCommandTests
 
     private static TriagemChannelCommand NewCommand() => new(
         Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(),
-        "modelo-contato-inicial", 1, "chave-idempotencia", Guid.NewGuid(), Now);
+        "modelo-contato-inicial", 1, "conteúdo renderizado", "chave-idempotencia", Guid.NewGuid(), Now);
 
     [Fact]
     public void Construtor_EstadoInicialEhPendingComAttemptCountZero()
@@ -37,7 +37,7 @@ public class TriagemChannelCommandTests
 
         Assert.Throws<ArgumentException>(() => new TriagemChannelCommand(
             Guid.NewGuid(), tenantId, Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(),
-            "template", 1, "chave", Guid.NewGuid(), Now));
+            "template", 1, "conteúdo", "chave", Guid.NewGuid(), Now));
     }
 
     [Fact]
@@ -45,7 +45,7 @@ public class TriagemChannelCommandTests
     {
         Assert.Throws<ArgumentException>(() => new TriagemChannelCommand(
             Guid.NewGuid(), Guid.NewGuid(), Guid.Empty, Guid.NewGuid(), Guid.NewGuid(),
-            "template", 1, "chave", Guid.NewGuid(), Now));
+            "template", 1, "conteúdo", "chave", Guid.NewGuid(), Now));
     }
 
     [Theory]
@@ -56,7 +56,7 @@ public class TriagemChannelCommandTests
     {
         Assert.Throws<ArgumentException>(() => new TriagemChannelCommand(
             Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(),
-            templateId!, 1, "chave", Guid.NewGuid(), Now));
+            templateId!, 1, "conteúdo", "chave", Guid.NewGuid(), Now));
     }
 
     [Theory]
@@ -67,7 +67,7 @@ public class TriagemChannelCommandTests
     {
         Assert.Throws<ArgumentException>(() => new TriagemChannelCommand(
             Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(),
-            "template", 1, idempotencyKey!, Guid.NewGuid(), Now));
+            "template", 1, "conteúdo", idempotencyKey!, Guid.NewGuid(), Now));
     }
 
     [Fact]

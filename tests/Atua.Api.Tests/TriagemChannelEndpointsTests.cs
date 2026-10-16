@@ -65,8 +65,9 @@ public class TriagemChannelEndpointsTests
         Assert.Equal(seed.CommandId, body!.CommandId);
         Assert.Equal(seed.TriagemId, body.TriagemId);
         Assert.Equal(seed.WorkOrderId, body.WorkOrderId);
-        Assert.Equal(TriagemChannelTemplates.InitialContactTemplateId, body.TemplateId);
-        Assert.Equal(TriagemChannelTemplates.InitialContactTemplateVersion, body.TemplateVersion);
+        Assert.Equal("template-version-id", body.TemplateId);
+        Assert.Equal(1, body.TemplateVersion);
+        Assert.Equal("conteúdo renderizado", body.RenderedContent);
     }
 
     [Fact]
@@ -407,8 +408,8 @@ public class TriagemChannelEndpointsTests
         var key = new TriagemIdempotencyKey(tenantId, integrationId, "OS-EXT-1");
         var triagem = new Triagem(triagemId, tenantId, integrationId, workOrderId, Now);
         var command = new TriagemChannelCommand(Guid.NewGuid(), tenantId, integrationId, triagemId, workOrderId,
-            TriagemChannelTemplates.InitialContactTemplateId, TriagemChannelTemplates.InitialContactTemplateVersion,
-            key.ToString(), Guid.NewGuid(), Now);
+            "template-version-id", 1,
+            "conteúdo renderizado", key.ToString(), Guid.NewGuid(), Now);
         context.Add(triagem);
         context.Entry(triagem).Property(TriagemPersistenceSchema.WorkOrderProviderIdShadowPropertyName)
             .CurrentValue = key.WorkOrderProviderId;
@@ -434,8 +435,8 @@ public class TriagemChannelEndpointsTests
         var key = new TriagemIdempotencyKey(tenantId, integrationId, "OS-EXT-1");
         var triagem = new Triagem(triagemId, tenantId, integrationId, workOrderId, Now);
         var command = new TriagemChannelCommand(Guid.NewGuid(), tenantId, integrationId, triagemId, workOrderId,
-            TriagemChannelTemplates.InitialContactTemplateId, TriagemChannelTemplates.InitialContactTemplateVersion,
-            key.ToString(), Guid.NewGuid(), Now);
+            "template-version-id", 1,
+            "conteúdo renderizado", key.ToString(), Guid.NewGuid(), Now);
         command.Claim(Now, Now.AddSeconds(60));
         context.AddRange(triagem, command);
         context.Entry(triagem).Property(TriagemPersistenceSchema.WorkOrderProviderIdShadowPropertyName)

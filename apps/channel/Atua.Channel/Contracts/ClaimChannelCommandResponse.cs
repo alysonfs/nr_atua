@@ -4,8 +4,7 @@ namespace Atua.Channel.Contracts;
 /// Espelha <c>ClaimChannelCommandResponse</c> da Master API (ADR-042,
 /// <c>POST /api/internal/triagens/canal/claim</c>). Apenas os campos
 /// necessários para o processo do canal enviar o template e reportar o
-/// resultado — o texto do template nunca é transportado, somente
-/// <see cref="TemplateId"/>/<see cref="TemplateVersion"/>.
+/// resultado, incluindo o snapshot renderizado selecionado pela Master API.
 /// </summary>
 public sealed record ClaimChannelCommandResponse(
     Guid CommandId,
@@ -17,4 +16,5 @@ public sealed record ClaimChannelCommandResponse(
     Guid CorrelationId,
     int AttemptCount,
     DateTimeOffset ClaimedAtUtc,
-    DateTimeOffset ClaimExpiresAtUtc);
+    DateTimeOffset ClaimExpiresAtUtc,
+    string RenderedContent = "");

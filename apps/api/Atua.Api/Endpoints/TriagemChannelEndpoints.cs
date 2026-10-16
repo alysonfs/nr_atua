@@ -92,7 +92,8 @@ public static class TriagemChannelEndpoints
             command.CorrelationId,
             command.AttemptCount,
             command.ClaimedAtUtc!.Value,
-            command.ClaimExpiresAtUtc!.Value));
+            command.ClaimExpiresAtUtc!.Value,
+            command.RenderedContent));
     }
 
     // -----------------------------------------------------------------------
@@ -167,9 +168,8 @@ public static class TriagemChannelEndpoints
 /// <summary>
 /// Resposta do claim do comando de canal. Nunca transporta credenciais —
 /// apenas os identificadores e metadados necessários para o canal enviar o
-/// template (ADR-042; arquitetura, seção 5.1). O texto do template não é
-/// transportado: apenas <see cref="TemplateId"/>/<see cref="TemplateVersion"/>
-/// (arquitetura, seção 3).
+/// template (ADR-042; arquitetura, seção 5.1), incluindo o snapshot
+/// renderizado e imutável selecionado no aceite da triagem.
 /// </summary>
 /// <param name="CommandId">Identificador do comando — usado em <c>complete</c>.</param>
 /// <param name="TriagemId">Identificador interno da triagem associada.</param>
@@ -191,7 +191,8 @@ public sealed record ClaimChannelCommandResponse(
     Guid CorrelationId,
     int AttemptCount,
     DateTimeOffset ClaimedAtUtc,
-    DateTimeOffset ClaimExpiresAtUtc);
+    DateTimeOffset ClaimExpiresAtUtc,
+    string RenderedContent = "");
 
 /// <summary>
 /// Corpo da requisição de conclusão do comando de canal. Tenant e

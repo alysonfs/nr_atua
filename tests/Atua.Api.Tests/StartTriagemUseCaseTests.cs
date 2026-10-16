@@ -29,7 +29,8 @@ public class StartTriagemUseCaseTests
 
     private static StartTriagemUseCase CreateUseCase(FakeTriagemRepository repository,
         FakeTriagemEligibleWorkOrderQuery workOrderQuery, DateTimeOffset? now = null) =>
-        new(workOrderQuery, repository, new FakeTimeProvider(now ?? Now));
+        new(workOrderQuery, repository, new FakeTriagemMessageTemplateResolver(),
+            new FakeTimeProvider(now ?? Now));
 
     [Fact]
     public async Task OsElegivelAssigned_PrimeiraExecucao_CriaTriagemAguardandoEnvioEComandoDeCanalAtomico()
@@ -59,8 +60,9 @@ public class StartTriagemUseCaseTests
         Assert.Equal(integrationId, command.IntegrationId);
         Assert.Equal(result.TriagemId.Value, command.TriagemId);
         Assert.Equal(workOrderId, command.WorkOrderId);
-        Assert.Equal(TriagemChannelTemplates.InitialContactTemplateId, command.TemplateId);
-        Assert.Equal(TriagemChannelTemplates.InitialContactTemplateVersion, command.TemplateVersion);
+        Assert.Equal(FakeTriagemMessageTemplateResolver.TemplateVersionId.ToString(), command.TemplateId);
+        Assert.Equal(1, command.TemplateVersion);
+        Assert.Equal("Mensagem renderizada para OS-1", command.RenderedContent);
         Assert.Equal(new TriagemIdempotencyKey(tenantId, integrationId, "OS-1").ToString(), command.IdempotencyKey);
         Assert.Equal(ETriagemChannelCommandStatus.Pending, command.Status);
         Assert.NotEqual(Guid.Empty, command.CorrelationId);

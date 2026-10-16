@@ -208,7 +208,8 @@ public class TriagemOutboxDrainServiceTests
     {
         var outboxRepository = new FakeTriagemOutboxRepository();
         var triagemRepository = new FakeTriagemRepository();
-        var useCase = new StartTriagemUseCase(workOrderQuery, triagemRepository, new FakeTimeProvider(now));
+        var useCase = new StartTriagemUseCase(workOrderQuery, triagemRepository,
+            new FakeTriagemMessageTemplateResolver(), new FakeTimeProvider(now));
         var options = Options.Create(new TriagemOutboxOptions
         {
             BatchSize = batchSize,

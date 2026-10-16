@@ -24,6 +24,12 @@ public sealed class TriagemEligibleWorkOrderQueryHandler(AtuaDbContext dbContext
             .Where(order => order.TenantId == tenantId
                 && order.IntegrationId == integrationId
                 && order.WorkOrderProviderId == workOrderProviderId)
-            .Select(order => new TriagemEligibleWorkOrderLookupResult(order.Id, order.Status))
+            .Select(order => new TriagemEligibleWorkOrderLookupResult(
+                order.Id,
+                order.Status,
+                order.WorkOrderProviderId,
+                order.WorkOrderProviderNo,
+                order.ProductBrand,
+                order.ProductModel))
             .SingleOrDefaultAsync(cancellationToken);
 }

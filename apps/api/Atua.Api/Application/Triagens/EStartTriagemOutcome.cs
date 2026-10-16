@@ -19,4 +19,7 @@ public enum EStartTriagemOutcome
 
     /// <summary>A OS existe, mas seu status atual não é elegível para iniciar a triagem.</summary>
     WorkOrderNotEligible,
+
+    /// <summary>Nenhuma versão publicada e ativa existe para o contato inicial desta integração.</summary>
+    TemplateNotConfigured,
 }

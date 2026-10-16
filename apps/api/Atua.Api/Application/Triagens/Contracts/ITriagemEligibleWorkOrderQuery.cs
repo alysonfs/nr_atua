@@ -31,4 +31,10 @@ public interface ITriagemEligibleWorkOrderQuery
 /// Status cru da OS no provedor, usado exclusivamente para avaliação de
 /// elegibilidade (ver <see cref="Atua.Api.Domain.Triagens.TriagemEligibleWorkOrderStatus"/>).
 /// </param>
-public sealed record TriagemEligibleWorkOrderLookupResult(Guid WorkOrderId, string Status);
+public sealed record TriagemEligibleWorkOrderLookupResult(
+    Guid WorkOrderId,
+    string Status,
+    string WorkOrderProviderId = "",
+    string? WorkOrderProviderNo = null,
+    string? ProductBrand = null,
+    string? ProductModel = null);

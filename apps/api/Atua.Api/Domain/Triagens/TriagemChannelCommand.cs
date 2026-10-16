@@ -26,7 +26,8 @@ public sealed class TriagemChannelCommand
     private TriagemChannelCommand() { }
 
     public TriagemChannelCommand(Guid id, Guid tenantId, Guid integrationId, Guid triagemId, Guid workOrderId,
-        string templateId, int templateVersion, string idempotencyKey, Guid correlationId, DateTimeOffset now)
+        string templateId, int templateVersion, string renderedContent, string idempotencyKey,
+        Guid correlationId, DateTimeOffset now)
     {
         if (tenantId == Guid.Empty)
         {
@@ -48,6 +49,11 @@ public sealed class TriagemChannelCommand
             throw new ArgumentException("IdempotencyKey não pode ser vazia.", nameof(idempotencyKey));
         }
 
+        if (string.IsNullOrWhiteSpace(renderedContent))
+        {
+            throw new ArgumentException("RenderedContent não pode ser vazio.", nameof(renderedContent));
+        }
+
         Id = id;
         TenantId = tenantId;
         IntegrationId = integrationId;
@@ -55,6 +61,7 @@ public sealed class TriagemChannelCommand
         WorkOrderId = workOrderId;
         TemplateId = templateId;
         TemplateVersion = templateVersion;
+        RenderedContent = renderedContent;
         IdempotencyKey = idempotencyKey;
         CorrelationId = correlationId;
         Status = ETriagemChannelCommandStatus.Pending;
@@ -73,10 +80,16 @@ public sealed class TriagemChannelCommand
 
     public Guid WorkOrderId { get; private set; }
 
-    /// <summary>Identificador abstrato do template — nunca o texto do template (arquitetura, seção 3).</summary>
+    /// <summary>Identificador imutável da versão selecionada do template.</summary>
     public string TemplateId { get; private set; } = string.Empty;
 
     public int TemplateVersion { get; private set; }
+
+    /// <summary>
+    /// Snapshot renderizado no aceite da triagem. Retentativas sempre usam
+    /// exatamente este conteúdo, mesmo após a publicação de outra versão.
+    /// </summary>
+    public string RenderedContent { get; private set; } = string.Empty;
 
     /// <summary>
     /// Chave estável de idempotência (ADR-039, item 3) — a mesma em toda

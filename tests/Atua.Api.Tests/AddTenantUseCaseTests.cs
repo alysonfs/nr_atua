@@ -3,6 +3,7 @@ using Atua.Api.Domain.Billing;
 using Atua.Api.Domain.Identity;
 using Atua.Api.Domain.Integrations;
 using Atua.Api.Domain.Tenants;
+using Atua.Api.Domain.Triagens;
 using Atua.Api.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
@@ -66,6 +67,17 @@ public class AddTenantUseCaseTests
         Assert.Equal(result.TenantId, integration.TenantId);
         Assert.Equal(WellKnownIntegrationProviders.IServiceProviderId, integration.ProviderId);
         Assert.False(integration.IsEnabled);
+
+        var templates = await context.TriagemMessageTemplates.ToListAsync();
+        Assert.Equal(3, templates.Count);
+        Assert.All(templates, template =>
+        {
+            Assert.Equal(result.TenantId, template.TenantId);
+            Assert.Equal(result.IntegrationId, template.IntegrationId);
+            Assert.Equal(ETriagemMessageTemplateStatus.Published, template.Status);
+            Assert.True(template.IsActive);
+            Assert.Equal(1, template.Version);
+        });
     }
 
     [Fact]

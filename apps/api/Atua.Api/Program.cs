@@ -183,6 +183,10 @@ builder.Services.AddHostedService<RecurrentCollectionSchedulerJob>();
 // DbContext injetado diretamente, sem estado próprio.
 builder.Services.AddScoped<ITriagemRepository, TriagemRepository>();
 builder.Services.AddScoped<ITriagemEligibleWorkOrderQuery, TriagemEligibleWorkOrderQueryHandler>();
+builder.Services.AddScoped<TriagemMessageTemplateRenderer>();
+builder.Services.AddScoped<ITriagemMessageTemplateResolver>(
+    serviceProvider => serviceProvider.GetRequiredService<TriagemMessageTemplateRenderer>());
+builder.Services.AddScoped<TriagemMessageTemplateService>();
 builder.Services.AddScoped<StartTriagemUseCase>();
 
 // ADR-042: comando de canal persistido atomicamente com o aceite da
@@ -273,5 +277,6 @@ app.MapRecurrentCollectionIntervalEndpoints();
 app.MapWorkOrderEndpoints();
 app.MapTriagemEndpoints();
 app.MapTriagemChannelEndpoints();
+app.MapTriagemMessageTemplateEndpoints();
 
 app.Run();

@@ -1,6 +1,7 @@
 using Atua.Api.Domain.Billing;
 using Atua.Api.Domain.Integrations;
 using Atua.Api.Domain.Tenants;
+using Atua.Api.Application.Triagens;
 using Atua.Api.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
@@ -90,6 +91,9 @@ public sealed class AddTenantUseCase(AtuaDbContext dbContext)
         var integration = new Integration(Guid.CreateVersion7(), tenant.Id,
             WellKnownIntegrationProviders.IServiceProviderId, isEnabled: false);
         dbContext.Integrations.Add(integration);
+        dbContext.TriagemMessageTemplates.AddRange(
+            TriagemMessageTemplateDefaults.CreatePublishedTemplates(
+                tenant.Id, integration.Id, DateTimeOffset.UtcNow));
 
         // RF-020.2/ADR-015: a contagem do prazo do Trial parte do instante de
         // confirmação de e-mail do usuário, não da criação do tenant, para não
