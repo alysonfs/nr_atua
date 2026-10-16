@@ -146,19 +146,18 @@ public sealed class TriagemOutboxDrainService(
 
     /// <summary>
     /// Classifica a exceção num código seguro (nunca <c>Exception.Message</c>
-    /// — ver <see cref="ETriagemOutboxErrorCode"/>). <see cref="TriagemChannelTransientFailureException"/>
-    /// é a falha transitória conhecida do envio do template inicial ao canal
-    /// (ADR-039, item 7; arquitetura, seção 5.3) — o código/descrição
-    /// seguros do canal ficam no log (ver chamador), nunca nesta
-    /// classificação. Toda exceção não tratada explicitamente pelos
-    /// outcomes de <see cref="StartTriagemUseCase"/> acima (incluindo
+    /// — ver <see cref="ETriagemOutboxErrorCode"/>). Desde o ADR-042,
+    /// <see cref="StartTriagemUseCase"/> nunca chama o canal em processo —
+    /// ele apenas persiste o comando de canal atomicamente com a triagem —
+    /// então a única falha transitória conhecida aqui é de infraestrutura
+    /// (ex.: timeout de banco). Toda exceção não tratada explicitamente
+    /// pelos outcomes de <see cref="StartTriagemUseCase"/> acima (incluindo
     /// <see cref="TimeoutException"/>) é <see cref="ETriagemOutboxErrorCode.Unclassified"/>
     /// — tratada da mesma forma que uma falha transitória (retry com
     /// backoff), nunca mascarada como sucesso.
     /// </summary>
     private static ETriagemOutboxErrorCode ClassifyError(Exception exception) => exception switch
     {
-        TriagemChannelTransientFailureException => ETriagemOutboxErrorCode.TransientError,
         TimeoutException => ETriagemOutboxErrorCode.TransientError,
         _ => ETriagemOutboxErrorCode.Unclassified,
     };

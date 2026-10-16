@@ -5,17 +5,26 @@ namespace Atua.Api.Application.Triagens;
 
 /// <summary>
 /// Caso de uso idempotente de início da triagem (ADR-039, seção "Decisão
-/// proposta", itens 1 e 2; arquitetura, seção 6): registra o aceite do
-/// gatilho de início usando uma chave estável por tenant, integração e OS, e
-/// em seguida emite o comando <c>SendTemplate</c> ao canal (arquitetura,
-/// seção 5.3), persistindo o resultado estruturado como transição de
-/// estado.
+/// proposta", itens 1 e 2; ADR-042; arquitetura, seção 6): registra o
+/// aceite do gatilho de início usando uma chave estável por tenant,
+/// integração e OS, e persiste o comando <c>SendTemplate</c> ao canal na
+/// mesma transação (ADR-042: "A Master API persistirá o comando de canal na
+/// mesma transação que registra o aceite idempotente da triagem").
 ///
-/// Reentregas do mesmo gatilho (mesmo tenant + integração + OS) retomam o
-/// envio quando a triagem já registrada ainda estiver
-/// <see cref="ETriagemStatus.AguardandoEnvio"/>, e curto-circuitam (sem
-/// repetir a chamada ao canal) quando o estado já avançou além do envio
-/// inicial — nunca recriam nem resetam estado já avançado.
+/// Desde o ADR-042, este caso de uso nunca chama o canal em processo — ele
+/// apenas registra a intenção (<see cref="Domain.Triagens.TriagemChannelCommand"/>).
+/// O processo separado do canal reivindica o comando por polling
+/// (<c>claim</c>) e reporta o resultado (<c>complete</c>), que é quem move
+/// a triagem de <see cref="ETriagemStatus.AguardandoEnvio"/> para
+/// <see cref="ETriagemStatus.ContatoIniciado"/> ou
+/// <see cref="ETriagemStatus.FalhaDeContato"/> — ver
+/// <see cref="TriagemChannelCommandService"/>.
+///
+/// Reentregas do mesmo gatilho (mesmo tenant + integração + OS) nunca
+/// recriam a triagem nem o comando de canal: encontrando um registro já
+/// existente para a chave, este caso de uso apenas devolve o estado atual,
+/// qualquer que seja — nunca reenfileira um novo comando para uma triagem
+/// já aceita.
 ///
 /// Diferente do incremento anterior, o <c>WorkOrderId</c> interno nunca é
 /// recebido do chamador: é sempre resolvido internamente, consultando
@@ -26,7 +35,6 @@ namespace Atua.Api.Application.Triagens;
 public sealed class StartTriagemUseCase(
     ITriagemEligibleWorkOrderQuery workOrderQuery,
     ITriagemRepository triagemRepository,
-    ITriagemChannel channel,
     TimeProvider timeProvider)
 {
     public async Task<StartTriagemResult> ExecuteAsync(Guid tenantId, Guid integrationId,
@@ -55,20 +63,13 @@ public sealed class StartTriagemUseCase(
         // conhecido. A elegibilidade `assigned` é exigida apenas antes de
         // CRIAR, nunca antes de retornar uma triagem já registrada — por
         // isso a OS não é reconsultada/rejeitada por status atual quando já
-        // existe triagem para a chave.
+        // existe triagem para a chave. Desde o ADR-042, nenhuma reentrega
+        // reenfileira comando de canal: o comando já foi persistido
+        // atomicamente com a triagem na primeira aceitação.
         var existing = await triagemRepository.FindByKeyAsync(key, cancellationToken);
         if (existing is not null)
         {
-            if (existing.Status != ETriagemStatus.AguardandoEnvio)
-            {
-                // Curto-circuito: o estado já avançou além do envio inicial
-                // — nunca repete o comando SendTemplate ao canal (arquitetura,
-                // seção 6).
-                return StartTriagemResult.Existing(existing.Id, existing.Status);
-            }
-
-            var resumedStatus = await SendTemplateAndPersistAsync(existing, key, cancellationToken);
-            return StartTriagemResult.Existing(existing.Id, resumedStatus);
+            return StartTriagemResult.Existing(existing.Id, existing.Status);
         }
 
         var workOrder = await workOrderQuery.ExecuteAsync(tenantId, integrationId, workOrderProviderId,
@@ -84,94 +85,27 @@ public sealed class StartTriagemUseCase(
         }
 
         var now = timeProvider.GetUtcNow();
-        var candidate = new Triagem(Guid.CreateVersion7(), tenantId, integrationId, workOrder.WorkOrderId, now);
+        var triagemId = Guid.CreateVersion7();
+        var candidate = new Triagem(triagemId, tenantId, integrationId, workOrder.WorkOrderId, now);
 
-        var result = await triagemRepository.GetOrAddAsync(key, candidate, cancellationToken);
-
-        if (!result.Created && result.Triagem.Status != ETriagemStatus.AguardandoEnvio)
-        {
-            // Perdeu a corrida de GetOrAddAsync e o vencedor já avançou além
-            // do envio inicial — curto-circuito, nenhuma chamada ao canal.
-            return StartTriagemResult.Existing(result.Triagem.Id, result.Triagem.Status);
-        }
-
-        var status = await SendTemplateAndPersistAsync(result.Triagem, key, cancellationToken);
-
-        return result.Created
-            ? StartTriagemResult.Created(result.Triagem.Id, status)
-            : StartTriagemResult.Existing(result.Triagem.Id, status);
-    }
-
-    /// <summary>
-    /// Emite o comando <c>SendTemplate</c> ao canal e persiste o resultado
-    /// como transição de estado. Nenhuma transação PostgreSQL fica aberta
-    /// durante a chamada ao canal: a persistência do <c>GetOrAddAsync</c>
-    /// (ou a leitura de <c>FindByKeyAsync</c>) já foi concluída/commitada
-    /// antes desta chamada, e a transição resultante é persistida em uma
-    /// nova chamada a <c>SaveChangesAsync</c> somente depois que o canal
-    /// responde.
-    /// </summary>
-    private async Task<ETriagemStatus> SendTemplateAndPersistAsync(Triagem triagem, TriagemIdempotencyKey key,
-        CancellationToken cancellationToken)
-    {
-        var command = new TriagemSendTemplateCommand(
-            triagem.TenantId,
-            triagem.IntegrationId,
-            triagem.Id,
-            triagem.WorkOrderId,
+        var channelCommand = new TriagemChannelCommand(
+            Guid.CreateVersion7(),
+            tenantId,
+            integrationId,
+            triagemId,
+            workOrder.WorkOrderId,
             TriagemChannelTemplates.InitialContactTemplateId,
             TriagemChannelTemplates.InitialContactTemplateVersion,
             key.ToString(),
-            triagem.Id);
+            Guid.CreateVersion7(),
+            now);
 
-        var sendResult = await channel.SendTemplateAsync(command, cancellationToken);
+        var result = await triagemRepository.GetOrAddWithChannelCommandAsync(key, candidate, channelCommand,
+            cancellationToken);
 
-        var now = timeProvider.GetUtcNow();
-
-        switch (sendResult.Outcome)
-        {
-            case ETriagemChannelSendOutcome.Success:
-                triagem.MarcarContatoIniciado(now);
-                break;
-
-            case ETriagemChannelSendOutcome.PermanentFailure:
-                triagem.MarcarFalhaDeContato(now);
-                break;
-
-            case ETriagemChannelSendOutcome.TransientFailure:
-                // Preserva AguardandoEnvio e a mesma chave de idempotência
-                // (ADR-039, item 7) — nenhuma transição é persistida aqui.
-                // A outbox (ADR-041) classifica esta exceção e reagenda
-                // retentativa com backoff.
-                throw new TriagemChannelTransientFailureException(triagem.Id, sendResult.ErrorCode,
-                    sendResult.ErrorDescription);
-
-            default:
-                throw new InvalidOperationException($"Outcome de canal não tratado: {sendResult.Outcome}.");
-        }
-
-        try
-        {
-            await triagemRepository.SaveTransitionAsync(triagem, cancellationToken);
-            return triagem.Status;
-        }
-        catch (TriagemConcurrencyConflictException)
-        {
-            // Outro processo já persistiu uma transição concorrente para
-            // esta mesma triagem (ex.: corrida de GetOrAddAsync resolvida
-            // para o mesmo registro por dois chamadores, cada um enviando o
-            // template). Nunca repete a chamada ao canal neste branch —
-            // apenas recarrega o estado vencedor já persistido.
-            var winner = await triagemRepository.FindByKeyAsync(key, cancellationToken);
-            if (winner is null)
-            {
-                throw new InvalidOperationException(
-                    $"Conflito de concorrência detectado para a triagem '{triagem.Id}', mas nenhum registro foi " +
-                    $"encontrado para a chave '{key}'.");
-            }
-
-            return winner.Status;
-        }
+        return result.Created
+            ? StartTriagemResult.Created(result.Triagem.Id, result.Triagem.Status)
+            : StartTriagemResult.Existing(result.Triagem.Id, result.Triagem.Status);
     }
 }
 

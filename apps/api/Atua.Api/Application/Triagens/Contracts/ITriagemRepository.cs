@@ -34,6 +34,27 @@ public interface ITriagemRepository
         CancellationToken cancellationToken);
 
     /// <summary>
+    /// Mesma semântica de <see cref="GetOrAddAsync"/>, mas persiste
+    /// <paramref name="channelCommand"/> na mesma transação quando
+    /// <paramref name="candidate"/> é efetivamente inserida (ADR-042: "A
+    /// Master API persistirá o comando de canal na mesma transação que
+    /// registra o aceite idempotente da triagem"). Quando a chamada perde a
+    /// corrida de criação (outro processo já registrou a triagem e seu
+    /// comando), <paramref name="channelCommand"/> nunca é persistido — o
+    /// comando já existente pertence exclusivamente ao vencedor da corrida.
+    /// </summary>
+    Task<TriagemGetOrAddResult> GetOrAddWithChannelCommandAsync(TriagemIdempotencyKey key, Triagem candidate,
+        TriagemChannelCommand channelCommand, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Consulta a triagem por identificador interno, sem efeito colateral.
+    /// Usado pelo <c>complete</c> do comando de canal (ADR-042) para aplicar
+    /// a transição de estado correspondente. Retorna <c>null</c> quando não
+    /// encontrada.
+    /// </summary>
+    Task<Triagem?> FindByIdAsync(Guid id, CancellationToken cancellationToken);
+
+    /// <summary>
     /// Consulta a triagem já registrada para <paramref name="key"/>, sem
     /// efeito colateral (ADR-039: reentrega da mesma chave retorna o
     /// resultado conhecido). Retorna <c>null</c> quando nenhuma triagem

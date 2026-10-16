@@ -31,8 +31,16 @@ internal sealed class FakeTriagemRepository : ITriagemRepository
 {
     private readonly Dictionary<TriagemIdempotencyKey, Triagem> _committed = new();
     private readonly Dictionary<Guid, TriagemIdempotencyKey> _keysById = new();
+    private readonly Dictionary<Guid, TriagemChannelCommand> _channelCommandsByTriagemId = new();
     private readonly ConditionalWeakTable<Triagem, StrongBox<Guid>> _originalTokens = new();
     private readonly object _lock = new();
+
+    /// <summary>
+    /// Comandos de canal persistidos via <see cref="GetOrAddWithChannelCommandAsync"/>,
+    /// indexados pela triagem a que pertencem — para asserções de teste
+    /// (ex.: verificar que o comando foi criado atomicamente com a triagem).
+    /// </summary>
+    public IReadOnlyDictionary<Guid, TriagemChannelCommand> ChannelCommandsByTriagemId => _channelCommandsByTriagemId;
 
     /// <summary>
     /// Quando maior que zero, as próximas chamadas a <see cref="SaveTransitionAsync"/>
@@ -71,6 +79,58 @@ internal sealed class FakeTriagemRepository : ITriagemRepository
         lock (_lock)
         {
             return Task.FromResult(_committed.TryGetValue(key, out var existing) ? Snapshot(existing) : null);
+        }
+    }
+
+    /// <summary>
+    /// Diferente de <see cref="FindByKeyAsync"/>/<see cref="GetOrAddAsync"/>
+    /// (que clonam, simulando leituras independentes de um banco real), este
+    /// método devolve a própria instância "committed" sem clonar. Ele
+    /// simula o mesmo <c>DbContext</c> compartilhado por requisição que
+    /// <c>TriagemChannelCommandService</c> usa em produção: a triagem
+    /// referenciada por um comando de canal é consultada e mutada na MESMA
+    /// unidade de trabalho que persiste o comando — uma única
+    /// <c>SaveChangesAsync</c> (do repositório de comando) grava ambas as
+    /// mutações, exatamente como o EF Core rastrearia a mesma entidade
+    /// anexada ao contexto. Clonar aqui quebraria essa semântica: a mutação
+    /// aplicada pelo chamador nunca seria observável sem uma chamada
+    /// adicional e inexistente de <see cref="SaveTransitionAsync"/>.
+    /// </summary>
+    public Task<Triagem?> FindByIdAsync(Guid id, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        lock (_lock)
+        {
+            if (!_keysById.TryGetValue(id, out var key) || !_committed.TryGetValue(key, out var existing))
+            {
+                return Task.FromResult<Triagem?>(null);
+            }
+
+            return Task.FromResult<Triagem?>(existing);
+        }
+    }
+
+    public Task<TriagemGetOrAddResult> GetOrAddWithChannelCommandAsync(TriagemIdempotencyKey key, Triagem candidate,
+        TriagemChannelCommand channelCommand, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        lock (_lock)
+        {
+            if (_committed.TryGetValue(key, out var existing))
+            {
+                // Conflito de criação concorrente: a triagem já existe —
+                // nenhum comando de canal é persistido (mesma semântica do
+                // repositório real, que descarta o candidato/comando
+                // perdedores sem efeito colateral).
+                return Task.FromResult(new TriagemGetOrAddResult(Snapshot(existing), Created: false));
+            }
+
+            _committed[key] = candidate;
+            _keysById[candidate.Id] = key;
+            _channelCommandsByTriagemId[candidate.Id] = channelCommand;
+            return Task.FromResult(new TriagemGetOrAddResult(Snapshot(candidate), Created: true));
         }
     }
 

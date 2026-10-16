@@ -195,38 +195,6 @@ public class TriagemOutboxDrainServiceTests
             (type.Contains("CollectorApiClient") || type.Contains("HttpClient")));
     }
 
-    [Fact]
-    public async Task CanalRetornaFalhaTransitoria_OutboxClassificaComoRetentavelComBackoff()
-    {
-        // ADR-041: a exceção tipada do canal (TriagemChannelTransientFailureException)
-        // deve ser classificada como erro transitório elegível a retentativa
-        // com backoff — nunca marcada como falha definitiva nem mascarada
-        // como "Unclassified".
-        var now = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
-        var workOrderQuery = new FakeTriagemEligibleWorkOrderQuery();
-        var workOrderId = Guid.NewGuid();
-        workOrderQuery.Seed(TenantId, IntegrationId, "OS-1", workOrderId, "assigned");
-        var channel = new FakeTriagemChannel();
-        var idempotencyKey = new TriagemIdempotencyKey(TenantId, IntegrationId, "OS-1").ToString();
-        channel.ConfigureResult(idempotencyKey,
-            TriagemChannelSendResult.TransientFailure("timeout-provedor", "Tempo esgotado."));
-
-        var (service, outboxRepository) = CreateService(workOrderQuery, now, maxAttempts: 10, baseRetrySeconds: 5,
-            maxRetrySeconds: 300, channel: channel);
-        var item = NewOutboxItem("OS-1", now);
-        outboxRepository.Add(item);
-
-        var result = await service.DrainOnceAsync(CancellationToken.None);
-
-        Assert.Equal(1, result.Retried);
-        Assert.Equal(0, result.Failed);
-        Assert.Equal(ETriagemTriggerOutboxStatus.Pending, item.Status);
-        Assert.Equal(1, item.AttemptCount);
-        Assert.Equal(ETriagemOutboxErrorCode.TransientError, item.LastErrorCode);
-        Assert.Equal(now.AddSeconds(5), item.NextAttemptAtUtc);
-        Assert.Equal(1, channel.RealSendCount);
-    }
-
     private static TriagemTriggerOutbox NewOutboxItem(string workOrderProviderId, DateTimeOffset occurredAtUtc) =>
         new(Guid.NewGuid(), TenantId, IntegrationId, Guid.NewGuid(), workOrderProviderId, occurredAtUtc, occurredAtUtc);
 
@@ -236,13 +204,11 @@ public class TriagemOutboxDrainServiceTests
         int batchSize = 20,
         int maxAttempts = 10,
         int baseRetrySeconds = 5,
-        int maxRetrySeconds = 300,
-        ITriagemChannel? channel = null)
+        int maxRetrySeconds = 300)
     {
         var outboxRepository = new FakeTriagemOutboxRepository();
         var triagemRepository = new FakeTriagemRepository();
-        var useCase = new StartTriagemUseCase(workOrderQuery, triagemRepository, channel ?? new FakeTriagemChannel(),
-            new FakeTimeProvider(now));
+        var useCase = new StartTriagemUseCase(workOrderQuery, triagemRepository, new FakeTimeProvider(now));
         var options = Options.Create(new TriagemOutboxOptions
         {
             BatchSize = batchSize,

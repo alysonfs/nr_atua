@@ -62,6 +62,51 @@ public sealed class TriagemRepository(AtuaDbContext dbContext) : ITriagemReposit
         }
     }
 
+    public async Task<TriagemGetOrAddResult> GetOrAddWithChannelCommandAsync(TriagemIdempotencyKey key,
+        Triagem candidate, TriagemChannelCommand channelCommand, CancellationToken cancellationToken)
+    {
+        var existing = await FindByKeyAsync(key, cancellationToken);
+        if (existing is not null)
+        {
+            return new TriagemGetOrAddResult(existing, Created: false);
+        }
+
+        dbContext.Triagens.Add(candidate);
+        dbContext.Entry(candidate)
+            .Property(TriagemPersistenceSchema.WorkOrderProviderIdShadowPropertyName)
+            .CurrentValue = key.WorkOrderProviderId;
+        dbContext.Set<TriagemChannelCommand>().Add(channelCommand);
+
+        try
+        {
+            await dbContext.SaveChangesAsync(cancellationToken);
+            return new TriagemGetOrAddResult(candidate, Created: true);
+        }
+        catch (DbUpdateException exception) when (IsIdempotencyUniqueViolation(exception))
+        {
+            // Perdeu a corrida: outra chamada concorrente já inseriu a
+            // triagem (e o seu comando de canal) para a mesma chave. Ambas
+            // as entidades candidatas são destacadas — nunca persistidas —
+            // e a instância vencedora (já com seu próprio comando) é
+            // retornada.
+            dbContext.Entry(candidate).State = EntityState.Detached;
+            dbContext.Entry(channelCommand).State = EntityState.Detached;
+
+            var persisted = await FindByKeyAsync(key, cancellationToken);
+            if (persisted is null)
+            {
+                throw new InvalidOperationException(
+                    "Violação da restrição de idempotência da triagem detectada, mas nenhum registro foi " +
+                    $"encontrado para a chave '{key}'.");
+            }
+
+            return new TriagemGetOrAddResult(persisted, Created: false);
+        }
+    }
+
+    public Task<Triagem?> FindByIdAsync(Guid id, CancellationToken cancellationToken) =>
+        dbContext.Triagens.FirstOrDefaultAsync(triagem => triagem.Id == id, cancellationToken);
+
     public Task<Triagem?> FindByKeyAsync(TriagemIdempotencyKey key, CancellationToken cancellationToken) =>
         dbContext.Triagens.FirstOrDefaultAsync(triagem =>
                 triagem.TenantId == key.TenantId
