@@ -222,13 +222,13 @@ Critério de conclusão:
 
 ### Incremento 1 — backend de templates
 
-- [ ] Modelar template e versão por tenant, integração e tipo.
-- [ ] Garantir uma única versão ativa por tipo e integração.
-- [ ] Implementar rascunho, publicação e ativação transacional.
-- [ ] Validar placeholders por tipo.
-- [ ] Preservar texto e versão selecionados no comando de canal.
-- [ ] Expor endpoints administrativos autorizados.
-- [ ] Criar migration e testes de concorrência, autorização e versionamento.
+- [x] Modelar template e versão por tenant, integração e tipo.
+- [x] Garantir uma única versão ativa por tipo e integração.
+- [x] Implementar rascunho, publicação e ativação transacional.
+- [x] Validar placeholders por tipo.
+- [x] Preservar texto e versão selecionados no comando de canal.
+- [x] Expor endpoints administrativos autorizados.
+- [x] Criar migration e testes de concorrência, autorização e versionamento.
 
 Critério de conclusão:
 
@@ -238,13 +238,13 @@ Critério de conclusão:
 
 ### Incremento 2 — tela de templates no Office
 
-- [ ] Criar rota administrativa.
-- [ ] Listar tipos, versões e versão ativa.
-- [ ] Criar e editar rascunhos.
-- [ ] Publicar e ativar versões.
-- [ ] Exibir preview com dados de exemplo.
-- [ ] Validar placeholders antes da publicação.
-- [ ] Restringir acesso aos administradores do tenant.
+- [x] Criar seção administrativa em Configurações.
+- [x] Listar tipos, versões e versão ativa.
+- [x] Criar e editar rascunhos.
+- [x] Publicar e ativar versões.
+- [x] Exibir preview com dados de exemplo.
+- [x] Validar placeholders antes da publicação.
+- [x] Restringir alteração e publicação aos administradores do tenant.
 
 Critério de conclusão:
 
@@ -252,6 +252,14 @@ Critério de conclusão:
 - operador não autorizado não acessa ações de escrita;
 - preview usa o mesmo mecanismo de renderização do backend ou contrato
   equivalente validado.
+
+Validação local concluída em 2026-10-16:
+
+- API: 388 testes aprovados;
+- Office: 167 testes aprovados;
+- Channel C#: 11 testes aprovados;
+- migration aplicada em PostgreSQL 16 com seed dos três templates para uma
+  integração pré-existente.
 
 ### Incremento 3 — credenciais do Channel
 

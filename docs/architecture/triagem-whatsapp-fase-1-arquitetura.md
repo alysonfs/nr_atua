@@ -109,8 +109,9 @@ permanece relacionada ao ADR-035 e ao ADR-038.
    resume token.
 2. O worker interno da Master API drena a outbox e solicita o início da
    triagem diretamente ao caso de uso.
-3. A Master API aceita a solicitação uma única vez por OS elegível e persiste
-   o comando do template inicial na mesma transação.
+3. A Master API aceita a solicitação uma única vez por OS elegível, seleciona
+   a versão publicada e ativa do template inicial, renderiza os placeholders
+   e persiste o comando com esse snapshot na mesma transação.
 4. O canal reivindica o comando por polling, envia o template e reporta o
    resultado pelo `complete`.
 5. Mensagens e mídias recebidas são encaminhadas à Master API.
@@ -121,8 +122,11 @@ permanece relacionada ao ADR-035 e ao ADR-038.
 8. O primeiro operador que assumir obtém exclusividade. A LLM deixa de
    responder nesse atendimento.
 
-O texto do template Midea e os textos dos lembretes de 24 e 36 horas dependem
-de revisão do PO antes da implementação e validação de envios reais.
+Os textos do contato inicial e dos lembretes de 24 e 36 horas são
+versionados por tenant e integração. OWNER e ADMIN podem editar um rascunho
+e publicar uma nova versão imutável pelo Office. Há apenas uma versão ativa
+por tipo; comandos já criados preservam o conteúdo renderizado selecionado
+no aceite da triagem.
 
 ## 4. Autoridade da máquina de estados
 
@@ -164,6 +168,8 @@ Eventos e comandos carregam, no mínimo:
 - chave de idempotência;
 - data e hora do fato em UTC;
 - tipo e payload específico;
+- identificador e número da versão do template, além do snapshot renderizado
+  para comandos de mensagem;
 - erro estruturado, quando aplicável, com código, indicação de retentativa e
   descrição segura.
 
@@ -182,7 +188,8 @@ expor conteúdo de mensagens, documentos ou tokens.
 
 ### 5.3 Comandos da API para o canal
 
-- `SendTemplate`: envio do template inicial fixo aprovado pelo PO.
+- `SendTemplate`: envio do snapshot renderizado da versão ativa do template
+  inicial selecionada no aceite da triagem.
 - `SendMessage`: envio de respostas da LLM, lembretes aprovados ou mensagens
   do operador.
 
