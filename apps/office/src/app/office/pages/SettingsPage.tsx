@@ -3,6 +3,7 @@ import { TimezonePreference } from '../components/Settings'
 import { TrialCard, TrialExpiryAlert } from '../components/Trial'
 import { CreateTenantForm, TenantSelector } from '../components/Onboarding'
 import { ProviderIntegrationSection } from '../components/Integrations'
+import { TriagemMessageTemplatesSection } from '../components/TriagemTemplates'
 import { useMyTenants } from '../hooks/useTenants'
 import { useTranslation } from 'react-i18next'
 
@@ -52,11 +53,12 @@ export function SettingsPage() {
             t('settings.navigation.overview'),
             t('settings.navigation.integrations'),
             t('settings.navigation.collector'),
+            t('settings.navigation.triageTemplates'),
             t('settings.navigation.preferences'),
           ].map((item, index) => (
             <a
               key={item}
-              href={index === 0 ? '#trial-heading' : index === 1 ? '#integration-heading' : index === 2 ? '#integration-heading' : '#preferences-heading'}
+              href={index === 0 ? '#trial-heading' : index <= 2 ? '#integration-heading' : index === 3 ? '#triage-templates-heading' : '#preferences-heading'}
               className={`block rounded-md px-3 py-2 text-sm font-medium transition ${
                 index === 0
                   ? 'bg-slate-900 text-white shadow-sm'
@@ -111,6 +113,22 @@ export function SettingsPage() {
           </div>
           <TrialCard />
         </section>
+
+        {!isLoading && !isError && activeTenantId && integrationId && (
+          <section aria-labelledby="triage-templates-heading" className="space-y-3">
+            <div>
+              <h2 id="triage-templates-heading" className="text-sm font-semibold uppercase text-slate-500">
+                {t('triageTemplates.title')}
+              </h2>
+              <p className="text-sm text-slate-700">{t('triageTemplates.description')}</p>
+            </div>
+            <TriagemMessageTemplatesSection
+              tenantId={activeTenantId}
+              integrationId={integrationId}
+              canManage={canManageIntegration}
+            />
+          </section>
+        )}
 
         <section aria-labelledby="integration-heading" className="space-y-3">
           <div>
