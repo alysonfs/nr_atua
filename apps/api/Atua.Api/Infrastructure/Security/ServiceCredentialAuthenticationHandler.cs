@@ -27,6 +27,20 @@ public sealed class ServiceCredentialAuthenticationHandler(
     /// </summary>
     public const string TriageStartScope = "triage.start";
 
+    /// <summary>
+    /// Escopo exclusivo de <c>POST /api/internal/triagens/canal/claim</c>
+    /// (ADR-042). Não reutiliza os escopos do Agente Coletor nem o de início
+    /// da triagem — domínio de autorização independente do processo do
+    /// canal.
+    /// </summary>
+    public const string ChannelCommandClaimScope = "channel.command.claim";
+
+    /// <summary>
+    /// Escopo exclusivo de <c>POST /api/internal/triagens/canal/complete</c>
+    /// (ADR-042).
+    /// </summary>
+    public const string ChannelCommandCompleteScope = "channel.command.complete";
+
     protected override async Task<AuthenticateResult> HandleAuthenticateAsync()
     {
         var authorization = Request.Headers.Authorization.ToString();

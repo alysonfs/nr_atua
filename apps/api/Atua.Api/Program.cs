@@ -96,6 +96,12 @@ builder.Services.AddAuthorization(options =>
     options.AddPolicy("TriageStart", policy =>
         policy.AddAuthenticationSchemes(ServiceCredentialAuthenticationHandler.SchemeName)
             .RequireClaim("scope", ServiceCredentialAuthenticationHandler.TriageStartScope));
+    options.AddPolicy("ChannelCommandClaim", policy =>
+        policy.AddAuthenticationSchemes(ServiceCredentialAuthenticationHandler.SchemeName)
+            .RequireClaim("scope", ServiceCredentialAuthenticationHandler.ChannelCommandClaimScope));
+    options.AddPolicy("ChannelCommandComplete", policy =>
+        policy.AddAuthenticationSchemes(ServiceCredentialAuthenticationHandler.SchemeName)
+            .RequireClaim("scope", ServiceCredentialAuthenticationHandler.ChannelCommandCompleteScope));
 });
 
 builder.Services.AddSingleton<IAmazonSimpleEmailServiceV2, AmazonSimpleEmailServiceV2Client>();
@@ -177,13 +183,17 @@ builder.Services.AddHostedService<RecurrentCollectionSchedulerJob>();
 // DbContext injetado diretamente, sem estado próprio.
 builder.Services.AddScoped<ITriagemRepository, TriagemRepository>();
 builder.Services.AddScoped<ITriagemEligibleWorkOrderQuery, TriagemEligibleWorkOrderQueryHandler>();
-// Canal fake in-process (arquitetura, seção 2.4/5.3) — não representa
-// Baileys/WhatsApp real. TODO: substituir quando o canal real e o texto do
-// template estiverem aprovados pelo PO. Singleton: a deduplicação por chave
-// de idempotência (ADR-039) precisa de estado compartilhado entre chamadas
-// concorrentes no mesmo processo.
-builder.Services.AddSingleton<ITriagemChannel, FakeTriagemChannel>();
 builder.Services.AddScoped<StartTriagemUseCase>();
+
+// ADR-042: comando de canal persistido atomicamente com o aceite da
+// triagem, reivindicado por polling (claim) e concluído (complete) pelo
+// processo separado do canal — nunca chamado em processo.
+builder.Services.AddOptions<TriagemChannelOptions>()
+    .Bind(builder.Configuration.GetSection(TriagemChannelOptions.SectionName))
+    .ValidateDataAnnotations()
+    .ValidateOnStart();
+builder.Services.AddScoped<ITriagemChannelCommandRepository, TriagemChannelCommandRepository>();
+builder.Services.AddScoped<TriagemChannelCommandService>();
 
 // ADR-041: drenagem da outbox do gatilho de triagem gravada pelo Collector.
 builder.Services.AddOptions<TriagemOutboxOptions>()
@@ -262,5 +272,6 @@ app.MapCollectorCommandEndpoints();
 app.MapRecurrentCollectionIntervalEndpoints();
 app.MapWorkOrderEndpoints();
 app.MapTriagemEndpoints();
+app.MapTriagemChannelEndpoints();
 
 app.Run();
