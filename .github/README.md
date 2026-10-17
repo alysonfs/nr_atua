@@ -54,12 +54,17 @@ verificação:
   e com a qualidade esperada.
 - `.github/skills/aws-cost-monitoring/` — consulta de gastos AWS via Cost
   Explorer/Budgets, somente leitura.
+- [atua-testar-triagem](./skills/atua-testar-triagem/SKILL.md) — acionada por
+  "testar triagem"; executa o E2E sintético de envio inicial via WhatsApp,
+  acompanha a confirmação nos aparelhos e orienta a limpeza por ID.
 
 Cada skill documenta seus pré-requisitos e permissões mínimas no próprio
 `SKILL.md`. Scripts que fazem parte de uma skill vivem em
 `.github/skills/<nome-da-skill>/scripts/` — não em `infra/scripts/`, que é
 reservado ao ciclo de vida declarativo da infraestrutura (`make up`/
 `make down`, RDS).
+Exceção existente: a skill `atua-testar-triagem` reutiliza
+`infra/scripts/e2e-triagem-synthetic.sh`, sem duplicar ou mover o script.
 
 ### Configuração de `.env` para as skills operacionais
 

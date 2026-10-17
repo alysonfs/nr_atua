@@ -16,6 +16,7 @@ Referências:
 - [ADR-040 — Persistência PostgreSQL da triagem](../decisions/ADR-040-persistencia-postgresql-do-agregado-triagem.md)
 - [ADR-041 — Outbox PostgreSQL para disparo da triagem](../decisions/ADR-041-outbox-postgresql-para-disparo-de-triagem-pelo-consumer.md)
 - [ADR-042 — Polling do canal com claim/complete](../decisions/ADR-042-polling-claim-complete-para-canal-whatsapp.md)
+- [ADR-043 — Ingestão de MessageReceived e transição para EM_COLETA](../decisions/ADR-043-ingestao-message-received-e-transicao-em-coleta.md)
 
 Este documento define a arquitetura lógica da Fase 1. Não define modelo
 físico de dados, prompts da LLM nem detalhes internos da biblioteca Baileys.
@@ -179,7 +180,12 @@ expor conteúdo de mensagens, documentos ou tokens.
 ### 5.2 Eventos do canal para a API
 
 - `MessageReceived`: texto recebido, identificador da mensagem do canal e
-  referência à conversa.
+  referência à conversa. O Channel envia o evento a
+  `POST /api/internal/triagens/canal/mensagens` com o escopo exclusivo
+  `channel.message.ingest`. A API deduplica, resolve pela integração e
+  telefone e inicia `EM_COLETA` quando há uma única triagem correspondente.
+  Eventos ambíguos ficam sem vínculo e aguardam resolução manual futura,
+  conforme ADR-043.
 - `MediaReceived`: metadados da mídia e conteúdo encaminhado para ingestão
   controlada pela API.
 - `DeliveryStatusUpdate`: confirmação, entrega, leitura ou falha de uma
@@ -218,6 +224,12 @@ consecutiva, a Master API encerra o comando e move a triagem para
 - Cada comando de saída tem chave de idempotência estável.
 - Eventos recebidos são deduplicados pelo identificador do canal e pela chave
   de idempotência no escopo do tenant.
+- Mensagens recebidas e resultado do processamento são persistidos em
+  `triagem_channel_messages`; a restrição única por tenant e chave
+  idempotente impede aplicar uma transição mais de uma vez.
+- Se uma mensagem corresponder a múltiplas triagens ativas, a API persiste a
+  lista de candidatas, não escolhe uma OS e não altera estado. Resolução e
+  notificação no painel ficam para incremento posterior.
 - `correlation_id` permite rastrear comando, resposta do canal e evento de
   entrega.
 - Falhas transitórias podem ser repetidas; falhas definitivas são convertidas
@@ -278,3 +290,5 @@ somente para suporte, QA e reprocessamento manual com credencial escopada.
 - Política de retenção e tratamento LGPD.
 - Operação always-on e responsabilidade pelo custo de produção.
 - Contrato e fornecedor da LLM.
+- Resolução manual no painel de mensagens ambíguas, conforme a decisão do PO
+  registrada no ADR-043.

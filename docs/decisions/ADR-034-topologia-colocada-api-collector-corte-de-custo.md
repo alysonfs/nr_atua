@@ -9,13 +9,13 @@ bloqueava a ativação foi corrigido, e a causa raiz do defeito de
 conexão Postgres (ver "Defeito de aplicação — causa raiz real
 encontrada e corrigida (30/09/2026)" abaixo) também foi identificada e
 corrigida com uma ação operacional (restart dos serviços), sem
-necessidade de alteração de código, de CDK ou de senha do RDS. A
+necessidade de alteração de código, de CDK ou de senha do RDS. **Nota residual resolvida (2026-10-01)**: o defeito de connection string do Postgres (resolvida em 2026-10-01 — ver nota de validação) foi validado de ponta a ponta com ciclo completo de coleta. A
 instância única está `running`, saudável, com memória e swap dentro do
 esperado, sem OOM, API e Collector conectando corretamente ao
 PostgreSQL, `/health` respondendo 200, e `make collector-trigger-cycle`
 executado do início ao fim com sucesso (signin, desativação, reativação
 da integração e reivindicação do comando pelo Worker). **Nota residual**:
-o Worker recebe `401` ao chamar `/commands/claim` — isso é débito
+o Worker recebe `401` ao chamar `/commands/claim` (superada em 2026-10-01 — ver nota de validação) — isso é débito
 técnico **pré-existente e documentado** (ServiceCredential vazio por
 padrão, ver ADR-021), não relacionado a este ADR nem ao defeito de
 conexão investigado, e não bloqueia a aceitação desta topologia.
@@ -548,6 +548,29 @@ intermediária desse diagnóstico também caracterizou incorretamente um
 padrão `;******` visto no código-fonte de `infra/lib/atua-compute-stack.ts`
 como "defeito pré-existente"; isso foi corrigido no mesmo diagnóstico —
 checagem por hash SHA-256 em todo o histórico Git mostrou que a
+
+### Nota de validação ponta a ponta (2026-10-01)
+
+**Data**: 2026-10-01 09:04 (UTC-3)
+
+**Defeito da connection string Postgres corrigido**: confirmado resolvido em 2026-10-01 — ver nota de validação. Ciclo de coleta de teste executado com sucesso.
+
+**CommandId de evidência**: `01a0f73b-0217-7588-b60a-22b891b8346c`
+
+**Etapas validadas**:
+- `/claim` (autenticação contra servidor de identidade): HTTP 200
+- Elegibilidade retornada: `Eligible=True`
+- Sessão iService reaproveitada em modo somente leitura
+- Coleta de dados de comando: `Designado=2`, `Em Processamento=1`, `Pendente=157`, `Concluído=34`, `Cancelado=47`
+- Endpoint `/complete` (outcome=Succeeded): ciclo finalizado sem erros
+
+**Erros **não** detectados**:
+- Sem erro de Postgres (DNS, timeout, refused ou malformed connection string)
+- Sem HTTP 401 em etapas críticas (débito técnico `/claim` superado; confirmado pelo product owner em 2026-10-01 com base nas logs do ciclo de teste (CommandId 01a0f73b-0217-7588-b60a-22b891b8346c), nas quais claim retornou 200 com autenticação funcionando; ServiceCredential vazio por design aceitável, ADR-021)
+- Sem OOM-kill nas logs analisadas (trechos parciais de `journalctl`)
+
+**Limitação identificada (ponto em aberto)**:
+- Medição de memória/swap via `free -m` não foi realizada nesta execução de 2026-10-01; permanece como validação pendente para próxima janela de testes.
 *connection string* sempre esteve correta no código-fonte, e o texto
 visto era resultado de uma camada de redação de segredos nas
 ferramentas de terminal, não um problema real no arquivo. A causa raiz

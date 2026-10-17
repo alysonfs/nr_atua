@@ -28,7 +28,7 @@ OFFICE_API_BASE_URL ?= https://api.atyno.com.br
 
 ACCOUNT_ID := $(shell aws sts get-caller-identity --query Account --output text --region $(REGION) 2>/dev/null)
 
-.PHONY: install synth diff bootstrap-cdk deploy-domain sync-api-domain up down destroy destroy-all-data status rds-bootstrap rds-up rds-down retrieve-keypair deploy-landing deploy-office deploy-manager deploy-tecnica deploy-api deploy-collector deploy-collector-bootstrap redeploy-api redeploy-collector collector-trigger-cycle logs-api logs-collector logs-api-follow logs-collector-follow mongo-peek mongo-peek-all pg-peek pg-peek-all
+.PHONY: install synth diff bootstrap-cdk deploy-domain sync-api-domain up down destroy destroy-all-data status rds-bootstrap rds-up rds-down retrieve-keypair deploy-landing deploy-office deploy-manager deploy-tecnica deploy-api deploy-collector deploy-collector-bootstrap redeploy-api redeploy-collector collector-trigger-cycle logs-api logs-collector logs-api-follow logs-collector-follow ec2-exec mongo-peek mongo-peek-all pg-peek pg-peek-all
 
 ## Instala dependências (pnpm, alinhado ao monorepo)
 install:
@@ -290,6 +290,8 @@ deploy-collector-bootstrap:
 # framework multi-agente. Ver .github/skills/atua-deploy/SKILL.md.
 DEPLOY_SKILL_SCRIPTS := ../.github/skills/atua-deploy/scripts
 
+EC2_EXEC_SKILL_SCRIPTS := ../.github/skills/atua-ec2-exec/scripts
+
 ## Redeploy "a quente" da API já rodando (sem recriar a EC2): compila,
 ## publica no S3, sincroniza via SSH, reinicia o systemd e verifica por MD5
 ## que o binário remoto realmente mudou. Automatiza o ciclo que antes era
@@ -322,6 +324,15 @@ logs-api-follow:
 
 logs-collector-follow:
 	bash $(DEPLOY_SKILL_SCRIPTS)/tail-logs.sh collector --follow
+
+## Executa um comando remoto pontual na EC2 do ATUA (IP via CloudFormation Outputs).
+## Uso: AWS_PROFILE=moldato make ec2-exec CMD="echo alyson"
+ec2-exec:
+	@if [ -z "$(CMD)" ]; then \
+	  echo 'Uso: AWS_PROFILE=<profile> make ec2-exec CMD="echo alyson"'; \
+	  exit 1; \
+	fi
+	bash $(EC2_EXEC_SKILL_SCRIPTS)/ec2-exec.sh "$(CMD)"
 
 ## Consultas somente leitura ao MongoDB Atlas (skill atua-mongo-inspect):
 ## últimos N documentos de uma coleção, ou de todas as coleções conhecidas.

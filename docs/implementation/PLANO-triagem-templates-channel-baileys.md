@@ -24,7 +24,8 @@ divergência, as fontes de verdade continuam sendo:
 - [ADR-038 — persistência da sessão Baileys](../decisions/ADR-038-persistencia-sessao-baileys-dev-local-producao-ebs.md);
 - [ADR-039 — idempotência](../decisions/ADR-039-idempotencia-envio-template-e-processamento-mensagens-triagem.md);
 - [ADR-041 — outbox do gatilho](../decisions/ADR-041-outbox-postgresql-para-disparo-de-triagem-pelo-consumer.md);
-- [ADR-042 — polling com claim/complete](../decisions/ADR-042-polling-claim-complete-para-canal-whatsapp.md).
+- [ADR-042 — polling com claim/complete](../decisions/ADR-042-polling-claim-complete-para-canal-whatsapp.md);
+- [ADR-043 — ingestão de MessageReceived e transição para EM_COLETA](../decisions/ADR-043-ingestao-message-received-e-transicao-em-coleta.md).
 
 ## 2. Decisões confirmadas
 
@@ -264,11 +265,12 @@ Validação local concluída em 2026-10-16:
 
 ### Incremento 3 — credenciais do Channel
 
-- [ ] Gerar tokens distintos para `claim` e `complete`.
-- [ ] Persistir somente os hashes no PostgreSQL.
-- [ ] Configurar os tokens no ambiente local do Channel.
-- [ ] Validar autenticação e isolamento da integração.
-- [ ] Manter credenciais do Collector intactas.
+- [x] Gerar tokens distintos para `claim` e `complete`.
+- [x] Persistir somente os hashes no PostgreSQL.
+- [x] Configurar os tokens no ambiente local protegido do Channel.
+- [x] Validar autenticação e isolamento dos escopos.
+- [x] Manter escopos do Channel separados dos do Collector; a rotação do
+      Collector foi feita separadamente após autorização explícita.
 
 Validação local isolada em 2026-10-16:
 
@@ -283,8 +285,19 @@ Validação local isolada em 2026-10-16:
 - nenhuma credencial real foi criada e nenhum acesso à AWS/RDS foi realizado.
   Tokens e banco de teste foram descartados ao fim da validação.
 
-O incremento permanece pendente até as credenciais serem configuradas e
-validadas no ambiente de execução, mediante autorização operacional.
+Estado operacional em 2026-10-17:
+
+- as duas credenciais reais do Channel foram criadas no RDS para a integração
+  de teste; somente os hashes estão no banco;
+- os tokens plaintext foram salvos em arquivo local fora do repositório com
+  permissão `0600`;
+- validação contra a API: `claim` válido retornou 204 sem comando pendente,
+  `complete` válido chegou à validação de payload (400) sem alterar dados e
+  credenciais com escopo cruzado foram recusadas (403);
+- os escopos do Channel continuam ativos e separados dos do Collector.
+
+O incremento permanece pendente até o Channel processar um comando real com o
+socket WhatsApp conectado e concluir `complete`.
 
 Critério de conclusão:
 
@@ -327,8 +340,11 @@ Configuração local do Channel (fornecer valores apenas por ambiente/secrets,
 sem versionar tokens):
 
 - obrigatórias: `ChannelWorker__ApiBaseUrl`,
-  `ChannelWorker__ClaimServiceToken`, `ChannelWorker__CompleteServiceToken` e
-  `ChannelWorker__SessionPath` (caminho absoluto fora do repositório);
+  `ChannelWorker__ClaimServiceToken`, `ChannelWorker__CompleteServiceToken`,
+  `ChannelWorker__MessageIngestServiceToken` e `ChannelWorker__SessionPath`
+  (caminho absoluto fora do repositório). Os três tokens de serviço devem ser
+  distintos; integrações já provisionadas precisam receber o novo escopo
+  `channel.message.ingest` antes de iniciar esta versão do Channel;
 - opcionais: `ChannelWorker__PollingIntervalSeconds` (padrão 15, máximo 30),
   `ChannelWorker__SendTimeoutSeconds` (padrão 30, máximo 45) e
   `ChannelWorker__PrintQr` (padrão `false`). O QR pode conter material de
@@ -353,21 +369,22 @@ Critério de conclusão:
 - timeout não é reportado como sucesso;
 - `complete` atualiza corretamente comando e triagem.
 
-### Pré-flight do Incremento 5 — preparação sem execução
+### Incremento 5 — preparação e estado operacional
 
-Estado em 2026-10-17: OS de teste definida, autorização concedida pelo
-product owner (janela: o dia todo) e contexto AWS confirmado pelo Ari
-(profile `moldato`, `sa-east-1`, stacks estáveis, RDS e EC2 ativos).
+Estado em 2026-10-17: OS de teste definida e autorização concedida pelo
+product owner (janela: o dia todo). A trava temporária foi implantada e
+validada antes do deploy.
 
-Antes de iniciar qualquer ação do Incremento 5:
+Preparação executada:
 
 - [x] Confirmar OS isolada e número vinculado sob controle do posto; não
       registrar o telefone neste plano.
 - [x] Obter autorização operacional explícita para acesso AWS e envio real de
       uma mensagem de teste.
-- [ ] Confirmar que as credenciais `channel.command.claim` e
-      `channel.command.complete` foram configuradas separadamente das
-      credenciais do Collector.
+- [x] Aplicar no RDS as seis migrations pendentes de triagem; o schema agora
+      inclui agregado, outbox, comandos e templates.
+- [x] Criar credenciais Channel separadas para `claim` e `complete`; a
+      autenticação ainda não foi validada.
 - [x] Confirmar que a integração iService está desabilitada antes da
       preparação e planejar sua desativação ao final do teste.
 - [x] Definir janela, operador responsável e procedimento de interrupção do
@@ -376,8 +393,109 @@ Antes de iniciar qualquer ação do Incremento 5:
 - [x] Implantar a trava temporária do E2E (abaixo) antes de habilitar a
       integração.
 
-Se algum item permanecer pendente, não habilitar a integração nem iniciar o
-Channel conectado ao WhatsApp.
+#### Estado operacional e próximos bloqueios
+
+- API redeployada em 2026-10-17; serviço ativo e `/health` respondeu
+  `healthy` na instância.
+- No RDS foram aplicadas as seis migrations pendentes de triagem; as quatro
+  tabelas de triagem existem e as três templates iniciais estão publicadas
+  para a única integração.
+- O Collector foi autorizado a ter suas credenciais giradas separadamente:
+  credenciais antigas dos três escopos foram revogadas, uma nova por escopo
+  permanece ativa e o arquivo de ambiente da EC2 foi atualizado sem exibir
+  tokens. O binário atual foi publicado e o serviço voltou a receber respostas
+  HTTP 200/204, sem novos 401.
+- O endpoint de claim do Channel foi validado através de túnel SSH local
+  (HTTP sobre loopback; não enviar tokens pela API pública em HTTP).
+- A ativação do Collector está `Active`, mas não há comando de coleta
+  pendente. A OS de teste existe no banco, porém seu status local ainda é
+  `closed`; precisa ser atualizada pelo próximo ciclo antes de elegibilidade.
+- Nenhuma triagem/outbox/comando existe para a OS de teste. O Channel ainda
+  não foi iniciado nem pareado, a integração permanece sem coleta de teste e
+  nenhuma mensagem foi enviada.
+
+Próximos passos: o product owner escaneia o QR no terminal privado; depois
+dispara uma coleta pelo fluxo autenticado do Office e confirma que a OS volta
+como `assigned`. A allowlist impede que outras OS gerem triagens ou mensagens.
+
+#### E2E repetível com OS sintética (2026-10-17)
+
+A OS real de teste ficou `closed` e não volta para `assigned`; esperar uma OS
+real elegível não é repetível. Decisão do product owner: usar OS sintéticas no
+mesmo tenant/integração, com prefixo `E2E-` e limpeza após o teste.
+
+- Script: `infra/scripts/e2e-triagem-synthetic.sh` (`inject [ID]`,
+  `status [ID]`, `cleanup [ID]`). Injeta uma interação `detail_query` em
+  `provider_interactions` (Atlas); o Consumer do Collector processa pelo
+  fluxo real. `detail_query` grava `NeedsDetailFetch=false`, então o Collector
+  não consulta o iService real para a OS fictícia. O Consumer apaga a
+  interação do Atlas após processá-la.
+- Trava: o claim da outbox passou a aceitar também `WorkOrderProviderId`
+  iniciado por `TriagemTestSafeguard.SyntheticWorkOrderProviderIdPrefix`
+  (`E2E-`). O destinatário continua fixo e o Channel mantém a segunda barreira.
+- Fora do cenário: a consulta ao iService. Validar depois com uma OS real
+  elegível, quando houver.
+- Custo: sem infraestrutura nova; Baileys não cobra por mensagem.
+
+Resultado da primeira execução (`E2E-20261017162812`):
+
+- [x] OS gravada `assigned` pelo Consumer; outbox `Processed`.
+- [x] Triagem criada (`AguardandoEnvio`) e comando `Pending`.
+- [x] Channel fez `claim` e `complete` (`Completed`); triagem em
+      `ContatoIniciado` em cerca de 20 segundos. Isso comprovou o processamento
+      interno, não a entrega: o product owner informou que a mensagem não chegou
+      nem apareceu como saída no aparelho do posto.
+- [x] Reinjeção da mesma OS: continua 1 outbox, 1 triagem, 1 comando e 1
+      histórico — sem segundo envio.
+- [x] Os 2 itens reais `Pending` da outbox permaneceram retidos pela trava.
+- [ ] Recebimento da primeira execução: não confirmado; product owner informou
+      ausência da mensagem nos dois aparelhos. Ver reexecução corrigida abaixo.
+- [x] Executar `cleanup` após diagnóstico e confirmação da reexecução.
+
+Diagnóstico após a falha de recebimento:
+
+- Túnel saudável e snapshot do destinatário correto no comando.
+- O Channel aceitava o ID retornado por `sendMessage` como sucesso. Esse ID é
+  gerado localmente e não comprova o aceite pelo servidor WhatsApp.
+- Correção: consultar `onWhatsApp` para resolver o JID canônico do telefone,
+  sem remover dígitos por heurística; aguardar o ACK do servidor correspondente
+  ao ID da mensagem antes de enviar `Success` à API. Rejeição, desconexão ou
+  timeout não podem concluir o envio como sucesso.
+- Logs seguros: `whatsapp_recipient_resolved`, `whatsapp_message_server_ack`,
+  `whatsapp_message_rejected` e `whatsapp_message_send_unconfirmed`; não
+  registram telefone, JID, texto ou credenciais.
+- ACK do servidor comprova aceite, não entrega nem leitura no aparelho.
+- Type-check, build e 29 testes do Channel aprovados, incluindo ausência de
+  ACK, rejeição, desconexão, JID canônico e consulta expirada sem envio tardio.
+- A primeira OS foi preservada durante o diagnóstico; a correção foi verificada
+  com outra OS sintética, sem reabrir o comando concluído.
+
+Reexecução corrigida (`E2E-20261017-ACK-01`):
+
+- [x] OS `assigned`, outbox `Processed`, comando `Completed`, triagem
+      `ContatoIniciado`, sem retentativas.
+- [x] Log `whatsapp_recipient_resolved` com `canonicalJidChanged=true`: o JID
+      confirmado pelo WhatsApp difere do JID montado diretamente do telefone.
+- [x] `whatsapp_message_server_ack` às 16:46:35 UTC, antes de
+      `channel_command_completed` com `outcome=Success`, para a mesma mensagem.
+- [x] Product owner confirmou recebimento no aparelho de teste e mensagem
+      visível na saída do aparelho do posto.
+- [x] Limpar as duas OS sintéticas após o diagnóstico e a confirmação.
+      Consultas por ambos os IDs retornaram zero registros; os 2 itens reais
+      `Pending` da outbox permaneceram intactos e protegidos pela trava.
+
+Revalidação independente (`E2E-20261017165357`, 2026-10-17 ~13:54 BRT):
+
+- [x] Channel Node: `tsc --noEmit` ok e 29/29 testes aprovados.
+- [x] Comando `Pending` → `Claimed` → `Completed` (0 tentativas extras),
+      triagem `ContatoIniciado`.
+- [x] Product owner confirmou: exatamente 1 mensagem recebida em
+      `+5584994241248` e mensagem visível na saída do aparelho do posto.
+- [x] OS sintética removida; `status` sem registros `E2E-`.
+
+Operação local necessária durante o teste: túnel SSH em
+`127.0.0.1:18080` (verificar com `curl http://127.0.0.1:18080/health`) e
+Channel Node rodando no terminal privado.
 
 #### Trava temporária do E2E — REMOVER após validação
 
@@ -400,8 +518,9 @@ com duas barreiras e telefone de destino fixo no código:
 
 Remoção (obrigatória antes de qualquer uso real):
 
-- [ ] Remover `TriagemTestSafeguard`, o filtro `@allowedWorkOrderIds` do
-      `ClaimBatchSql` e restaurar `recipientPhone: workOrder.ContactPhone`.
+- [ ] Remover `TriagemTestSafeguard`, o filtro `@allowedWorkOrderIds` e o
+      prefixo `@syntheticWorkOrderProviderIdPrefix` do `ClaimBatchSql` e
+      restaurar `recipientPhone: workOrder.ContactPhone`.
 - [ ] Remover `apps/channel-node/src/test-safeguard.ts` e sua verificação no
       worker; restaurar os testes afetados.
 - [ ] Antes de remover, decidir o que fazer com as linhas `Pending` acumuladas
@@ -432,15 +551,48 @@ Critério de conclusão:
 
 Ordem recomendada:
 
-1. evento `MessageReceived` com deduplicação;
-2. transição de `CONTATO_INICIADO` para `EM_COLETA`;
-3. recebimento de mídias e armazenamento no S3;
+1. [x] evento `MessageReceived` com deduplicação por tenant e chave estável;
+2. [x] transição `CONTATO_INICIADO` → `EM_COLETA` para texto individual não
+   vazio do número vinculado a exatamente uma triagem;
+3. recebimento de mídias e armazenamento no S3 (evento `MediaReceived`);
 4. checklist determinístico e contadores de tentativas;
 5. integração da LLM;
 6. lembretes de 24 e 36 horas;
 7. expiração em 48 horas;
-8. pool, notificações e assunção pelo operador;
+8. pool, notificações, resolução manual de mensagens ambíguas e assunção pelo
+   operador;
 9. respostas do operador pelo painel.
+
+O contrato dos dois primeiros incrementos está registrado no
+[ADR-043](../decisions/ADR-043-ingestao-message-received-e-transicao-em-coleta.md).
+A implementação adiciona `POST /api/internal/triagens/canal/mensagens`,
+escopo `channel.message.ingest` e persistência/deduplicação em
+`triagem_channel_messages`. A migration ainda precisa ser aplicada nos
+ambientes quando houver autorização de deploy.
+
+Validação local em 2026-10-17:
+
+- `dotnet build apps/api/Atua.Api/Atua.Api.csproj --no-restore`: aprovado,
+  zero warnings e zero errors;
+- `dotnet test tests/Atua.Api.Tests/Atua.Api.Tests.csproj --no-restore`:
+  402/402 testes aprovados, incluindo duplicidade, transição, ambiguidade,
+  associação ausente, mensagens de grupo/próprias/vazias e triagem já em
+  `EM_COLETA`;
+- `pnpm --filter @atua/channel-node check` e
+  `pnpm --filter @atua/channel-node test`: aprovados, 33/33 testes;
+- `bash -n` dos scripts E2E e de credenciais, e geração local do SQL
+  idempotente das migrations: aprovados; nenhum script operacional foi
+  executado contra banco real;
+- migrations geradas:
+  `20261017183609_AddTriagemChannelInboundMessages` e
+  `20261017184547_AddTriagemChannelMessageCandidateGinIndex`. Nenhuma foi
+  aplicada em ambiente.
+
+Antes de iniciar a nova versão do Channel numa integração já existente,
+provisionar a credencial exclusiva `channel.message.ingest` e configurar
+`ChannelWorker__MessageIngestServiceToken`. O provisionamento live e o
+deploy permanecem pendentes de autorização. Retenção/exclusão do texto
+recebido também permanece uma decisão de produção em aberto.
 
 ## 7. Bloqueios de produção
 

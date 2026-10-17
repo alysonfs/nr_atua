@@ -20,3 +20,24 @@ Authorization: Bearer {{Atua.Api.ServiceCredentialToken}}
 }
 
 ###
+
+# Evento inbound MessageReceived (ADR-043). Use somente com credencial
+# channel.message.ingest e dados de teste; tenant/integração vêm do token.
+POST {{Atua.Api_HostAddress}}/api/internal/triagens/canal/mensagens
+Content-Type: application/json
+Authorization: Bearer {{channelMessageIngestServiceToken}}
+
+{
+  "contractVersion": "1",
+  "channelMessageId": "wamid-example",
+  "channelIdempotencyKey": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "correlationId": "55555555-5555-4555-8555-555555555555",
+  "senderPhone": "5511999991234",
+  "conversationKind": "individual",
+  "fromMe": false,
+  "receivedAtUtc": "2026-10-17T12:00:00Z",
+  "kind": "text",
+  "text": "O produto não liga."
+}
+
+###
