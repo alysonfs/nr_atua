@@ -590,9 +590,15 @@ Validação local em 2026-10-17:
 
 Antes de iniciar a nova versão do Channel numa integração já existente,
 provisionar a credencial exclusiva `channel.message.ingest` e configurar
-`ChannelWorker__MessageIngestServiceToken`. O provisionamento live e o
-deploy permanecem pendentes de autorização. Retenção/exclusão do texto
-recebido também permanece uma decisão de produção em aberto.
+`ChannelWorker__MessageIngestServiceToken`. O script
+`infra/scripts/add-channel-message-ingest-credential.sh` oferece `--dry-run`
+sem acesso ao banco e, com `--confirm-write`, adiciona somente o novo escopo
+quando claim e complete já estão ativos. O token é salvo em arquivo privado
+separado; em caso de resultado de banco incerto, o arquivo pendente é
+preservado para reconciliação. O script ainda não foi executado contra RDS.
+O provisionamento live e o deploy permanecem pendentes de autorização.
+Retenção/exclusão do texto recebido também permanece uma decisão de produção
+em aberto.
 
 ## 7. Bloqueios de produção
 
