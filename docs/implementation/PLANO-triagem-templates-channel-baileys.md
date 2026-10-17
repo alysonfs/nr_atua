@@ -36,7 +36,8 @@ divergência, as fontes de verdade continuam sendo:
   - `claim` do comando;
   - envio pelo Baileys;
   - `complete` com resultado estruturado.
-- O worker C# atual é uma prova do contrato do ADR-042 e será substituído.
+- O worker C# atual é uma prova do contrato do ADR-042. Sua remoção fica
+  condicionada à equivalência validada do Channel Node.js/TypeScript.
 - Não será criado um sidecar Node chamado pelo worker C#, evitando dois
   processos e um contrato interno adicional.
 - O Channel não exporá porta de entrada; realizará somente conexões de saída.
@@ -269,6 +270,22 @@ Validação local concluída em 2026-10-16:
 - [ ] Validar autenticação e isolamento da integração.
 - [ ] Manter credenciais do Collector intactas.
 
+Validação local isolada em 2026-10-16:
+
+- `bash -n` passou para o seeder e seu helper PostgreSQL;
+- o seeder foi executado contra PostgreSQL 16 descartável, criando uma
+  credencial para cada scope; os hashes recalculados a partir dos tokens
+  temporários corresponderam aos hashes persistidos, os tokens eram distintos
+  e o arquivo de segredos tinha permissão `0600`;
+- uma segunda execução foi recusada por duplicidade, sem inserir linhas
+  adicionais; o arquivo temporário criado antes da falha foi removido;
+- `ServiceCredentialScopeIsolationTests`: 6/6 aprovados;
+- nenhuma credencial real foi criada e nenhum acesso à AWS/RDS foi realizado.
+  Tokens e banco de teste foram descartados ao fim da validação.
+
+O incremento permanece pendente até as credenciais serem configuradas e
+validadas no ambiente de execução, mediante autorização operacional.
+
 Critério de conclusão:
 
 - Channel autentica nos dois endpoints;
@@ -277,15 +294,52 @@ Critério de conclusão:
 
 ### Incremento 4 — Channel Node.js/TypeScript com Baileys
 
-- [ ] Criar worker Node.js/TypeScript.
-- [ ] Implementar polling e backoff.
-- [ ] Reutilizar os contratos `claim` e `complete` do ADR-042.
-- [ ] Integrar o envio do contato inicial pelo Baileys.
-- [ ] Carregar sessão a partir do diretório externo configurado.
-- [ ] Mapear sucesso, falha transitória e falha definitiva.
-- [ ] Preservar chave de idempotência e correlação.
-- [ ] Remover o sucesso fake do caminho operacional.
-- [ ] Descontinuar o worker C# de prova após equivalência validada.
+- [x] Criar worker Node.js/TypeScript.
+- [x] Implementar polling e backoff.
+- [x] Reutilizar os contratos `claim` e `complete` do ADR-042.
+- [x] Integrar o envio do contato inicial pelo Baileys.
+- [x] Carregar sessão a partir do diretório externo configurado.
+- [x] Mapear sucesso, falha transitória e falha definitiva.
+- [x] Preservar chave de idempotência e correlação.
+- [x] Remover o sucesso fake do caminho operacional.
+- [ ] Descontinuar o worker C# de prova após equivalência validada; a
+      implementação C# ainda existe e não deve ser removida antes dessa
+      validação.
+
+Validação local em 2026-10-16:
+
+- `pnpm --filter @atua/channel-node check` passou;
+- `pnpm --filter @atua/channel-node test`: 18/18 testes aprovados;
+- `dotnet test tests/Atua.Api.Tests/Atua.Api.Tests.csproj`: 388/388 testes
+  aprovados;
+- `dotnet test tests/Atua.Channel.Tests/Atua.Channel.Tests.csproj`: 11/11
+  testes aprovados;
+- a migration do snapshot `RecipientPhone` foi aplicada e verificada em
+  PostgreSQL 16 descartável; o container local foi parado e removido;
+- nenhuma conexão AWS/RDS, sessão/QR real ou mensagem de WhatsApp foi usada.
+
+Configuração local do Channel (fornecer valores apenas por ambiente/secrets,
+sem versionar tokens):
+
+- obrigatórias: `ChannelWorker__ApiBaseUrl`,
+  `ChannelWorker__ClaimServiceToken`, `ChannelWorker__CompleteServiceToken` e
+  `ChannelWorker__SessionPath` (caminho absoluto fora do repositório);
+- opcionais: `ChannelWorker__PollingIntervalSeconds` (padrão 15, máximo 30),
+  `ChannelWorker__SendTimeoutSeconds` (padrão 30, máximo 45) e
+  `ChannelWorker__PrintQr` (padrão `false`). O QR pode conter material de
+  autenticação; não o habilitar em terminal ou log compartilhado.
+
+Pendente antes de concluir o incremento:
+
+- exercitar conexão, persistência de sessão, reconexão, encerramento e timeout
+  do socket Baileys em ambiente controlado;
+- validar envio real para número de teste, reinício sem novo QR com sessão
+  válida e atualização por `complete` em ponta a ponta;
+- descontinuar o worker C# somente após equivalência validada.
+
+O incremento continua incompleto até os critérios de conclusão serem
+verificados. O teste de timeout local cobre a lógica do worker, mas não
+substitui a validação do socket/WhatsApp real.
 
 Critério de conclusão:
 

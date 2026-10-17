@@ -48,6 +48,11 @@ reivindicado, impedindo entrega concorrente a duas instâncias. O lease
 expirado tornará o comando elegível novamente sem alterar sua chave de
 idempotência.
 
+A resposta de `claim` também levará o snapshot de `ContactPhone` da OS,
+capturado quando a triagem é aceita. Todas as retentativas do comando mantêm
+esse mesmo destinatário, mesmo que o telefone da OS seja atualizado depois.
+O telefone é dado pessoal: não deve aparecer em logs.
+
 O `complete` aceitará resultados estruturados:
 
 - sucesso: conclui o comando e move a triagem de `AGUARDANDO_ENVIO` para
