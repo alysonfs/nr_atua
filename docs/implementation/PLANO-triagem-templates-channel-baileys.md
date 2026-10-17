@@ -353,6 +353,62 @@ Critério de conclusão:
 - timeout não é reportado como sucesso;
 - `complete` atualiza corretamente comando e triagem.
 
+### Pré-flight do Incremento 5 — preparação sem execução
+
+Estado em 2026-10-17: OS de teste definida, autorização concedida pelo
+product owner (janela: o dia todo) e contexto AWS confirmado pelo Ari
+(profile `moldato`, `sa-east-1`, stacks estáveis, RDS e EC2 ativos).
+
+Antes de iniciar qualquer ação do Incremento 5:
+
+- [x] Confirmar OS isolada e número vinculado sob controle do posto; não
+      registrar o telefone neste plano.
+- [x] Obter autorização operacional explícita para acesso AWS e envio real de
+      uma mensagem de teste.
+- [ ] Confirmar que as credenciais `channel.command.claim` e
+      `channel.command.complete` foram configuradas separadamente das
+      credenciais do Collector.
+- [x] Confirmar que a integração iService está desabilitada antes da
+      preparação e planejar sua desativação ao final do teste.
+- [x] Definir janela, operador responsável e procedimento de interrupção do
+      Channel (o product owner escaneia o QR; o Channel Node roda localmente e
+      é interrompido com Ctrl+C).
+- [x] Implantar a trava temporária do E2E (abaixo) antes de habilitar a
+      integração.
+
+Se algum item permanecer pendente, não habilitar a integração nem iniciar o
+Channel conectado ao WhatsApp.
+
+#### Trava temporária do E2E — REMOVER após validação
+
+Risco identificado: o Collector grava intenção de triagem na outbox para
+**toda** OS `assigned` coletada (inclusive as já existentes), e não havia
+lista de OS permitidas nem chave de desligamento. Habilitar a integração
+enviaria mensagem a consumidores reais.
+
+Decisão do product owner (2026-10-17): durante a fase de testes, usar trava
+com duas barreiras e telefone de destino fixo no código:
+
+- API — `TriagemTestSafeguard.AllowedWorkOrderIds`: o claim da outbox só
+  reivindica a OS de teste; as demais permanecem `Pending`, sem triagem e sem
+  mensagem.
+- API — `TriagemTestSafeguard.FixedRecipientPhone`: o snapshot do telefone do
+  comando de canal usa sempre o número de teste, ignorando o telefone da OS.
+- Channel Node — `src/test-safeguard.ts`: qualquer destinatário diferente do
+  número de teste é concluído como `PermanentFailure`
+  (`TEST_RECIPIENT_NOT_ALLOWED`) sem envio.
+
+Remoção (obrigatória antes de qualquer uso real):
+
+- [ ] Remover `TriagemTestSafeguard`, o filtro `@allowedWorkOrderIds` do
+      `ClaimBatchSql` e restaurar `recipientPhone: workOrder.ContactPhone`.
+- [ ] Remover `apps/channel-node/src/test-safeguard.ts` e sua verificação no
+      worker; restaurar os testes afetados.
+- [ ] Antes de remover, decidir o que fazer com as linhas `Pending` acumuladas
+      na outbox de OS não liberadas (o backlog seria disparado de uma vez).
+- [ ] Observação: o telefone fixo fica no histórico do git mesmo após a
+      remoção.
+
 ### Incremento 5 — teste ponta a ponta controlado
 
 - [ ] Iniciar API e dependências.
