@@ -68,6 +68,7 @@ public class TriagemChannelEndpointsTests
         Assert.Equal("template-version-id", body.TemplateId);
         Assert.Equal(1, body.TemplateVersion);
         Assert.Equal("conteúdo renderizado", body.RenderedContent);
+        Assert.Equal("+5511999999999", body.RecipientPhone);
     }
 
     [Fact]
@@ -409,7 +410,7 @@ public class TriagemChannelEndpointsTests
         var triagem = new Triagem(triagemId, tenantId, integrationId, workOrderId, Now);
         var command = new TriagemChannelCommand(Guid.NewGuid(), tenantId, integrationId, triagemId, workOrderId,
             "template-version-id", 1,
-            "conteúdo renderizado", key.ToString(), Guid.NewGuid(), Now);
+            "conteúdo renderizado", key.ToString(), Guid.NewGuid(), Now, recipientPhone: "+5511999999999");
         context.Add(triagem);
         context.Entry(triagem).Property(TriagemPersistenceSchema.WorkOrderProviderIdShadowPropertyName)
             .CurrentValue = key.WorkOrderProviderId;

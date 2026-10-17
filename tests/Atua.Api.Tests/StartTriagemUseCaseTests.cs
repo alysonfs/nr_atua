@@ -40,7 +40,8 @@ public class StartTriagemUseCaseTests
         var tenantId = Guid.NewGuid();
         var integrationId = Guid.NewGuid();
         var workOrderId = Guid.NewGuid();
-        workOrderQuery.Seed(tenantId, integrationId, "OS-1", workOrderId, "assigned");
+        workOrderQuery.Seed(tenantId, integrationId, "OS-1", workOrderId, "assigned",
+            contactPhone: "+5511999999999");
         var useCase = CreateUseCase(repository, workOrderQuery);
 
         var result = await useCase.ExecuteAsync(tenantId, integrationId, "OS-1", CancellationToken.None);
@@ -63,6 +64,7 @@ public class StartTriagemUseCaseTests
         Assert.Equal(FakeTriagemMessageTemplateResolver.TemplateVersionId.ToString(), command.TemplateId);
         Assert.Equal(1, command.TemplateVersion);
         Assert.Equal("Mensagem renderizada para OS-1", command.RenderedContent);
+        Assert.Equal("+5511999999999", command.RecipientPhone);
         Assert.Equal(new TriagemIdempotencyKey(tenantId, integrationId, "OS-1").ToString(), command.IdempotencyKey);
         Assert.Equal(ETriagemChannelCommandStatus.Pending, command.Status);
         Assert.NotEqual(Guid.Empty, command.CorrelationId);

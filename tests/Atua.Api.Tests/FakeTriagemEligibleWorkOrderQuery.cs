@@ -21,9 +21,11 @@ internal sealed class FakeTriagemEligibleWorkOrderQuery : ITriagemEligibleWorkOr
     /// </summary>
     public int CallCount { get; private set; }
 
-    public void Seed(Guid tenantId, Guid integrationId, string workOrderProviderId, Guid workOrderId, string status) =>
+    public void Seed(Guid tenantId, Guid integrationId, string workOrderProviderId, Guid workOrderId, string status,
+        string? contactPhone = null) =>
         _workOrders[(tenantId, integrationId, workOrderProviderId)] =
-            new TriagemEligibleWorkOrderLookupResult(workOrderId, status, workOrderProviderId);
+            new TriagemEligibleWorkOrderLookupResult(workOrderId, status, workOrderProviderId,
+                ContactPhone: contactPhone);
 
     /// <summary>Remove a OS previamente semeada, simulando que ela deixou de ser encontrada.</summary>
     public void Remove(Guid tenantId, Guid integrationId, string workOrderProviderId) =>
