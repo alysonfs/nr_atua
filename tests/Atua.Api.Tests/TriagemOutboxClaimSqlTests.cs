@@ -68,7 +68,10 @@ public class TriagemOutboxClaimSqlTests
     {
         var sql = TriagemOutboxPersistenceSchema.ClaimBatchSql;
 
-        Assert.Contains("WHERE \"WorkOrderId\" = ANY(@allowedWorkOrderIds)", sql);
+        Assert.Contains("WHERE (\"WorkOrderId\" = ANY(@allowedWorkOrderIds)", sql);
+        Assert.Contains(
+            "OR starts_with(\"WorkOrderProviderId\", @syntheticWorkOrderProviderIdPrefix))",
+            sql);
         Assert.Contains("AND ((\"Status\" = 'Pending'", sql);
         Assert.Contains("\"ClaimExpiresAtUtc\" < @now))", sql);
     }
@@ -79,5 +82,11 @@ public class TriagemOutboxClaimSqlTests
         Assert.Equal(
             [Guid.Parse("01a0f938-dabc-7ca6-b95c-6f0415aa466e")],
             TriagemTestSafeguard.AllowedWorkOrderIds);
+    }
+
+    [Fact]
+    public void TravaTemporaria_PrefixoSinteticoEhExclusivoDoE2E()
+    {
+        Assert.Equal("E2E-", TriagemTestSafeguard.SyntheticWorkOrderProviderIdPrefix);
     }
 }

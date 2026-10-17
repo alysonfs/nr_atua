@@ -13,6 +13,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
@@ -332,6 +333,208 @@ public class TriagemChannelEndpointsTests
         var triagem = await context.Triagens.SingleAsync(t => t.Id == seed.TriagemId);
         Assert.Equal(ETriagemStatus.ContatoIniciado, triagem.Status);
     }
+
+    [Fact]
+    public async Task IngestMessage_UmaTriagemCorrespondente_IniciaColetaERegistraEvento()
+    {
+        var (app, databaseName) = await CreateApplicationWithRealCommandRepositoryAsync();
+        await using var appDisposable = app;
+        var seed = await SeedContactStartedTriageAsync(databaseName, "+5511999991234");
+        var client = CreateClient(app, seed.TenantId, seed.IntegrationId,
+            ServiceCredentialAuthenticationHandler.ChannelMessageIngestScope);
+
+        var response = await client.PostAsJsonAsync("/api/internal/triagens/canal/mensagens",
+            CreateInboundMessage("message-accepted", "stable-accepted-key"));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var body = await response.Content.ReadFromJsonAsync<IngestTriagemChannelMessageResponse>();
+        Assert.NotNull(body);
+        Assert.Equal("ColetaIniciada", body!.Outcome);
+        Assert.Equal(seed.TriagemId, body.TriagemId);
+        Assert.Equal(1, body.CandidateCount);
+
+        await using var context = CreateContext(databaseName);
+        Assert.Equal(ETriagemStatus.EmColeta,
+            (await context.Triagens.SingleAsync(triagem => triagem.Id == seed.TriagemId)).Status);
+        var storedMessage = await context.TriagemInboundMessages.SingleAsync();
+        Assert.Equal(seed.TriagemId, storedMessage.TriagemId);
+    }
+
+    [Theory]
+    [InlineData("group", false, "text", "mensagem", "IgnoradaGrupo")]
+    [InlineData("individual", true, "text", "mensagem", "IgnoradaPropria")]
+    [InlineData("individual", false, "empty", null, "IgnoradaVazia")]
+    [InlineData("individual", false, "text", "   ", "IgnoradaVazia")]
+    public async Task IngestMessage_EventoNaoAceito_PersisteSemAssociarOuTransicionar(
+        string conversationKind,
+        bool fromMe,
+        string kind,
+        string? text,
+        string expectedOutcome)
+    {
+        var (app, databaseName) = await CreateApplicationWithRealCommandRepositoryAsync();
+        await using var appDisposable = app;
+        var seed = await SeedContactStartedTriageAsync(databaseName, "+5511999991234");
+        var client = CreateClient(app, seed.TenantId, seed.IntegrationId,
+            ServiceCredentialAuthenticationHandler.ChannelMessageIngestScope);
+        var request = CreateInboundMessage("message-ignored", $"ignored-{expectedOutcome}") with
+        {
+            ConversationKind = conversationKind,
+            FromMe = fromMe,
+            Kind = kind,
+            Text = text,
+        };
+
+        var response = await client.PostAsJsonAsync("/api/internal/triagens/canal/mensagens", request);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var body = await response.Content.ReadFromJsonAsync<IngestTriagemChannelMessageResponse>();
+        Assert.NotNull(body);
+        Assert.Equal(expectedOutcome, body!.Outcome);
+        Assert.Null(body.TriagemId);
+        Assert.Equal(0, body.CandidateCount);
+        await using var context = CreateContext(databaseName);
+        Assert.Equal(ETriagemStatus.ContatoIniciado,
+            (await context.Triagens.SingleAsync(triagem => triagem.Id == seed.TriagemId)).Status);
+        var storedMessage = await context.TriagemInboundMessages.SingleAsync();
+        Assert.Null(storedMessage.TriagemId);
+        Assert.Empty(storedMessage.CandidateTriagemIds);
+    }
+
+    [Fact]
+    public async Task IngestMessage_TriagemJaEmColeta_RegistraSemNovaTransicao()
+    {
+        var (app, databaseName) = await CreateApplicationWithRealCommandRepositoryAsync();
+        await using var appDisposable = app;
+        var seed = await SeedContactStartedTriageAsync(databaseName, "+5511999991234");
+        await using (var context = CreateContext(databaseName))
+        {
+            var triagem = await context.Triagens.SingleAsync(item => item.Id == seed.TriagemId);
+            triagem.IniciarColeta(Now);
+            await context.SaveChangesAsync();
+        }
+
+        var client = CreateClient(app, seed.TenantId, seed.IntegrationId,
+            ServiceCredentialAuthenticationHandler.ChannelMessageIngestScope);
+        var response = await client.PostAsJsonAsync("/api/internal/triagens/canal/mensagens",
+            CreateInboundMessage("message-already-collecting", "stable-already-collecting-key"));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var body = await response.Content.ReadFromJsonAsync<IngestTriagemChannelMessageResponse>();
+        Assert.NotNull(body);
+        Assert.Equal("JaEmColeta", body!.Outcome);
+        Assert.Equal(seed.TriagemId, body.TriagemId);
+        await using var verifyContext = CreateContext(databaseName);
+        Assert.Equal(ETriagemStatus.EmColeta,
+            (await verifyContext.Triagens.SingleAsync(item => item.Id == seed.TriagemId)).Status);
+    }
+
+    [Fact]
+    public async Task IngestMessage_SemTriagemCorrespondente_PersisteSemVinculo()
+    {
+        var (app, databaseName) = await CreateApplicationWithRealCommandRepositoryAsync();
+        await using var appDisposable = app;
+        var seed = await SeedContactStartedTriageAsync(databaseName, "+5511999990000");
+        var client = CreateClient(app, seed.TenantId, seed.IntegrationId,
+            ServiceCredentialAuthenticationHandler.ChannelMessageIngestScope);
+
+        var response = await client.PostAsJsonAsync("/api/internal/triagens/canal/mensagens",
+            CreateInboundMessage("message-no-match", "stable-no-match-key"));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var body = await response.Content.ReadFromJsonAsync<IngestTriagemChannelMessageResponse>();
+        Assert.NotNull(body);
+        Assert.Equal("SemTriagem", body!.Outcome);
+        Assert.Null(body.TriagemId);
+        Assert.Equal(0, body.CandidateCount);
+        await using var context = CreateContext(databaseName);
+        Assert.Equal(ETriagemStatus.ContatoIniciado,
+            (await context.Triagens.SingleAsync(item => item.Id == seed.TriagemId)).Status);
+        Assert.Null((await context.TriagemInboundMessages.SingleAsync()).TriagemId);
+    }
+
+    [Fact]
+    public async Task IngestMessage_ReentregaDaMesmaChave_NaoRepeteTransicao()
+    {
+        var (app, databaseName) = await CreateApplicationWithRealCommandRepositoryAsync();
+        await using var appDisposable = app;
+        var seed = await SeedContactStartedTriageAsync(databaseName, "+5511999991234");
+        var client = CreateClient(app, seed.TenantId, seed.IntegrationId,
+            ServiceCredentialAuthenticationHandler.ChannelMessageIngestScope);
+        var request = CreateInboundMessage("message-accepted", "stable-accepted-key");
+
+        var firstResponse = await client.PostAsJsonAsync("/api/internal/triagens/canal/mensagens", request);
+        var secondResponse = await client.PostAsJsonAsync("/api/internal/triagens/canal/mensagens", request);
+
+        Assert.Equal(HttpStatusCode.OK, firstResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, secondResponse.StatusCode);
+        var secondBody = await secondResponse.Content.ReadFromJsonAsync<IngestTriagemChannelMessageResponse>();
+        Assert.Equal("ColetaIniciada", secondBody!.Outcome);
+        await using var context = CreateContext(databaseName);
+        Assert.Single(await context.TriagemInboundMessages.ToListAsync());
+        Assert.Equal(ETriagemStatus.EmColeta,
+            (await context.Triagens.SingleAsync(triagem => triagem.Id == seed.TriagemId)).Status);
+    }
+
+    [Fact]
+    public async Task IngestMessage_TriagensAmbiguas_PersisteCandidatasSemAssociarOuTransicionar()
+    {
+        var (app, databaseName) = await CreateApplicationWithRealCommandRepositoryAsync();
+        await using var appDisposable = app;
+        var first = await SeedContactStartedTriageAsync(databaseName, "+5511999991234");
+        await SeedContactStartedTriageAsync(databaseName, "55 (11) 99999-1234", first.TenantId, first.IntegrationId);
+        var client = CreateClient(app, first.TenantId, first.IntegrationId,
+            ServiceCredentialAuthenticationHandler.ChannelMessageIngestScope);
+
+        var response = await client.PostAsJsonAsync("/api/internal/triagens/canal/mensagens",
+            CreateInboundMessage("message-ambiguous", "stable-ambiguous-key"));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var body = await response.Content.ReadFromJsonAsync<IngestTriagemChannelMessageResponse>();
+        Assert.NotNull(body);
+        Assert.Equal("Ambigua", body!.Outcome);
+        Assert.Null(body.TriagemId);
+        Assert.Equal(2, body.CandidateCount);
+        await using var context = CreateContext(databaseName);
+        Assert.All(await context.Triagens.ToListAsync(), triagem =>
+            Assert.Equal(ETriagemStatus.ContatoIniciado, triagem.Status));
+        var storedMessage = await context.TriagemInboundMessages.SingleAsync();
+        Assert.Null(storedMessage.TriagemId);
+        Assert.Equal(2, storedMessage.CandidateTriagemIds.Length);
+    }
+
+    [Fact]
+    public async Task IngestMessage_EscopoDeCompleteNaoAutorizaIngestao()
+    {
+        var (app, databaseName) = await CreateApplicationWithRealCommandRepositoryAsync();
+        await using var appDisposable = app;
+        var seed = await SeedContactStartedTriageAsync(databaseName, "+5511999991234");
+        var client = CreateClient(app, seed.TenantId, seed.IntegrationId,
+            ServiceCredentialAuthenticationHandler.ChannelCommandCompleteScope);
+
+        var response = await client.PostAsJsonAsync("/api/internal/triagens/canal/mensagens",
+            CreateInboundMessage("message-forbidden", "stable-forbidden-key"));
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task IngestMessage_EnvelopeInvalido_Retorna400()
+    {
+        var (app, databaseName) = await CreateApplicationWithRealCommandRepositoryAsync();
+        await using var appDisposable = app;
+        var seed = await SeedContactStartedTriageAsync(databaseName, "+5511999991234");
+        var client = CreateClient(app, seed.TenantId, seed.IntegrationId,
+            ServiceCredentialAuthenticationHandler.ChannelMessageIngestScope);
+
+        var request = CreateInboundMessage("message-invalid", "stable-invalid-key") with
+        {
+            ContractVersion = "2",
+        };
+        var response = await client.PostAsJsonAsync("/api/internal/triagens/canal/mensagens", request);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
     // -------------------------------------------------------------------
 
     private static async Task<(WebApplication App, string DatabaseName, FakeTriagemChannelCommandRepository CommandRepository)>
@@ -356,11 +559,14 @@ public class TriagemChannelEndpointsTests
         builder.WebHost.UseTestServer();
         var capturedDatabaseName = Guid.NewGuid().ToString();
         builder.Services.AddDbContext<AtuaDbContext>(options =>
-            options.UseInMemoryDatabase(capturedDatabaseName));
+            options.UseInMemoryDatabase(capturedDatabaseName)
+                .ConfigureWarnings(warnings => warnings.Ignore(InMemoryEventId.TransactionIgnoredWarning)));
         builder.Services.AddSingleton<TimeProvider>(new FakeTimeProvider(Now));
         builder.Services.AddScoped<ITriagemRepository, TriagemRepository>();
         configureCommandRepository(builder.Services);
         builder.Services.AddScoped<TriagemChannelCommandService>();
+        builder.Services.AddScoped<ITriagemInboundMessageRepository, TriagemInboundMessageRepository>();
+        builder.Services.AddScoped<IIngestTriagemChannelMessageUseCase, IngestTriagemChannelMessageUseCase>();
         builder.Services.AddSingleton(Options.Create(new TriagemChannelOptions { LeaseSeconds = 60 }));
         builder.Services.AddAuthentication("Test")
             .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>("Test", _ => { });
@@ -372,6 +578,9 @@ public class TriagemChannelEndpointsTests
             options.AddPolicy("ChannelCommandComplete", policy =>
                 policy.AddAuthenticationSchemes("Test")
                     .RequireClaim("scope", ServiceCredentialAuthenticationHandler.ChannelCommandCompleteScope));
+            options.AddPolicy("ChannelMessageIngest", policy =>
+                policy.AddAuthenticationSchemes("Test")
+                    .RequireClaim("scope", ServiceCredentialAuthenticationHandler.ChannelMessageIngestScope));
         });
 
         var app = builder.Build();
@@ -393,9 +602,61 @@ public class TriagemChannelEndpointsTests
     }
 
     private static AtuaDbContext CreateContext(string databaseName) => new(
-        new DbContextOptionsBuilder<AtuaDbContext>().UseInMemoryDatabase(databaseName).Options);
+        new DbContextOptionsBuilder<AtuaDbContext>()
+            .UseInMemoryDatabase(databaseName)
+            .ConfigureWarnings(warnings => warnings.Ignore(InMemoryEventId.TransactionIgnoredWarning))
+            .Options);
 
     private sealed record Seed(Guid TenantId, Guid IntegrationId, Guid TriagemId, Guid WorkOrderId, Guid CommandId);
+
+    private static IngestTriagemChannelMessageRequest CreateInboundMessage(string messageId, string idempotencyKey) =>
+        new(
+            "1",
+            messageId,
+            idempotencyKey,
+            Guid.NewGuid(),
+            "5511999991234",
+            "individual",
+            false,
+            Now,
+            "text",
+            "O produto não liga.");
+
+    private static async Task<Seed> SeedContactStartedTriageAsync(
+        string databaseName,
+        string phone,
+        Guid? tenantId = null,
+        Guid? integrationId = null)
+    {
+        await using var context = CreateContext(databaseName);
+        var actualTenantId = tenantId ?? Guid.NewGuid();
+        var actualIntegrationId = integrationId ?? Guid.NewGuid();
+        var workOrderId = Guid.NewGuid();
+        var triagemId = Guid.NewGuid();
+        var triagem = new Triagem(triagemId, actualTenantId, actualIntegrationId, workOrderId, Now);
+        triagem.MarcarContatoIniciado(Now);
+        var key = new TriagemIdempotencyKey(actualTenantId, actualIntegrationId, $"OS-{triagemId:N}");
+        var command = new TriagemChannelCommand(
+            Guid.NewGuid(),
+            actualTenantId,
+            actualIntegrationId,
+            triagemId,
+            workOrderId,
+            "template-version-id",
+            1,
+            "conteúdo renderizado",
+            $"command-{triagemId:N}",
+            Guid.NewGuid(),
+            Now,
+            recipientPhone: phone);
+        context.Add(triagem);
+        context.Entry(triagem)
+            .Property(TriagemPersistenceSchema.WorkOrderProviderIdShadowPropertyName)
+            .CurrentValue = key.WorkOrderProviderId;
+        context.Add(command);
+        await context.SaveChangesAsync();
+        return new Seed(actualTenantId, actualIntegrationId, triagemId, workOrderId, command.Id);
+    }
 
     /// <summary>Semeia uma triagem (AguardandoEnvio) e um comando Pending — para os testes de <c>/claim</c>.</summary>
     private static async Task<Seed> SeedPendingCommandAsync(string databaseName,

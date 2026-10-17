@@ -6,6 +6,7 @@ const validEnvironment: NodeJS.ProcessEnv = {
   ChannelWorker__ApiBaseUrl: 'http://127.0.0.1:5080',
   ChannelWorker__ClaimServiceToken: 'claim-test-token',
   ChannelWorker__CompleteServiceToken: 'complete-test-token',
+  ChannelWorker__MessageIngestServiceToken: 'message-ingest-test-token',
   ChannelWorker__SessionPath: '/tmp/atua-channel-session',
 }
 
@@ -24,6 +25,16 @@ test('loadConfig rejects shared credentials', () => {
     () => loadConfig({
       ...validEnvironment,
       ChannelWorker__CompleteServiceToken: validEnvironment.ChannelWorker__ClaimServiceToken,
+    }),
+    /devem ser distintas/,
+  )
+})
+
+test('loadConfig rejects a message-ingest credential shared with another scope', () => {
+  assert.throws(
+    () => loadConfig({
+      ...validEnvironment,
+      ChannelWorker__MessageIngestServiceToken: validEnvironment.ChannelWorker__ClaimServiceToken,
     }),
     /devem ser distintas/,
   )

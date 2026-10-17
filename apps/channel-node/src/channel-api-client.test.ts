@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { ChannelApiClient, ChannelApiError } from './channel-api-client.js'
-import type { ClaimedChannelCommand } from './contracts.js'
+import type { ClaimedChannelCommand, IncomingWhatsAppMessage } from './contracts.js'
 
 const command: ClaimedChannelCommand = {
   commandId: '11111111-1111-1111-1111-111111111111',
@@ -18,6 +18,19 @@ const command: ClaimedChannelCommand = {
   recipientPhone: '+5511999991234',
 }
 
+const inboundMessage: IncomingWhatsAppMessage = {
+  contractVersion: '1',
+  channelMessageId: 'message-123',
+  channelIdempotencyKey: 'a'.repeat(64),
+  correlationId: '55555555-5555-4555-8555-555555555555',
+  senderPhone: '5511999991234',
+  conversationKind: 'individual',
+  fromMe: false,
+  receivedAtUtc: '2026-10-17T12:00:00.000Z',
+  kind: 'text',
+  text: 'O produto não liga.',
+}
+
 test('claim uses the claim credential and deserializes the recipient snapshot', async () => {
   let requestUrl = ''
   let authorization = ''
@@ -25,6 +38,7 @@ test('claim uses the claim credential and deserializes the recipient snapshot', 
     'http://localhost:5080',
     'claim-only',
     'complete-only',
+    'ingest-only',
     async (input, init) => {
       requestUrl = String(input)
       authorization = new Headers(init?.headers).get('authorization') ?? ''
@@ -44,6 +58,7 @@ test('claim maps HTTP 204 to no available command', async () => {
     'http://localhost:5080',
     'claim-only',
     'complete-only',
+    'ingest-only',
     async () => new Response(null, { status: 204 }),
   )
 
@@ -57,6 +72,7 @@ test('complete uses its own credential and preserves the lease token', async () 
     'http://localhost:5080',
     'claim-only',
     'complete-only',
+    'ingest-only',
     async (_input, init) => {
       authorization = new Headers(init?.headers).get('authorization') ?? ''
       payload = JSON.parse(String(init?.body))
@@ -87,6 +103,7 @@ test('complete maps HTTP 409 to a lost lease without retrying the side effect', 
     'http://localhost:5080',
     'claim-only',
     'complete-only',
+    'ingest-only',
     async () => new Response(null, { status: 409 }),
   )
 
@@ -96,11 +113,36 @@ test('complete maps HTTP 409 to a lost lease without retrying the side effect', 
   )
 })
 
+test('ingestMessage uses the isolated credential and sends the stable event envelope', async () => {
+  let requestUrl = ''
+  let authorization = ''
+  let payload: unknown
+  const client = new ChannelApiClient(
+    'http://localhost:5080',
+    'claim-only',
+    'complete-only',
+    'ingest-only',
+    async (input, init) => {
+      requestUrl = String(input)
+      authorization = new Headers(init?.headers).get('authorization') ?? ''
+      payload = JSON.parse(String(init?.body))
+      return new Response(null, { status: 200 })
+    },
+  )
+
+  await client.ingestMessage(inboundMessage, new AbortController().signal)
+
+  assert.equal(requestUrl, 'http://localhost:5080/api/internal/triagens/canal/mensagens')
+  assert.equal(authorization, 'Bearer ingest-only')
+  assert.deepEqual(payload, inboundMessage)
+})
+
 test('API errors expose status but never retain a response body', async () => {
   const client = new ChannelApiClient(
     'http://localhost:5080',
     'claim-only',
     'complete-only',
+    'ingest-only',
     async () => new Response('sensitive server body', { status: 503 }),
   )
 
