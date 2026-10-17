@@ -30,6 +30,7 @@ public sealed class TriagemEligibleWorkOrderQueryHandler(AtuaDbContext dbContext
                 order.WorkOrderProviderId,
                 order.WorkOrderProviderNo,
                 order.ProductBrand,
-                order.ProductModel))
+                order.ProductModel,
+                order.ContactPhone))
             .SingleOrDefaultAsync(cancellationToken);
 }

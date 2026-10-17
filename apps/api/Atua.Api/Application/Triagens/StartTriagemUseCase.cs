@@ -113,7 +113,8 @@ public sealed class StartTriagemUseCase(
             template.RenderedContent,
             key.ToString(),
             Guid.CreateVersion7(),
-            now);
+            now,
+            recipientPhone: workOrder.ContactPhone);
 
         var result = await triagemRepository.GetOrAddWithChannelCommandAsync(key, candidate, channelCommand,
             cancellationToken);

@@ -93,7 +93,8 @@ public static class TriagemChannelEndpoints
             command.AttemptCount,
             command.ClaimedAtUtc!.Value,
             command.ClaimExpiresAtUtc!.Value,
-            command.RenderedContent));
+            command.RenderedContent,
+            command.RecipientPhone));
     }
 
     // -----------------------------------------------------------------------
@@ -192,7 +193,8 @@ public sealed record ClaimChannelCommandResponse(
     int AttemptCount,
     DateTimeOffset ClaimedAtUtc,
     DateTimeOffset ClaimExpiresAtUtc,
-    string RenderedContent = "");
+    string RenderedContent = "",
+    string? RecipientPhone = null);
 
 /// <summary>
 /// Corpo da requisição de conclusão do comando de canal. Tenant e

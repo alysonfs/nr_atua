@@ -17,4 +17,5 @@ public sealed record ClaimChannelCommandResponse(
     int AttemptCount,
     DateTimeOffset ClaimedAtUtc,
     DateTimeOffset ClaimExpiresAtUtc,
-    string RenderedContent = "");
+    string RenderedContent = "",
+    string? RecipientPhone = null);

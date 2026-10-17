@@ -763,6 +763,10 @@ namespace Atua.Api.Infrastructure.Persistence.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)");
 
+                    b.Property<string>("RecipientPhone")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
                     b.Property<string>("RenderedContent")
                         .IsRequired()
                         .HasMaxLength(8000)

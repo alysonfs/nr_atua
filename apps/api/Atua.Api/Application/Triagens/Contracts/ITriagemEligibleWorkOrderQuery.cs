@@ -37,4 +37,5 @@ public sealed record TriagemEligibleWorkOrderLookupResult(
     string WorkOrderProviderId = "",
     string? WorkOrderProviderNo = null,
     string? ProductBrand = null,
-    string? ProductModel = null);
+    string? ProductModel = null,
+    string? ContactPhone = null);

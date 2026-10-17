@@ -27,7 +27,7 @@ public sealed class TriagemChannelCommand
 
     public TriagemChannelCommand(Guid id, Guid tenantId, Guid integrationId, Guid triagemId, Guid workOrderId,
         string templateId, int templateVersion, string renderedContent, string idempotencyKey,
-        Guid correlationId, DateTimeOffset now)
+        Guid correlationId, DateTimeOffset now, string? recipientPhone = null)
     {
         if (tenantId == Guid.Empty)
         {
@@ -62,6 +62,7 @@ public sealed class TriagemChannelCommand
         TemplateId = templateId;
         TemplateVersion = templateVersion;
         RenderedContent = renderedContent;
+        RecipientPhone = recipientPhone;
         IdempotencyKey = idempotencyKey;
         CorrelationId = correlationId;
         Status = ETriagemChannelCommandStatus.Pending;
@@ -90,6 +91,13 @@ public sealed class TriagemChannelCommand
     /// exatamente este conteúdo, mesmo após a publicação de outra versão.
     /// </summary>
     public string RenderedContent { get; private set; } = string.Empty;
+
+    /// <summary>
+    /// Snapshot do telefone de destino da OS no aceite da triagem. É dado
+    /// pessoal e não deve ser escrito em logs; retentativas mantêm o mesmo
+    /// destinatário.
+    /// </summary>
+    public string? RecipientPhone { get; private set; }
 
     /// <summary>
     /// Chave estável de idempotência (ADR-039, item 3) — a mesma em toda

@@ -594,6 +594,7 @@ public sealed class AtuaDbContext(DbContextOptions<AtuaDbContext> options) : DbC
         builder.Property(command => command.TemplateId).HasMaxLength(128).IsRequired();
         builder.Property(command => command.TemplateVersion).IsRequired();
         builder.Property(command => command.RenderedContent).HasMaxLength(8_000).IsRequired();
+        builder.Property(command => command.RecipientPhone).HasMaxLength(128);
         builder.Property(command => command.IdempotencyKey).HasMaxLength(512).IsRequired();
         builder.Property(command => command.CorrelationId).IsRequired();
         builder.Property(command => command.Status).HasConversion<string>().HasMaxLength(16).IsRequired();
