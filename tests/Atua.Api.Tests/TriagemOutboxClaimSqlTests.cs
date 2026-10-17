@@ -1,3 +1,4 @@
+using Atua.Api.Application.Triagens;
 using Atua.Api.Infrastructure.Persistence;
 
 namespace Atua.Api.Tests;
@@ -60,5 +61,23 @@ public class TriagemOutboxClaimSqlTests
     {
         Assert.Contains($"FROM {TriagemOutboxPersistenceSchema.TableName}", TriagemOutboxPersistenceSchema.ClaimBatchSql);
         Assert.Contains($"UPDATE {TriagemOutboxPersistenceSchema.TableName}", TriagemOutboxPersistenceSchema.ClaimBatchSql);
+    }
+
+    [Fact]
+    public void TravaTemporaria_ReivindicaSomenteOsPermitidasAntesDosFiltrosDeStatus()
+    {
+        var sql = TriagemOutboxPersistenceSchema.ClaimBatchSql;
+
+        Assert.Contains("WHERE \"WorkOrderId\" = ANY(@allowedWorkOrderIds)", sql);
+        Assert.Contains("AND ((\"Status\" = 'Pending'", sql);
+        Assert.Contains("\"ClaimExpiresAtUtc\" < @now))", sql);
+    }
+
+    [Fact]
+    public void TravaTemporaria_ListaContemSomenteAOsDeTeste()
+    {
+        Assert.Equal(
+            [Guid.Parse("01a0f938-dabc-7ca6-b95c-6f0415aa466e")],
+            TriagemTestSafeguard.AllowedWorkOrderIds);
     }
 }

@@ -64,7 +64,9 @@ public class StartTriagemUseCaseTests
         Assert.Equal(FakeTriagemMessageTemplateResolver.TemplateVersionId.ToString(), command.TemplateId);
         Assert.Equal(1, command.TemplateVersion);
         Assert.Equal("Mensagem renderizada para OS-1", command.RenderedContent);
-        Assert.Equal("+5511999999999", command.RecipientPhone);
+        // TEMPORÁRIO (TriagemTestSafeguard): o destinatário é sempre o telefone
+        // fixo do E2E, nunca o telefone real da OS.
+        Assert.Equal(TriagemTestSafeguard.FixedRecipientPhone, command.RecipientPhone);
         Assert.Equal(new TriagemIdempotencyKey(tenantId, integrationId, "OS-1").ToString(), command.IdempotencyKey);
         Assert.Equal(ETriagemChannelCommandStatus.Pending, command.Status);
         Assert.NotEqual(Guid.Empty, command.CorrelationId);

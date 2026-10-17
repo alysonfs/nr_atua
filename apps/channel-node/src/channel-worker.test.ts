@@ -8,7 +8,8 @@ import type {
   SafeLogger,
   WhatsAppMessageSender,
 } from './contracts.js'
-import { messageIdForIdempotencyKey } from './phone.js'
+import { messageIdForIdempotencyKey, normalizeWhatsAppJid } from './phone.js'
+import { FIXED_TEST_RECIPIENT_PHONE } from './test-safeguard.js'
 
 const command: ClaimedChannelCommand = {
   commandId: '11111111-1111-1111-1111-111111111111',
@@ -22,7 +23,7 @@ const command: ClaimedChannelCommand = {
   claimedAtUtc: '2026-10-16T12:00:00Z',
   claimExpiresAtUtc: '2026-10-16T12:01:00Z',
   renderedContent: 'Texto aprovado',
-  recipientPhone: '+5511999991234',
+  recipientPhone: FIXED_TEST_RECIPIENT_PHONE,
 }
 
 class FakeApi implements ChannelApi {
@@ -82,7 +83,7 @@ test('sends the approved content to the snapshotted phone and reports success', 
 
   assert.equal(result, 'sent')
   assert.deepEqual(sender.sent, [{
-    jid: '5511999991234@s.whatsapp.net',
+    jid: normalizeWhatsAppJid(FIXED_TEST_RECIPIENT_PHONE),
     text: 'Texto aprovado',
     messageId: messageIdForIdempotencyKey(command.idempotencyKey),
     timeoutMs: 30_000,
@@ -119,6 +120,22 @@ test('an invalid recipient is a permanent failure and is never sent', async () =
   assert.deepEqual(api.completions, [{
     outcome: 'PermanentFailure',
     errorCode: 'RECIPIENT_PHONE_INVALID',
+  }])
+})
+
+test('temporary E2E safeguard blocks any recipient other than the fixed test phone', async () => {
+  const api = new FakeApi()
+  api.claimed = { ...command, recipientPhone: '+5511999991234' }
+  const sender = new FakeSender()
+  const worker = createWorker(api, sender)
+
+  const result = await worker.runCycle(new AbortController().signal)
+
+  assert.equal(result, 'permanent-failure')
+  assert.equal(sender.sent.length, 0)
+  assert.deepEqual(api.completions, [{
+    outcome: 'PermanentFailure',
+    errorCode: 'TEST_RECIPIENT_NOT_ALLOWED',
   }])
 })
 
