@@ -27,7 +27,8 @@ public sealed class TriagemOutboxRepository(AtuaDbContext dbContext) : ITriagemO
                 TriagemOutboxPersistenceSchema.ClaimBatchSql,
                 new NpgsqlParameter("@now", now),
                 new NpgsqlParameter("@claimExpiresAtUtc", claimExpiresAtUtc),
-                new NpgsqlParameter("@batchSize", batchSize))
+                new NpgsqlParameter("@batchSize", batchSize),
+                new NpgsqlParameter("@allowedWorkOrderIds", TriagemTestSafeguard.AllowedWorkOrderIds))
             .ToListAsync(cancellationToken);
     }
 

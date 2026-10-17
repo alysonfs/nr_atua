@@ -7,6 +7,7 @@ import type {
   WhatsAppMessageSender,
 } from './contracts.js'
 import { messageIdForIdempotencyKey, normalizeWhatsAppJid, PermanentChannelSendError } from './phone.js'
+import { isAllowedTestRecipient } from './test-safeguard.js'
 
 export interface ChannelWorkerOptions {
   pollingIntervalMs: number
@@ -118,6 +119,13 @@ export class ChannelWorker {
 
     try {
       const recipientJid = normalizeWhatsAppJid(command.recipientPhone)
+      if (!isAllowedTestRecipient(recipientJid)) {
+        return permanentFailure(
+          'TEST_RECIPIENT_NOT_ALLOWED',
+          'Envio bloqueado pela trava temporária do E2E: destinatário fora da lista permitida.',
+        )
+      }
+
       await this.sender.sendText(
         recipientJid,
         command.renderedContent,

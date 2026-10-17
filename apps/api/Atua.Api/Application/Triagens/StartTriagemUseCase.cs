@@ -114,7 +114,7 @@ public sealed class StartTriagemUseCase(
             key.ToString(),
             Guid.CreateVersion7(),
             now,
-            recipientPhone: workOrder.ContactPhone);
+            recipientPhone: TriagemTestSafeguard.FixedRecipientPhone);
 
         var result = await triagemRepository.GetOrAddWithChannelCommandAsync(key, candidate, channelCommand,
             cancellationToken);

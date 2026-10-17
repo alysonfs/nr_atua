@@ -43,8 +43,9 @@ internal static class TriagemOutboxPersistenceSchema
          WITH claimed AS (
              SELECT "Id"
              FROM {TableName}
-             WHERE ("Status" = 'Pending' AND "NextAttemptAtUtc" <= @now)
-                OR ("Status" = 'Processing' AND "ClaimExpiresAtUtc" < @now)
+             WHERE "WorkOrderId" = ANY(@allowedWorkOrderIds)
+               AND (("Status" = 'Pending' AND "NextAttemptAtUtc" <= @now)
+                OR ("Status" = 'Processing' AND "ClaimExpiresAtUtc" < @now))
              ORDER BY "NextAttemptAtUtc" ASC
              FOR UPDATE SKIP LOCKED
              LIMIT @batchSize
