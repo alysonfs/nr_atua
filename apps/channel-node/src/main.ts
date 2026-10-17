@@ -3,6 +3,7 @@ import { BaileysSession } from './baileys-session.js'
 import { loadConfig } from './config.js'
 import { consoleLogger } from './logger.js'
 import { ChannelWorker } from './channel-worker.js'
+import { IncomingMessageWorker } from './incoming-message-worker.js'
 
 async function main(): Promise<void> {
   const config = loadConfig()
@@ -20,6 +21,7 @@ async function main(): Promise<void> {
     config.apiBaseUrl,
     config.claimServiceToken,
     config.completeServiceToken,
+    config.messageIngestServiceToken,
   )
   const session = new BaileysSession(config.sessionPath, config.printQr, consoleLogger)
   const worker = new ChannelWorker(
@@ -31,15 +33,17 @@ async function main(): Promise<void> {
     },
     consoleLogger,
   )
+  const incomingMessageWorker = new IncomingMessageWorker(api, session, consoleLogger)
 
   const sessionTask = session.run(controller.signal)
   const workerTask = worker.run(controller.signal)
+  const incomingMessageTask = incomingMessageWorker.run(controller.signal)
 
   try {
-    await Promise.race([sessionTask, workerTask])
+    await Promise.race([sessionTask, workerTask, incomingMessageTask])
   } finally {
     controller.abort()
-    await Promise.allSettled([sessionTask, workerTask])
+    await Promise.allSettled([sessionTask, workerTask, incomingMessageTask])
     process.off('SIGINT', onShutdown)
     process.off('SIGTERM', onShutdown)
   }

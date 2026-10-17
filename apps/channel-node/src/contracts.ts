@@ -17,6 +17,7 @@ export interface ClaimedChannelCommand {
 
 export interface ChannelApi {
   claim(signal: AbortSignal): Promise<ClaimedChannelCommand | null>
+  ingestMessage(message: IncomingWhatsAppMessage, signal: AbortSignal): Promise<void>
   complete(
     command: ClaimedChannelCommand,
     outcome: ChannelOutcome,
@@ -24,6 +25,23 @@ export interface ChannelApi {
     errorDescription: string | null,
     signal: AbortSignal,
   ): Promise<boolean>
+}
+
+export interface IncomingWhatsAppMessage {
+  contractVersion: '1'
+  channelMessageId: string
+  channelIdempotencyKey: string
+  correlationId: string
+  senderPhone: string
+  conversationKind: 'individual' | 'group'
+  fromMe: boolean
+  receivedAtUtc: string
+  kind: 'text' | 'empty'
+  text: string | null
+}
+
+export interface WhatsAppMessageReceiver {
+  onIncomingMessage(listener: (message: IncomingWhatsAppMessage) => void): () => void
 }
 
 export interface WhatsAppMessageSender {

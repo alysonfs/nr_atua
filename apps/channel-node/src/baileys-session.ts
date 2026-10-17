@@ -1,14 +1,24 @@
 import { chmod, mkdir } from 'node:fs/promises'
 import { EventEmitter } from 'node:events'
+import { createHash, randomUUID } from 'node:crypto'
 import { createRequire } from 'node:module'
 import makeWASocket, {
   DisconnectReason,
   useMultiFileAuthState,
   type AuthenticationState,
+  type BinaryNode,
   type ConnectionState,
+  type WAMessage,
+  normalizeMessageContent,
 } from '@whiskeysockets/baileys'
 import pino from 'pino'
-import type { SafeLogger, WhatsAppMessageSender } from './contracts.js'
+import type {
+  IncomingWhatsAppMessage,
+  SafeLogger,
+  WhatsAppMessageReceiver,
+  WhatsAppMessageSender,
+} from './contracts.js'
+import { PermanentChannelSendError } from './phone.js'
 
 const qrcodeTerminal: typeof import('qrcode-terminal') =
   createRequire(import.meta.url)('qrcode-terminal')
@@ -23,6 +33,9 @@ export class SessionFatalError extends Error {
 export interface BaileysSessionSocket {
   onConnectionUpdate(listener: (update: Partial<ConnectionState>) => void): () => void
   onCredentialsUpdate(listener: () => void): () => void
+  onMessagesUpsert(listener: (messages: WAMessage[], type: string) => void): () => void
+  onMessageAck(listener: (messageId: string, errorCode?: string) => void): () => void
+  resolveRecipient(recipientJid: string): Promise<string>
   sendMessage(
     recipientJid: string,
     text: string,
@@ -37,8 +50,9 @@ export interface BaileysSessionDependencies {
   wait?: (milliseconds: number, signal: AbortSignal) => Promise<void>
 }
 
-export class BaileysSession implements WhatsAppMessageSender {
+export class BaileysSession implements WhatsAppMessageSender, WhatsAppMessageReceiver {
   private readonly stateEvents = new EventEmitter()
+  private readonly incomingMessageListeners = new Set<(message: IncomingWhatsAppMessage) => void>()
   private readonly sessionPath: string
   private readonly printQr: boolean
   private readonly logger: SafeLogger
@@ -135,6 +149,11 @@ export class BaileysSession implements WhatsAppMessageSender {
     })
   }
 
+  onIncomingMessage(listener: (message: IncomingWhatsAppMessage) => void): () => void {
+    this.incomingMessageListeners.add(listener)
+    return () => this.incomingMessageListeners.delete(listener)
+  }
+
   async sendText(
     recipientJid: string,
     text: string,
@@ -143,18 +162,68 @@ export class BaileysSession implements WhatsAppMessageSender {
     signal: AbortSignal,
   ): Promise<void> {
     const socket = this.socket
+    signal.throwIfAborted()
     if (!this.ready || socket === undefined) {
       throw new Error('A sessão WhatsApp não está conectada.')
     }
 
-    const result = await withTimeout(
-      socket.sendMessage(recipientJid, text, messageId),
-      timeoutMs,
-      signal,
-    )
+    let removeAckListener = () => {}
+    let removeDisconnectListener = () => {}
+    let sendingAllowed = true
+    const acknowledgement = new Promise<void>((resolve, reject) => {
+      removeAckListener = socket.onMessageAck((ackId, errorCode) => {
+        if (ackId !== messageId) {
+          return
+        }
+        if (errorCode !== undefined) {
+          this.logger.error('whatsapp_message_rejected', {
+            messageId,
+            errorCode: /^\d{1,4}$/.test(errorCode) ? errorCode : 'UNKNOWN',
+          })
+          reject(new Error('O servidor WhatsApp rejeitou a mensagem.'))
+        } else {
+          resolve()
+        }
+      })
+      const onDisconnected = () => reject(new Error('A sessão desconectou antes da confirmação.'))
+      this.stateEvents.once('disconnected', onDisconnected)
+      removeDisconnectListener = () => this.stateEvents.off('disconnected', onDisconnected)
+    })
 
-    if (result?.key?.id !== messageId) {
-      throw new Error('Baileys não confirmou o identificador idempotente da mensagem.')
+    try {
+      await withTimeout(
+        Promise.all([
+          acknowledgement,
+          (async () => {
+            const resolvedJid = await socket.resolveRecipient(recipientJid)
+            signal.throwIfAborted()
+            if (!sendingAllowed || !this.ready || this.socket !== socket) {
+              throw new Error('O envio expirou ou a sessão WhatsApp mudou durante a consulta.')
+            }
+            this.logger.info('whatsapp_recipient_resolved', {
+              messageId,
+              canonicalJidChanged: resolvedJid !== recipientJid,
+            })
+            const result = await socket.sendMessage(resolvedJid, text, messageId)
+            if (result?.key?.id !== messageId) {
+              throw new Error('Baileys não confirmou o identificador idempotente da mensagem.')
+            }
+          })(),
+        ]),
+        timeoutMs,
+        signal,
+      )
+      this.logger.info('whatsapp_message_server_ack', { messageId })
+    } catch (error) {
+      this.logger.warn('whatsapp_message_send_unconfirmed', {
+        messageId,
+        errorType: error instanceof Error ? error.name : 'UnknownError',
+      })
+      throw error
+    } finally {
+      sendingAllowed = false
+      removeAckListener()
+      removeDisconnectListener()
     }
   }
 
@@ -223,10 +292,11 @@ export class BaileysSession implements WhatsAppMessageSender {
       let settled = false
       let removeConnectionListener = () => {}
       let removeCredentialsListener = () => {}
-
+      let removeMessagesListener = () => {}
       const cleanup = () => {
         removeConnectionListener()
         removeCredentialsListener()
+        removeMessagesListener()
         signal.removeEventListener('abort', onAbort)
       }
       const finish = (status: number | undefined) => {
@@ -285,8 +355,30 @@ export class BaileysSession implements WhatsAppMessageSender {
         pendingCredentialWrites.add(persistence)
       }
 
+      const onMessagesUpsert = (messages: WAMessage[], type: string) => {
+        if (type !== 'notify') {
+          return
+        }
+
+        for (const message of messages) {
+          const incoming = toIncomingWhatsAppMessage(message)
+          if (incoming === null) {
+            continue
+          }
+
+          this.logger.info('whatsapp_inbound_message_received', {
+            channelMessageId: incoming.channelMessageId,
+            correlationId: incoming.correlationId,
+          })
+          for (const listener of this.incomingMessageListeners) {
+            listener(incoming)
+          }
+        }
+      }
+
       removeConnectionListener = socket.onConnectionUpdate(onConnectionUpdate)
       removeCredentialsListener = socket.onCredentialsUpdate(onCredentialsUpdate)
+      removeMessagesListener = socket.onMessagesUpsert(onMessagesUpsert)
       signal.addEventListener('abort', onAbort, { once: true })
       if (signal.aborted) {
         onAbort()
@@ -320,12 +412,94 @@ function createBaileysSocket(auth: AuthenticationState): BaileysSessionSocket {
       socket.ev.on('creds.update', handler)
       return () => socket.ev.off('creds.update', handler)
     },
+    onMessagesUpsert(listener) {
+      const handler = (event: { messages: WAMessage[]; type: string }) => {
+        listener(event.messages, event.type)
+      }
+      socket.ev.on('messages.upsert', handler)
+      return () => socket.ev.off('messages.upsert', handler)
+    },
+    onMessageAck(listener) {
+      const handler = (node: BinaryNode) => {
+        listener(node.attrs.id ?? '', node.attrs.error)
+      }
+      socket.ws.on('CB:ack,class:message', handler)
+      return () => { socket.ws.off('CB:ack,class:message', handler) }
+    },
+    async resolveRecipient(recipientJid) {
+      const recipients = await socket.onWhatsApp(recipientJid)
+      if (recipients === undefined) {
+        throw new Error('O WhatsApp não confirmou a consulta do destinatário.')
+      }
+      const recipient = recipients.find((entry) => entry.exists)
+      if (recipient === undefined) {
+        throw new PermanentChannelSendError(
+          'RECIPIENT_NOT_ON_WHATSAPP',
+          'O WhatsApp não encontrou uma conta para o telefone informado.',
+        )
+      }
+      return recipient.jid
+    },
     sendMessage(recipientJid, text, messageId) {
       return socket.sendMessage(recipientJid, { text }, { messageId })
     },
     end(error) {
       socket.end(error)
     },
+  }
+}
+
+function toIncomingWhatsAppMessage(message: WAMessage): IncomingWhatsAppMessage | null {
+  const key = message.key
+  const remoteJid = key.remoteJid ?? ''
+  const messageId = key.id
+  const fromMe = key.fromMe ?? false
+  if (
+    remoteJid === '' ||
+    messageId === undefined ||
+    messageId === null ||
+    messageId === '' ||
+    remoteJid.endsWith('@g.us') ||
+    fromMe
+  ) {
+    return null
+  }
+
+  const senderJid = key.senderPn ?? key.participantPn ?? remoteJid
+  const senderPhone = senderJid.split('@')[0]?.split(':')[0] ?? ''
+  if (!/^[1-9]\d{7,14}$/.test(senderPhone)) {
+    return null
+  }
+
+  const body = normalizeMessageContent(message.message)
+  const text = body?.conversation ??
+    body?.extendedTextMessage?.text ??
+    body?.imageMessage?.caption ??
+    body?.videoMessage?.caption ??
+    null
+  if (typeof text !== 'string' || text.trim() === '') {
+    return null
+  }
+
+  const channelIdempotencyKey = createHash('sha256')
+    .update(`${remoteJid}\u0000${messageId}\u0000${fromMe ? '1' : '0'}`)
+    .digest('hex')
+  const timestampSeconds = Number(message.messageTimestamp)
+  const receivedAtUtc = Number.isFinite(timestampSeconds) && timestampSeconds > 0
+    ? new Date(timestampSeconds * 1_000)
+    : new Date()
+
+  return {
+    contractVersion: '1',
+    channelMessageId: messageId,
+    channelIdempotencyKey,
+    correlationId: randomUUID(),
+    senderPhone,
+    conversationKind: 'individual',
+    fromMe,
+    receivedAtUtc: receivedAtUtc.toISOString(),
+    kind: 'text',
+    text,
   }
 }
 
