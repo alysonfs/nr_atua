@@ -102,6 +102,9 @@ builder.Services.AddAuthorization(options =>
     options.AddPolicy("ChannelCommandComplete", policy =>
         policy.AddAuthenticationSchemes(ServiceCredentialAuthenticationHandler.SchemeName)
             .RequireClaim("scope", ServiceCredentialAuthenticationHandler.ChannelCommandCompleteScope));
+    options.AddPolicy("ChannelMessageIngest", policy =>
+        policy.AddAuthenticationSchemes(ServiceCredentialAuthenticationHandler.SchemeName)
+            .RequireClaim("scope", ServiceCredentialAuthenticationHandler.ChannelMessageIngestScope));
 });
 
 builder.Services.AddSingleton<IAmazonSimpleEmailServiceV2, AmazonSimpleEmailServiceV2Client>();
@@ -198,6 +201,8 @@ builder.Services.AddOptions<TriagemChannelOptions>()
     .ValidateOnStart();
 builder.Services.AddScoped<ITriagemChannelCommandRepository, TriagemChannelCommandRepository>();
 builder.Services.AddScoped<TriagemChannelCommandService>();
+builder.Services.AddScoped<ITriagemInboundMessageRepository, TriagemInboundMessageRepository>();
+builder.Services.AddScoped<IIngestTriagemChannelMessageUseCase, IngestTriagemChannelMessageUseCase>();
 
 // ADR-041: drenagem da outbox do gatilho de triagem gravada pelo Collector.
 builder.Services.AddOptions<TriagemOutboxOptions>()

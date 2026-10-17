@@ -10,14 +10,14 @@ namespace Atua.Api.Endpoints;
 /// <summary>
 /// Endpoints internos do processo do canal WhatsApp (ADR-042). Autorizados
 /// via credencial de serviço (<c>ServiceCredential</c>), com escopos
-/// exclusivos <c>channel.command.claim</c> e <c>channel.command.complete</c>
-/// — não reutilizam os escopos do Agente Coletor nem o de início da
-/// triagem.
+/// exclusivos para claim, complete e ingestão de mensagens — não reutilizam
+/// os escopos do Agente Coletor nem o de início da triagem.
 ///
 /// Rotas:
 /// <list type="bullet">
 ///   <item><c>POST /api/internal/triagens/canal/claim</c></item>
 ///   <item><c>POST /api/internal/triagens/canal/complete</c></item>
+///   <item><c>POST /api/internal/triagens/canal/mensagens</c></item>
 /// </list>
 ///
 /// Tenant e integração vêm exclusivamente dos claims da credencial
@@ -58,6 +58,18 @@ public static class TriagemChannelEndpoints
             .Produces(StatusCodes.Status401Unauthorized)
             .Produces(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status409Conflict);
+
+        endpoints.MapPost("/api/internal/triagens/canal/mensagens", IngestMessageAsync)
+            .RequireAuthorization("ChannelMessageIngest")
+            .WithName("IngestTriagemChannelMessage")
+            .WithSummary("Registra uma mensagem recebida pelo canal WhatsApp (ADR-043).")
+            .WithDescription(
+                "Deduplica o evento por tenant e chave idempotente, localiza triagens ativas pelo número " +
+                "do remetente e inicia a coleta quando existe exatamente uma correspondência. Eventos " +
+                "ambíguos são persistidos sem associação e aguardam resolução manual.")
+            .Produces<IngestTriagemChannelMessageResponse>(StatusCodes.Status200OK)
+            .ProducesValidationProblem()
+            .Produces(StatusCodes.Status401Unauthorized);
     }
 
     // -----------------------------------------------------------------------
@@ -151,6 +163,46 @@ public static class TriagemChannelEndpoints
             result.CommandId, result.Status.ToString(), result.CompletedAtUtc));
     }
 
+    private static async Task<Results<Ok<IngestTriagemChannelMessageResponse>, UnauthorizedHttpResult,
+        ValidationProblem>> IngestMessageAsync(
+        IngestTriagemChannelMessageRequest request,
+        ClaimsPrincipal user,
+        IIngestTriagemChannelMessageUseCase useCase,
+        CancellationToken cancellationToken)
+    {
+        var tenantId = GetGuidClaim(user, "tenant_id");
+        var integrationId = GetGuidClaim(user, "integration_id");
+        if (tenantId is null || integrationId is null)
+        {
+            return TypedResults.Unauthorized();
+        }
+
+        var errors = ValidateInboundMessage(request);
+        if (errors.Count > 0)
+        {
+            return TypedResults.ValidationProblem(errors);
+        }
+
+        var result = await useCase.ExecuteAsync(new TriagemInboundMessageCommand(
+            tenantId.Value,
+            integrationId.Value,
+            request.ChannelMessageId!,
+            request.ChannelIdempotencyKey!,
+            request.CorrelationId!.Value,
+            request.SenderPhone!,
+            request.ConversationKind!,
+            request.FromMe!.Value,
+            request.ReceivedAtUtc!.Value,
+            request.Kind!,
+            request.Text), cancellationToken);
+
+        return TypedResults.Ok(new IngestTriagemChannelMessageResponse(
+            result.ChannelMessageId,
+            result.Outcome.ToString(),
+            result.TriagemId,
+            result.CandidateCount));
+    }
+
     // -----------------------------------------------------------------------
     // Helpers
     // -----------------------------------------------------------------------
@@ -164,6 +216,37 @@ public static class TriagemChannelEndpoints
 
     private static Guid? GetGuidClaim(ClaimsPrincipal user, string type) =>
         Guid.TryParse(user.FindFirstValue(type), out var value) ? value : null;
+
+    private static Dictionary<string, string[]> ValidateInboundMessage(
+        IngestTriagemChannelMessageRequest request)
+    {
+        var errors = new Dictionary<string, string[]>();
+        void AddError(string field, string message) => errors[field] = [message];
+
+        if (request.ContractVersion != "1") AddError("contractVersion", "Deve ser '1'.");
+        if (string.IsNullOrWhiteSpace(request.ChannelMessageId) || request.ChannelMessageId.Length > 256)
+            AddError("channelMessageId", "Obrigatório, com no máximo 256 caracteres.");
+        if (string.IsNullOrWhiteSpace(request.ChannelIdempotencyKey) || request.ChannelIdempotencyKey.Length > 128)
+            AddError("channelIdempotencyKey", "Obrigatória, com no máximo 128 caracteres.");
+        if (request.CorrelationId is null || request.CorrelationId == Guid.Empty)
+            AddError("correlationId", "Deve ser um UUID válido.");
+        if (request.SenderPhone is null || !System.Text.RegularExpressions.Regex.IsMatch(
+                request.SenderPhone, "^[1-9][0-9]{7,14}$"))
+            AddError("senderPhone", "Deve conter de 8 a 15 dígitos internacionais.");
+        if (request.ConversationKind is not ("individual" or "group"))
+            AddError("conversationKind", "Deve ser 'individual' ou 'group'.");
+        if (request.FromMe is null) AddError("fromMe", "Obrigatório.");
+        if (request.ReceivedAtUtc is null
+            || request.ReceivedAtUtc == DateTimeOffset.MinValue
+            || request.ReceivedAtUtc.Value.Offset != TimeSpan.Zero)
+            AddError("receivedAtUtc", "Deve conter um instante UTC válido.");
+        if (request.Kind is not ("text" or "empty"))
+            AddError("kind", "Deve ser 'text' ou 'empty'.");
+        if (request.Text?.Length > 65_536)
+            AddError("text", "Deve ter no máximo 65536 caracteres.");
+
+        return errors;
+    }
 }
 
 /// <summary>
@@ -227,3 +310,23 @@ public sealed record CompleteChannelCommandRequest(
 /// <param name="Status">Status atual do comando (<see cref="ETriagemChannelCommandStatus"/>), como texto legível.</param>
 /// <param name="CompletedAtUtc">Instante de conclusão (sucesso ou falha definitiva).</param>
 public sealed record CompleteChannelCommandResponse(Guid CommandId, string Status, DateTimeOffset CompletedAtUtc);
+
+/// <summary>Evento de mensagem recebida pelo Channel, conforme o ADR-043.</summary>
+public sealed record IngestTriagemChannelMessageRequest(
+    string? ContractVersion,
+    string? ChannelMessageId,
+    string? ChannelIdempotencyKey,
+    Guid? CorrelationId,
+    string? SenderPhone,
+    string? ConversationKind,
+    bool? FromMe,
+    DateTimeOffset? ReceivedAtUtc,
+    string? Kind,
+    string? Text);
+
+/// <summary>Resultado do processamento idempotente de uma mensagem recebida.</summary>
+public sealed record IngestTriagemChannelMessageResponse(
+    string ChannelMessageId,
+    string Outcome,
+    Guid? TriagemId,
+    int CandidateCount);

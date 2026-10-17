@@ -41,6 +41,8 @@ public sealed class ServiceCredentialAuthenticationHandler(
     /// </summary>
     public const string ChannelCommandCompleteScope = "channel.command.complete";
 
+    public const string ChannelMessageIngestScope = "channel.message.ingest";
+
     protected override async Task<AuthenticateResult> HandleAuthenticateAsync()
     {
         var authorization = Request.Headers.Authorization.ToString();

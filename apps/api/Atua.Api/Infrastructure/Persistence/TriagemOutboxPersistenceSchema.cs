@@ -43,7 +43,8 @@ internal static class TriagemOutboxPersistenceSchema
          WITH claimed AS (
              SELECT "Id"
              FROM {TableName}
-             WHERE "WorkOrderId" = ANY(@allowedWorkOrderIds)
+             WHERE ("WorkOrderId" = ANY(@allowedWorkOrderIds)
+                OR starts_with("WorkOrderProviderId", @syntheticWorkOrderProviderIdPrefix))
                AND (("Status" = 'Pending' AND "NextAttemptAtUtc" <= @now)
                 OR ("Status" = 'Processing' AND "ClaimExpiresAtUtc" < @now))
              ORDER BY "NextAttemptAtUtc" ASC
