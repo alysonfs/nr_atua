@@ -596,6 +596,12 @@ sem acesso ao banco e, com `--confirm-write`, adiciona somente o novo escopo
 quando claim e complete já estão ativos. O token é salvo em arquivo privado
 separado; em caso de resultado de banco incerto, o arquivo pendente é
 preservado para reconciliação. O script ainda não foi executado contra RDS.
+Para uma integração nova, sem nenhuma credencial Channel ativa,
+`infra/scripts/seed-channel-credentials.sh` cria os três escopos
+(claim, complete e message.ingest) com as mesmas salvaguardas: `--dry-run`,
+`--confirm-write`, caminho fixo `~/.config/atua/channel/channel.env` e
+arquivo pendente preservado em caso de resultado incerto. Também não foi
+executado contra RDS.
 O provisionamento live e o deploy permanecem pendentes de autorização.
 Retenção/exclusão do texto recebido também permanece uma decisão de produção
 em aberto.
