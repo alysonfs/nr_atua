@@ -1,13 +1,17 @@
 import { chmod, mkdir } from 'node:fs/promises'
 import { EventEmitter } from 'node:events'
+import { createRequire } from 'node:module'
 import makeWASocket, {
   DisconnectReason,
   useMultiFileAuthState,
-  type WASocket,
+  type AuthenticationState,
+  type ConnectionState,
 } from '@whiskeysockets/baileys'
 import pino from 'pino'
-import { generate as generateQr } from 'qrcode-terminal'
 import type { SafeLogger, WhatsAppMessageSender } from './contracts.js'
+
+const qrcodeTerminal: typeof import('qrcode-terminal') =
+  createRequire(import.meta.url)('qrcode-terminal')
 
 export class SessionFatalError extends Error {
   constructor(message: string) {
@@ -16,24 +20,48 @@ export class SessionFatalError extends Error {
   }
 }
 
+export interface BaileysSessionSocket {
+  onConnectionUpdate(listener: (update: Partial<ConnectionState>) => void): () => void
+  onCredentialsUpdate(listener: () => void): () => void
+  sendMessage(
+    recipientJid: string,
+    text: string,
+    messageId: string,
+  ): Promise<{ key?: { id?: string | null } | null } | undefined>
+  end(error?: Error): void
+}
+
+export interface BaileysSessionDependencies {
+  loadAuthState?: typeof useMultiFileAuthState
+  createSocket?: (auth: AuthenticationState) => BaileysSessionSocket
+  wait?: (milliseconds: number, signal: AbortSignal) => Promise<void>
+}
+
 export class BaileysSession implements WhatsAppMessageSender {
   private readonly stateEvents = new EventEmitter()
   private readonly sessionPath: string
   private readonly printQr: boolean
   private readonly logger: SafeLogger
-  private socket: WASocket | undefined
+  private socket: BaileysSessionSocket | undefined
   private ready = false
   private fatalError: Error | undefined
   private started = false
+  private readonly loadAuthState: typeof useMultiFileAuthState
+  private readonly createSocket: (auth: AuthenticationState) => BaileysSessionSocket
+  private readonly wait: (milliseconds: number, signal: AbortSignal) => Promise<void>
 
   constructor(
     sessionPath: string,
     printQr: boolean,
     logger: SafeLogger,
+    dependencies: BaileysSessionDependencies = {},
   ) {
     this.sessionPath = sessionPath
     this.printQr = printQr
     this.logger = logger
+    this.loadAuthState = dependencies.loadAuthState ?? useMultiFileAuthState
+    this.createSocket = dependencies.createSocket ?? createBaileysSocket
+    this.wait = dependencies.wait ?? delay
   }
 
   async run(signal: AbortSignal): Promise<void> {
@@ -120,12 +148,12 @@ export class BaileysSession implements WhatsAppMessageSender {
     }
 
     const result = await withTimeout(
-      socket.sendMessage(recipientJid, { text }, { messageId }),
+      socket.sendMessage(recipientJid, text, messageId),
       timeoutMs,
       signal,
     )
 
-    if (result?.key.id !== messageId) {
+    if (result?.key?.id !== messageId) {
       throw new Error('Baileys não confirmou o identificador idempotente da mensagem.')
     }
   }
@@ -136,7 +164,9 @@ export class BaileysSession implements WhatsAppMessageSender {
     while (!signal.aborted) {
       let statusCode: number | undefined
       try {
-        statusCode = await this.connectAndWaitForClose(signal)
+        statusCode = await this.connectAndWaitForClose(signal, () => {
+          consecutiveFailures = 0
+        })
       } catch (error) {
         if (signal.aborted) {
           return
@@ -151,7 +181,7 @@ export class BaileysSession implements WhatsAppMessageSender {
           errorType: error instanceof Error ? error.name : 'UnknownError',
           retryInMs,
         })
-        await delay(retryInMs, signal)
+        await this.wait(retryInMs, signal)
         continue
       }
 
@@ -169,31 +199,50 @@ export class BaileysSession implements WhatsAppMessageSender {
         statusCode: statusCode ?? 0,
         retryInMs,
       })
-      await delay(retryInMs, signal)
+      await this.wait(retryInMs, signal)
     }
   }
 
-  private async connectAndWaitForClose(signal: AbortSignal): Promise<number | undefined> {
-    const auth = await useMultiFileAuthState(this.sessionPath)
+  private async connectAndWaitForClose(
+    signal: AbortSignal,
+    onConnected: () => void,
+  ): Promise<number | undefined> {
+    const auth = await this.loadAuthState(this.sessionPath)
     if (!auth.state.creds.registered && !this.printQr) {
       throw new SessionFatalError(
         'Não há sessão WhatsApp válida. Configure ChannelWorker__PrintQr=true para parear localmente.',
       )
     }
 
-    const socket = makeWASocket({
-      auth: auth.state,
-      logger: pino({ level: 'silent' }),
-    })
+    const socket = this.createSocket(auth.state)
     this.socket = socket
 
     let credentialPersistenceFailed = false
+    const pendingCredentialWrites = new Set<Promise<void>>()
     const statusCode = await new Promise<number | undefined>((resolve) => {
-      const onConnectionUpdate = (update: { connection?: string; qr?: string; lastDisconnect?: { error?: unknown } }) => {
+      let settled = false
+      let removeConnectionListener = () => {}
+      let removeCredentialsListener = () => {}
+
+      const cleanup = () => {
+        removeConnectionListener()
+        removeCredentialsListener()
+        signal.removeEventListener('abort', onAbort)
+      }
+      const finish = (status: number | undefined) => {
+        if (settled) {
+          return
+        }
+
+        settled = true
+        cleanup()
+        resolve(status)
+      }
+      const onConnectionUpdate = (update: Partial<ConnectionState>) => {
         if (update.qr !== undefined) {
           if (this.printQr) {
             this.logger.warn('whatsapp_pairing_qr_displayed')
-            generateQr(update.qr, { small: true })
+            qrcodeTerminal.generate(update.qr, { small: true })
           } else {
             this.logger.warn('whatsapp_pairing_required_qr_output_disabled')
           }
@@ -201,38 +250,43 @@ export class BaileysSession implements WhatsAppMessageSender {
 
         if (update.connection === 'open') {
           this.ready = true
+          onConnected()
           this.logger.info('whatsapp_session_connected')
           this.stateEvents.emit('ready')
         } else if (update.connection === 'close') {
           this.ready = false
           this.stateEvents.emit('disconnected')
-          cleanup()
-          resolve(getDisconnectStatusCode(update.lastDisconnect?.error))
+          finish(getDisconnectStatusCode(update.lastDisconnect?.error))
         }
       }
 
       const onAbort = () => {
-        cleanup()
         socket.end(undefined)
-        resolve(undefined)
+        finish(undefined)
       }
 
       const onCredentialsUpdate = () => {
-        void auth.saveCreds().catch(() => {
-          credentialPersistenceFailed = true
-          this.logger.error('whatsapp_session_persistence_failed')
-          socket.end(new Error('Falha ao persistir sessão.'))
-        })
+        let persistence: Promise<void>
+        persistence = Promise.resolve()
+          .then(() => auth.saveCreds())
+          .catch((error: unknown) => {
+            credentialPersistenceFailed = true
+            this.logger.error('whatsapp_session_persistence_failed')
+            socket.end(
+              error instanceof Error
+                ? error
+                : new Error('Falha ao persistir sessão.'),
+            )
+            finish(undefined)
+          })
+          .finally(() => {
+            pendingCredentialWrites.delete(persistence)
+          })
+        pendingCredentialWrites.add(persistence)
       }
 
-      const cleanup = () => {
-        socket.ev.off('connection.update', onConnectionUpdate)
-        socket.ev.off('creds.update', onCredentialsUpdate)
-        signal.removeEventListener('abort', onAbort)
-      }
-
-      socket.ev.on('connection.update', onConnectionUpdate)
-      socket.ev.on('creds.update', onCredentialsUpdate)
+      removeConnectionListener = socket.onConnectionUpdate(onConnectionUpdate)
+      removeCredentialsListener = socket.onCredentialsUpdate(onCredentialsUpdate)
       signal.addEventListener('abort', onAbort, { once: true })
       if (signal.aborted) {
         onAbort()
@@ -241,11 +295,37 @@ export class BaileysSession implements WhatsAppMessageSender {
 
     this.socket = undefined
     this.ready = false
+    await Promise.all(pendingCredentialWrites)
     if (credentialPersistenceFailed) {
       throw new SessionFatalError('Não foi possível persistir as credenciais da sessão WhatsApp.')
     }
 
     return statusCode
+  }
+}
+
+function createBaileysSocket(auth: AuthenticationState): BaileysSessionSocket {
+  const socket = makeWASocket({
+    auth,
+    logger: pino({ level: 'silent' }),
+  })
+
+  return {
+    onConnectionUpdate(listener) {
+      socket.ev.on('connection.update', listener)
+      return () => socket.ev.off('connection.update', listener)
+    },
+    onCredentialsUpdate(listener) {
+      const handler = () => listener()
+      socket.ev.on('creds.update', handler)
+      return () => socket.ev.off('creds.update', handler)
+    },
+    sendMessage(recipientJid, text, messageId) {
+      return socket.sendMessage(recipientJid, { text }, { messageId })
+    },
+    end(error) {
+      socket.end(error)
+    },
   }
 }
 

@@ -309,7 +309,12 @@ Critério de conclusão:
 Validação local em 2026-10-16:
 
 - `pnpm --filter @atua/channel-node check` passou;
-- `pnpm --filter @atua/channel-node test`: 18/18 testes aprovados;
+- `pnpm --filter @atua/channel-node test`: 23/23 testes aprovados;
+- cinco testes de sessão com socket simulado cobrem reconexão e reset do
+  backoff após conexão, `loggedOut` sem retry, timeout de envio, espera por
+  persistência de credenciais no encerramento e permissão `0700` do diretório;
+- a suíte detectou e motivou a correção do carregamento CommonJS de
+  `qrcode-terminal` em runtime ESM no Node 22;
 - `dotnet test tests/Atua.Api.Tests/Atua.Api.Tests.csproj`: 388/388 testes
   aprovados;
 - `dotnet test tests/Atua.Channel.Tests/Atua.Channel.Tests.csproj`: 11/11
@@ -331,15 +336,15 @@ sem versionar tokens):
 
 Pendente antes de concluir o incremento:
 
-- exercitar conexão, persistência de sessão, reconexão, encerramento e timeout
-  do socket Baileys em ambiente controlado;
+- validar conexão e comportamento do socket Baileys real, além de persistência
+  da sessão entre reinicializações do processo;
 - validar envio real para número de teste, reinício sem novo QR com sessão
   válida e atualização por `complete` em ponta a ponta;
 - descontinuar o worker C# somente após equivalência validada.
 
 O incremento continua incompleto até os critérios de conclusão serem
-verificados. O teste de timeout local cobre a lógica do worker, mas não
-substitui a validação do socket/WhatsApp real.
+verificados. Os testes locais de ciclo de vida usam um socket simulado e não
+substituem a validação com Baileys/WhatsApp real.
 
 Critério de conclusão:
 
