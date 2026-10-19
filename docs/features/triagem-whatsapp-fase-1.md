@@ -137,6 +137,13 @@ A fase 1 não classifica SubStatus. O risco é de confusão terminológica, e o 
 
 5. **Pools e roteamento (Fase 1):** Pool compartilhado por posto, visível a operadores autorizados. Primeiro operador que assume tem exclusividade. Priorização, grupos e SLA permanecem como pendências futuras.
 
+### Resolvidas em 2026-10-18
+
+16. **Retenção de mensagens inbound:** manter o registro completo por cinco
+    anos desde `ReceivedAtUtc` e excluí-lo fisicamente um ano após
+    `ExpiresAtUtc`. Solicitação de exclusão ou inatividade da conta por mais
+    de cinco anos, conforme RS-003, pode antecipar a remoção. Ver ADR-044.
+
 ### Pendentes
 
 1. Formato final dos campos estruturados e tipo de triagem (formulário, checklist dinâmico, roteiro livre ou híbrido).
@@ -146,6 +153,9 @@ A fase 1 não classifica SubStatus. O risco é de confusão terminológica, e o 
 8. LGPD: base legal, local da LLM e contrato com o fornecedor.
 9. Custo de LLM: modelo de cobrança e quem paga (ATYNO ou posto).
 13. Papéis: o gestor configura números e pools? Isso conversa com RF-021.
+17. Implementar o fluxo geral de exclusão de dados do tenant conforme RS-003,
+    incluindo mensagens inbound; definir também como a retenção de backups
+    atende a exclusões antecipadas.
 
 ## 10. Decomposição sugerida em user stories
 
@@ -422,6 +432,14 @@ Estado intermediário para mídia ilegível após 3 tentativas do mesmo item ou 
 ### RF-TRIAGEM-015: Sugestão de peças bloqueada
 Sugestão de peças não será implementada sem catálogo confiável. Mantida como dependência explícita do épico (item B5). A LLM estrutura a informação, mas não sugere peças até catálogo disponível.
 
+### RF-TRIAGEM-016: Retenção de mensagens inbound
+Mensagens inbound completas são mantidas por cinco anos a partir de
+`ReceivedAtUtc`, com `ExpiresAtUtc` calculado para esse marco. O registro é
+excluído fisicamente um ano após a expiração. Solicitação de exclusão ou
+inatividade da conta por mais de cinco anos, conforme RS-003, pode antecipar
+a remoção. O fluxo geral de exclusão do tenant deve incluir esses registros.
+Anexos e backups têm políticas separadas ainda pendentes. Ver ADR-044.
+
 ## 17. Critérios de aceite verificáveis
 
 ### CA-001: Checklist mínimo e liberação (RF-TRIAGEM-001, RF-TRIAGEM-002)
@@ -529,3 +547,21 @@ Sugestão de peças não será implementada sem catálogo confiável. Mantida co
 - Dado o template fixo da Midea usado na primeira entrega
 - Quando a implementação estiver pronta para envio real
 - Então o template deve ser revisado pelo PO antes de implementar e validar o envio real, sem reescrever agora o conteúdo do template
+
+### CA-012: Expiração e purge de mensagens inbound (RF-TRIAGEM-016)
+**Cenário:** Mensagem ainda dentro do prazo de retenção
+- Dado um registro inbound recebido em `ReceivedAtUtc`
+- Quando ainda não se passaram cinco anos desde o recebimento
+- Então o registro permanece completo e `ExpiresAtUtc` corresponde a
+  `ReceivedAtUtc + 5 anos`
+
+**Cenário:** Mensagem além do prazo de retenção pós-expiração
+- Dado um registro com `ExpiresAtUtc` definido
+- Quando o instante atual alcançar um ano após `ExpiresAtUtc`
+- Então o job de purge pode excluir fisicamente o registro do banco primário
+
+**Cenário:** Exclusão antecipada de dados do tenant
+- Dado um pedido de exclusão ou uma conta inativa por mais de cinco anos
+- Quando o fluxo geral de exclusão de dados do tenant for executado
+- Então ele também deve remover os registros inbound, sem aguardar os seis
+  anos desde o recebimento

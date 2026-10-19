@@ -603,15 +603,38 @@ Para uma integração nova, sem nenhuma credencial Channel ativa,
 arquivo pendente preservado em caso de resultado incerto. Também não foi
 executado contra RDS.
 O provisionamento live e o deploy permanecem pendentes de autorização.
-Retenção/exclusão do texto recebido também permanece uma decisão de produção
-em aberto.
+O ADR-044 define retenção no banco primário: mensagem completa por cinco anos
+desde `ReceivedAtUtc`, com exclusão física um ano após `ExpiresAtUtc` (até
+seis anos no total). O job executa diariamente enquanto a Master API estiver
+em execução; desligamentos podem atrasar o purge. O ambiente sob demanda não
+é uma garantia operacional para produção.
+Pedido de exclusão ou mais de cinco anos de inatividade da conta, conforme
+RS-003, pode antecipar a remoção, mas o fluxo geral de exclusão do tenant
+ainda não existe e deverá incluir os registros inbound. Retenção de anexos
+em S3 e de cópias em backups permanece pendente.
+
+Validação local do incremento de retenção em 2026-10-18:
+
+- 41/41 testes focados aprovados: política de retenção, mapeamento da triagem
+  e endpoints do Channel. Incluem ano bissexto, limite exato de elegibilidade,
+  coluna obrigatória e indexada, e operações de preenchimento da migration;
+- a migration `20261018123636_AddTriagemInboundMessageRetention` preenche
+  `ExpiresAtUtc` em UTC antes de tornar a coluna obrigatória;
+- `dotnet ef migrations has-pending-model-changes --no-build`: nenhuma
+  diferença entre modelo e snapshot;
+- SQL idempotente das três migrations inbound gerado localmente, com
+  connection string fictícia; nenhum acesso ao RDS;
+- o job de purge e as migrations ainda não foram executados contra
+  PostgreSQL nesta validação. A execução real e o E2E continuam pendentes.
 
 ## 7. Bloqueios de produção
 
 Não bloqueiam o desenvolvimento local, mas impedem produção:
 
 - parecer jurídico sobre o uso do canal não oficial;
-- definição de base legal, retenção e exclusão LGPD;
+- definição de base legal e revisão jurídica LGPD;
+- definição da retenção de anexos e backups; implementação do fluxo geral de
+  exclusão de dados do tenant conforme RS-003;
 - topologia always-on do Channel;
 - persistência de sessão em produção;
 - definição de custos e responsável pelo ambiente contínuo;

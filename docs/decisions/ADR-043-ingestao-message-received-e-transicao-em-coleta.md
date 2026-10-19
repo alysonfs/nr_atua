@@ -271,8 +271,10 @@ contrato de mídia sem necessidade imediata.
 - A resolução por telefone introduz uma ambiguidade real quando o mesmo
   consumidor tem mais de uma triagem ativa simultânea; por decisão do PO,
   essas mensagens ficam sem associação até resolução manual no futuro painel.
-- Mensagens e texto são dados pessoais; a política de retenção e exclusão
-  continua pendente e bloqueia produção.
+- Mensagens e texto são dados pessoais; a política de retenção no banco
+  primário está definida no ADR-044. Retenção de anexos/backups e exclusão
+  antecipada pelo fluxo geral de dados do tenant ainda precisam ser cobertas
+  antes da produção.
 - O critério "sem grupo, sem `fromMe`, com texto" ainda não cobre mídia; o
   primeiro contato por foto/vídeo sem texto continuará em `CONTATO_INICIADO`
   até o incremento de mídia existir. Isso é uma limitação temporária
