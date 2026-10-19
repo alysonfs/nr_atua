@@ -567,8 +567,8 @@ O contrato dos dois primeiros incrementos está registrado no
 [ADR-043](../decisions/ADR-043-ingestao-message-received-e-transicao-em-coleta.md).
 A implementação adiciona `POST /api/internal/triagens/canal/mensagens`,
 escopo `channel.message.ingest` e persistência/deduplicação em
-`triagem_channel_messages`. A migration ainda precisa ser aplicada nos
-ambientes quando houver autorização de deploy.
+`triagem_channel_messages`. As migrations inbound foram aplicadas ao RDS de
+teste em 2026-10-18, após autorização explícita.
 
 Validação local em 2026-10-17:
 
@@ -588,21 +588,33 @@ Validação local em 2026-10-17:
   `20261017184547_AddTriagemChannelMessageCandidateGinIndex`. Nenhuma foi
   aplicada em ambiente.
 
-Antes de iniciar a nova versão do Channel numa integração já existente,
-provisionar a credencial exclusiva `channel.message.ingest` e configurar
-`ChannelWorker__MessageIngestServiceToken`. O script
+O script
 `infra/scripts/add-channel-message-ingest-credential.sh` oferece `--dry-run`
-sem acesso ao banco e, com `--confirm-write`, adiciona somente o novo escopo
-quando claim e complete já estão ativos. O token é salvo em arquivo privado
-separado; em caso de resultado de banco incerto, o arquivo pendente é
-preservado para reconciliação. O script ainda não foi executado contra RDS.
+sem acesso ao banco e, com `--confirm-write`, adiciona somente o escopo
+`channel.message.ingest` quando claim e complete já estão ativos. O token é
+salvo em arquivo privado separado; em caso de resultado de banco incerto, o
+arquivo pendente é preservado para reconciliação. Em 2026-10-18, o script foi
+executado com autorização para a integração de teste já existente. Os três
+escopos (`claim`, `complete` e `message.ingest`) foram verificados ativos; o
+token inbound foi salvo localmente em
+`~/.config/atua/channel/message-ingest.env`.
 Para uma integração nova, sem nenhuma credencial Channel ativa,
 `infra/scripts/seed-channel-credentials.sh` cria os três escopos
 (claim, complete e message.ingest) com as mesmas salvaguardas: `--dry-run`,
 `--confirm-write`, caminho fixo `~/.config/atua/channel/channel.env` e
-arquivo pendente preservado em caso de resultado incerto. Também não foi
-executado contra RDS.
-O provisionamento live e o deploy permanecem pendentes de autorização.
+arquivo pendente preservado em caso de resultado incerto. Esse script não foi
+necessário no ambiente de teste.
+Em 2026-10-19, a API foi redeployada na EC2 de teste pelo alvo documentado
+`AWS_PROFILE=moldato AWS_REGION=sa-east-1 make redeploy-api`; o serviço ficou
+ativo e o MD5 local/remoto do artefato conferiu. A inspeção somente leitura
+não encontrou serviço Channel/Baileys instalado na EC2. Conforme ADR-035 e
+ADR-038, o Channel de teste deve ser executado localmente, não instalado na
+EC2. O procedimento está em
+[channel-node-teste-local.md](../guides/channel-node-teste-local.md); ainda
+não foi iniciado para o E2E inbound.
+
+Após as migrations, a tabela `triagem_channel_messages` foi verificada no RDS
+de teste com 17 colunas, 7 índices e sem registros inbound.
 O ADR-044 define retenção no banco primário: mensagem completa por cinco anos
 desde `ReceivedAtUtc`, com exclusão física um ano após `ExpiresAtUtc` (até
 seis anos no total). O job executa diariamente enquanto a Master API estiver
