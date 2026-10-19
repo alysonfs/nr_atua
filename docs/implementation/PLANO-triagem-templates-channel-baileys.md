@@ -609,7 +609,8 @@ Em 2026-10-19, a API foi redeployada na EC2 de teste pelo alvo documentado
 ativo e o MD5 local/remoto do artefato conferiu. A inspeção somente leitura
 não encontrou serviço Channel/Baileys instalado na EC2. Conforme ADR-035 e
 ADR-038, o Channel de teste deve ser executado localmente, não instalado na
-EC2. O procedimento está em
+EC2. Ele usa o túnel SSH local em `127.0.0.1:18080`; não se devem enviar
+bearer tokens por HTTP público. O procedimento está em
 [channel-node-teste-local.md](../guides/channel-node-teste-local.md); ainda
 não foi iniciado para o E2E inbound.
 

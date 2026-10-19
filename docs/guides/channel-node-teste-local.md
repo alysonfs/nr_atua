@@ -1,8 +1,8 @@
 # Teste local do Channel Node
 
 Este guia descreve como executar o Channel Node localmente contra a API de
-teste já publicada. É um procedimento de desenvolvimento/teste, não um deploy
-de produção nem uma instalação na EC2.
+teste já publicada por meio do túnel SSH local. É um procedimento de
+desenvolvimento/teste, não um deploy de produção nem uma instalação na EC2.
 
 Essa topologia segue a decisão de desenvolvimento em
 [ADR-035](../decisions/ADR-035-topologia-dedicada-always-on-para-baileys.md)
@@ -13,7 +13,9 @@ interromper o processo durante o processamento pode exigir reentrega da mensagem
 
 ## Pré-requisitos
 
-- API de teste disponível em `https://api.atyno.com.br`.
+- Túnel SSH local aberto pelo operador, encaminhando a API para
+  `127.0.0.1:18080`.
+- API de teste disponível pelo túnel em `http://127.0.0.1:18080`.
 - Migrations inbound aplicadas e integração de teste provisionada com os
   escopos `channel.command.claim`, `channel.command.complete` e
   `channel.message.ingest`.
@@ -38,12 +40,23 @@ Execute na raiz do repositório:
 source "$HOME/.config/atua/channel/channel.env"
 source "$HOME/.config/atua/channel/message-ingest.env"
 
-export ChannelWorker__ApiBaseUrl="https://api.atyno.com.br"
-export ChannelWorker__SessionPath="$HOME/.local/share/atua/channel/session"
+export ChannelWorker__ApiBaseUrl="http://127.0.0.1:18080"
+export ChannelWorker__SessionPath="$HOME/.local/share/atua/channel-session"
+export ChannelWorker__PrintQr=false
 
 mkdir -p "$ChannelWorker__SessionPath"
-chmod 700 "$HOME/.local/share/atua/channel" "$ChannelWorker__SessionPath"
+chmod 700 "$ChannelWorker__SessionPath"
 ```
+
+Confirme que o túnel está ativo antes de iniciar o Channel:
+
+```bash
+curl --fail --silent --show-error --max-time 5 http://127.0.0.1:18080/health
+```
+
+O resultado esperado é HTTP 200 com `{"status":"healthy"}`. Se o túnel não
+estiver ativo, inicie-o em um terminal privado e mantenha-o aberto durante o
+teste. Não envie bearer tokens por HTTP público.
 
 `ChannelWorker__SessionPath` precisa ser absoluto, ficar fora do repositório e
 ser protegido como material de autenticação do WhatsApp. A sessão é local à
@@ -97,6 +110,8 @@ novamente com o padrão `false`.
 
 - Este procedimento não instala nem reinicia serviço na EC2 e não aplica
   migrations ou grava credenciais no banco.
+- O Channel deve usar o túnel local; não configure bearer tokens contra um
+  endpoint HTTP público.
 - Não execute o Channel simultaneamente em duas máquinas com a mesma conta
   WhatsApp.
 - A execução local depende de conectividade contínua entre a máquina do
