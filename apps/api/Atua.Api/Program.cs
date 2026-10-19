@@ -181,6 +181,7 @@ builder.Services.AddHostedService<ClaimTimeoutJob>();
 builder.Services.AddScoped<RecurrentCollectionIntervalService>();
 builder.Services.AddScoped<RecurrentCollectionSchedulerService>();
 builder.Services.AddHostedService<RecurrentCollectionSchedulerJob>();
+builder.Services.AddHostedService<TriagemInboundMessagePurgeJob>();
 
 // ADR-040: mesmo lifetime de AtuaDbContext (Scoped) — a implementação usa o
 // DbContext injetado diretamente, sem estado próprio.

@@ -697,6 +697,7 @@ public sealed class AtuaDbContext(DbContextOptions<AtuaDbContext> options) : DbC
         builder.Property(message => message.CandidateTriagemIds)
             .HasColumnType("uuid[]").IsRequired();
         builder.Property(message => message.ReceivedAtUtc).IsRequired();
+        builder.Property(message => message.ExpiresAtUtc).IsRequired();
         builder.Property(message => message.CreatedAtUtc).IsRequired();
 
         builder.HasIndex(message => new { message.TenantId, message.ChannelIdempotencyKey })
@@ -704,6 +705,7 @@ public sealed class AtuaDbContext(DbContextOptions<AtuaDbContext> options) : DbC
             .HasDatabaseName(TriagemInboundMessagePersistenceSchema.IdempotencyUniqueIndexName);
         builder.HasIndex(message => new { message.TenantId, message.IntegrationId, message.SenderPhone });
         builder.HasIndex(message => message.TriagemId);
+        builder.HasIndex(message => message.ExpiresAtUtc);
         builder.HasIndex(message => message.CandidateTriagemIds)
             .HasMethod("gin");
 

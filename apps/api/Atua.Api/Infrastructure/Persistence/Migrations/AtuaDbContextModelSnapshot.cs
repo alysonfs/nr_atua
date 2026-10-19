@@ -849,6 +849,9 @@ namespace Atua.Api.Infrastructure.Persistence.Migrations
                     b.Property<DateTimeOffset>("CreatedAtUtc")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<DateTimeOffset>("ExpiresAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<bool>("FromMe")
                         .HasColumnType("boolean");
 
@@ -888,6 +891,8 @@ namespace Atua.Api.Infrastructure.Persistence.Migrations
                     b.HasIndex("CandidateTriagemIds");
 
                     NpgsqlIndexBuilderExtensions.HasMethod(b.HasIndex("CandidateTriagemIds"), "gin");
+
+                    b.HasIndex("ExpiresAtUtc");
 
                     b.HasIndex("IntegrationId");
 

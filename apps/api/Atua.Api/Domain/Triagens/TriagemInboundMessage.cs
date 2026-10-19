@@ -32,6 +32,7 @@ public sealed class TriagemInboundMessage
         ConversationKind = conversationKind;
         FromMe = fromMe;
         ReceivedAtUtc = receivedAtUtc;
+        ExpiresAtUtc = TriagemInboundMessageRetentionPolicy.CalculateExpirationUtc(receivedAtUtc);
         Kind = kind;
         Text = text;
         Outcome = outcome;
@@ -50,6 +51,7 @@ public sealed class TriagemInboundMessage
     public string ConversationKind { get; private set; } = null!;
     public bool FromMe { get; private set; }
     public DateTimeOffset ReceivedAtUtc { get; private set; }
+    public DateTimeOffset ExpiresAtUtc { get; private set; }
     public string Kind { get; private set; } = null!;
     public string? Text { get; private set; }
     public ETriagemInboundMessageOutcome Outcome { get; private set; }
