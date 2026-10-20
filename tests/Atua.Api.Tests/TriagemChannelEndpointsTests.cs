@@ -429,6 +429,44 @@ public class TriagemChannelEndpointsTests
             (await verifyContext.Triagens.SingleAsync(item => item.Id == seed.TriagemId)).Status);
     }
 
+    [Theory]
+    [InlineData("+5584994241248", "558494241248")]
+    [InlineData("+558494241248", "5584994241248")]
+    public async Task IngestMessage_CelularBrasileiroComOuSemNonoDigito_IniciaColeta(
+        string recipientPhone,
+        string senderPhone)
+    {
+        var (app, databaseName) = await CreateApplicationWithRealCommandRepositoryAsync();
+        await using var appDisposable = app;
+        var seed = await SeedContactStartedTriageAsync(databaseName, recipientPhone);
+        var client = CreateClient(app, seed.TenantId, seed.IntegrationId,
+            ServiceCredentialAuthenticationHandler.ChannelMessageIngestScope);
+        var request = CreateInboundMessage("message-ninth-digit", "stable-ninth-digit-key") with
+        {
+            SenderPhone = senderPhone,
+        };
+
+        var response = await client.PostAsJsonAsync("/api/internal/triagens/canal/mensagens", request);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var body = await response.Content.ReadFromJsonAsync<IngestTriagemChannelMessageResponse>();
+        Assert.NotNull(body);
+        Assert.Equal("ColetaIniciada", body!.Outcome);
+        Assert.Equal(seed.TriagemId, body.TriagemId);
+        await using var context = CreateContext(databaseName);
+        Assert.Equal(senderPhone, (await context.TriagemInboundMessages.SingleAsync()).SenderPhone);
+    }
+
+    [Theory]
+    [InlineData("5584994241248", "558494241248")]
+    [InlineData("558494241248", "558494241248")]
+    [InlineData("+55 (84) 99424-1248", "558494241248")]
+    [InlineData("558432221234", "558432221234")]
+    [InlineData("5511999991234", "551199991234")]
+    [InlineData("14155550123", "14155550123")]
+    public void ToPhoneMatchKey_RemoveSomenteNonoDigitoDeCelularBrasileiro(string phone, string expected) =>
+        Assert.Equal(expected, TriagemInboundMessageRepository.ToPhoneMatchKey(phone));
+
     [Fact]
     public async Task IngestMessage_SemTriagemCorrespondente_PersisteSemVinculo()
     {
