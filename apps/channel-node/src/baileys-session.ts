@@ -277,7 +277,9 @@ export class BaileysSession implements WhatsAppMessageSender, WhatsAppMessageRec
     onConnected: () => void,
   ): Promise<number | undefined> {
     const auth = await this.loadAuthState(this.sessionPath)
-    if (!auth.state.creds.registered && !this.printQr) {
+    // QR pairing leaves `registered` false; only pairing-code logins set it, so `me` also proves a paired session.
+    const hasPairedSession = auth.state.creds.registered || Boolean(auth.state.creds.me?.id)
+    if (!hasPairedSession && !this.printQr) {
       throw new SessionFatalError(
         'Não há sessão WhatsApp válida. Configure ChannelWorker__PrintQr=true para parear localmente.',
       )
@@ -357,21 +359,34 @@ export class BaileysSession implements WhatsAppMessageSender, WhatsAppMessageRec
 
       const onMessagesUpsert = (messages: WAMessage[], type: string) => {
         if (type !== 'notify') {
+          this.logger.info('whatsapp_inbound_upsert_ignored', {
+            upsertType: type === 'append' ? 'append' : 'other',
+            messageCount: messages.length,
+            reason: 'non_notify',
+          })
           return
         }
 
+        this.logger.info('whatsapp_inbound_upsert_received', {
+          messageCount: messages.length,
+        })
+
         for (const message of messages) {
-          const incoming = toIncomingWhatsAppMessage(message)
-          if (incoming === null) {
+          const parsed = parseIncomingWhatsAppMessage(message)
+          if (parsed.message === null) {
+            this.logger.info('whatsapp_inbound_message_ignored', {
+              reason: parsed.reason,
+              remoteJidKind: getJidKind(message.key.remoteJid ?? ''),
+            })
             continue
           }
 
           this.logger.info('whatsapp_inbound_message_received', {
-            channelMessageId: incoming.channelMessageId,
-            correlationId: incoming.correlationId,
+            channelMessageId: parsed.message.channelMessageId,
+            correlationId: parsed.message.correlationId,
           })
           for (const listener of this.incomingMessageListeners) {
-            listener(incoming)
+            listener(parsed.message)
           }
         }
       }
@@ -449,26 +464,41 @@ function createBaileysSocket(auth: AuthenticationState): BaileysSessionSocket {
   }
 }
 
-function toIncomingWhatsAppMessage(message: WAMessage): IncomingWhatsAppMessage | null {
+type IncomingMessageParseResult =
+  | { message: IncomingWhatsAppMessage; reason: null }
+  | {
+      message: null
+      reason:
+        | 'missing_remote_jid'
+        | 'missing_message_id'
+        | 'group_message'
+        | 'from_me'
+        | 'invalid_sender_phone'
+        | 'missing_text'
+    }
+
+function parseIncomingWhatsAppMessage(message: WAMessage): IncomingMessageParseResult {
   const key = message.key
   const remoteJid = key.remoteJid ?? ''
   const messageId = key.id
   const fromMe = key.fromMe ?? false
-  if (
-    remoteJid === '' ||
-    messageId === undefined ||
-    messageId === null ||
-    messageId === '' ||
-    remoteJid.endsWith('@g.us') ||
-    fromMe
-  ) {
-    return null
+  if (remoteJid === '') {
+    return { message: null, reason: 'missing_remote_jid' }
+  }
+  if (messageId === undefined || messageId === null || messageId === '') {
+    return { message: null, reason: 'missing_message_id' }
+  }
+  if (remoteJid.endsWith('@g.us')) {
+    return { message: null, reason: 'group_message' }
+  }
+  if (fromMe) {
+    return { message: null, reason: 'from_me' }
   }
 
   const senderJid = key.senderPn ?? key.participantPn ?? remoteJid
-  const senderPhone = senderJid.split('@')[0]?.split(':')[0] ?? ''
-  if (!/^[1-9]\d{7,14}$/.test(senderPhone)) {
-    return null
+  const senderPhone = /^(?<phone>[1-9]\d{7,14})(?::\d+)?@s\.whatsapp\.net$/.exec(senderJid)?.groups?.phone
+  if (senderPhone === undefined) {
+    return { message: null, reason: 'invalid_sender_phone' }
   }
 
   const body = normalizeMessageContent(message.message)
@@ -478,7 +508,7 @@ function toIncomingWhatsAppMessage(message: WAMessage): IncomingWhatsAppMessage 
     body?.videoMessage?.caption ??
     null
   if (typeof text !== 'string' || text.trim() === '') {
-    return null
+    return { message: null, reason: 'missing_text' }
   }
 
   const channelIdempotencyKey = createHash('sha256')
@@ -490,17 +520,33 @@ function toIncomingWhatsAppMessage(message: WAMessage): IncomingWhatsAppMessage 
     : new Date()
 
   return {
-    contractVersion: '1',
-    channelMessageId: messageId,
-    channelIdempotencyKey,
-    correlationId: randomUUID(),
-    senderPhone,
-    conversationKind: 'individual',
-    fromMe,
-    receivedAtUtc: receivedAtUtc.toISOString(),
-    kind: 'text',
-    text,
+    reason: null,
+    message: {
+      contractVersion: '1',
+      channelMessageId: messageId,
+      channelIdempotencyKey,
+      correlationId: randomUUID(),
+      senderPhone,
+      conversationKind: 'individual',
+      fromMe,
+      receivedAtUtc: receivedAtUtc.toISOString(),
+      kind: 'text',
+      text,
+    },
   }
+}
+
+function getJidKind(jid: string): 'phone' | 'group' | 'lid' | 'other' {
+  if (jid.endsWith('@s.whatsapp.net')) {
+    return 'phone'
+  }
+  if (jid.endsWith('@g.us')) {
+    return 'group'
+  }
+  if (jid.endsWith('@lid')) {
+    return 'lid'
+  }
+  return 'other'
 }
 
 function getDisconnectStatusCode(error: unknown): number | undefined {
