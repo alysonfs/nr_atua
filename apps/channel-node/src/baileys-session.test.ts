@@ -115,10 +115,11 @@ interface SessionHarness {
 
 async function createHarness(
   dependencies: Pick<BaileysSessionDependencies, 'loadAuthState' | 'wait'> = {},
+  sessionLogger: SafeLogger = logger,
 ): Promise<SessionHarness> {
   const directory = await mkdtemp(join(tmpdir(), 'atua-baileys-session-'))
   const sockets: FakeSocket[] = []
-  const session = new BaileysSession(directory, true, logger, {
+  const session = new BaileysSession(directory, true, sessionLogger, {
     ...dependencies,
     createSocket: () => {
       const socket = new FakeSocket()
@@ -245,6 +246,78 @@ test('forwards only individual inbound text messages with a stable idempotency k
     assert.equal(received[0]?.channelIdempotencyKey, received[1]?.channelIdempotencyKey)
   } finally {
     unsubscribe()
+    await harness.dispose()
+  }
+})
+
+test('logs sanitized inbound upsert and filtering diagnostics', async () => {
+  const events: Array<{
+    event: string
+    fields?: Record<string, string | number | boolean>
+  }> = []
+  const captureLogger: SafeLogger = {
+    info: (event, fields) => events.push({ event, fields }),
+    warn: (event, fields) => events.push({ event, fields }),
+    error: (event, fields) => events.push({ event, fields }),
+  }
+  const harness = await createHarness({}, captureLogger)
+
+  try {
+    const socket = await harness.waitForSocket(1)
+    socket.emitConnectionUpdate({ connection: 'open' })
+    await harness.session.waitUntilReady(harness.controller.signal)
+
+    const message = {
+      key: {
+        remoteJid: '5511999991234@s.whatsapp.net',
+        senderPn: '5511999991234@s.whatsapp.net',
+        id: 'wamid-diagnostic',
+        fromMe: false,
+      },
+      message: { conversation: 'private test content' },
+      messageTimestamp: 1_792_243_200,
+    } as WAMessage
+    const ownMessage = {
+      ...message,
+      key: { ...message.key, fromMe: true },
+    } as WAMessage
+    const groupMessage = {
+      ...message,
+      key: { ...message.key, remoteJid: '120363000000000000@g.us' },
+    } as WAMessage
+    const lidMessage = {
+      key: {
+        remoteJid: '1234567890@lid',
+        id: 'wamid-lid',
+        fromMe: false,
+      },
+      message: { conversation: 'private test content' },
+    } as WAMessage
+
+    socket.emitMessagesUpsert([message, ownMessage, groupMessage, lidMessage])
+    socket.emitMessagesUpsert([message], 'append')
+
+    assert.ok(events.some(({ event, fields }) =>
+      event === 'whatsapp_inbound_upsert_received' && fields?.messageCount === 4))
+    assert.ok(events.some(({ event, fields }) =>
+      event === 'whatsapp_inbound_message_ignored' && fields?.reason === 'from_me'))
+    assert.ok(events.some(({ event, fields }) =>
+      event === 'whatsapp_inbound_message_ignored' && fields?.reason === 'group_message'))
+    assert.ok(events.some(({ event, fields }) =>
+      event === 'whatsapp_inbound_message_ignored' &&
+      fields?.reason === 'invalid_sender_phone' &&
+      fields?.remoteJidKind === 'lid'))
+    assert.ok(events.some(({ event }) => event === 'whatsapp_inbound_message_received'))
+    assert.ok(events.some(({ event, fields }) =>
+      event === 'whatsapp_inbound_upsert_ignored' &&
+      fields?.upsertType === 'append' &&
+      fields?.reason === 'non_notify'))
+
+    const serializedEvents = JSON.stringify(events)
+    assert.equal(serializedEvents.includes('5511999991234'), false)
+    assert.equal(serializedEvents.includes('private test content'), false)
+    assert.equal(serializedEvents.includes('@s.whatsapp.net'), false)
+  } finally {
     await harness.dispose()
   }
 })
@@ -443,6 +516,64 @@ test('graceful shutdown waits for pending credential persistence', async () => {
   } finally {
     releaseSave.resolve()
     await harness.dispose()
+  }
+})
+
+async function runWithoutQr(
+  me: { id: string } | undefined,
+): Promise<{ sockets: FakeSocket[]; outcome: Promise<unknown>; dispose(): Promise<void> }> {
+  const directory = await mkdtemp(join(tmpdir(), 'atua-baileys-session-'))
+  const sockets: FakeSocket[] = []
+  const session = new BaileysSession(directory, false, logger, {
+    loadAuthState: async (path) => {
+      const auth = await useMultiFileAuthState(path)
+      auth.state.creds.registered = false
+      auth.state.creds.me = me
+      return auth
+    },
+    createSocket: () => {
+      const socket = new FakeSocket()
+      sockets.push(socket)
+      return socket
+    },
+  })
+  const controller = new AbortController()
+  const outcome = session.run(controller.signal).then(
+    () => 'stopped',
+    (error: unknown) => error,
+  )
+  return {
+    sockets,
+    outcome,
+    async dispose() {
+      controller.abort()
+      await outcome
+      await rm(directory, { recursive: true, force: true })
+    },
+  }
+}
+
+test('a QR-paired session connects without printing a QR code', async () => {
+  const run = await runWithoutQr({ id: '558400000000:1@s.whatsapp.net' })
+
+  try {
+    for (let attempt = 0; attempt < 1000 && run.sockets.length < 1; attempt += 1) {
+      await new Promise<void>((resolve) => setImmediate(resolve))
+    }
+    assert.equal(run.sockets.length, 1)
+  } finally {
+    await run.dispose()
+  }
+})
+
+test('an unpaired session without QR fails with a fatal session error', async () => {
+  const run = await runWithoutQr(undefined)
+
+  try {
+    assert.ok((await run.outcome) instanceof SessionFatalError)
+    assert.equal(run.sockets.length, 0)
+  } finally {
+    await run.dispose()
   }
 })
 
