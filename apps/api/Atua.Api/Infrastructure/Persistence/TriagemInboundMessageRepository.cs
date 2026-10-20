@@ -34,7 +34,7 @@ public sealed partial class TriagemInboundMessageRepository(AtuaDbContext dbCont
 
         if (outcome is null)
         {
-            var senderDigits = NormalizePhone(command.SenderPhone);
+            var senderKey = ToPhoneMatchKey(command.SenderPhone);
             var possibleMatches = await (
                 from triagem in dbContext.Triagens
                 join channelCommand in dbContext.TriagemChannelCommands
@@ -48,7 +48,7 @@ public sealed partial class TriagemInboundMessageRepository(AtuaDbContext dbCont
 
             var matchingTriagens = possibleMatches
                 .Where(candidate => candidate.RecipientPhone is not null
-                    && NormalizePhone(candidate.RecipientPhone) == senderDigits)
+                    && ToPhoneMatchKey(candidate.RecipientPhone) == senderKey)
                 .Select(candidate => candidate.Triagem)
                 .DistinctBy(triagem => triagem.Id)
                 .ToArray();
@@ -142,6 +142,16 @@ public sealed partial class TriagemInboundMessageRepository(AtuaDbContext dbCont
     }
 
     private static string NormalizePhone(string phone) => NonDigitsRegex().Replace(phone, "");
+
+    // WhatsApp often identifies Brazilian mobiles without the ninth digit (55 + DDD + 8 digits),
+    // so both forms must match the phone registered on the work order.
+    internal static string ToPhoneMatchKey(string phone)
+    {
+        var digits = NormalizePhone(phone);
+        return digits.Length == 13 && digits.StartsWith("55", StringComparison.Ordinal) && digits[4] == '9'
+            ? digits.Remove(4, 1)
+            : digits;
+    }
 
     private static TriagemInboundMessageResult ToResult(TriagemInboundMessage message) =>
         new(
