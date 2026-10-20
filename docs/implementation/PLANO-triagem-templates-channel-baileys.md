@@ -585,8 +585,9 @@ Validação local em 2026-10-17:
   executado contra banco real;
 - migrations geradas:
   `20261017183609_AddTriagemChannelInboundMessages` e
-  `20261017184547_AddTriagemChannelMessageCandidateGinIndex`. Nenhuma foi
-  aplicada em ambiente.
+  `20261017184547_AddTriagemChannelMessageCandidateGinIndex`. Naquela
+  validação local, nenhuma havia sido aplicada em ambiente; ambas foram
+  aplicadas posteriormente ao RDS de teste em 2026-10-18, após autorização.
 
 O script
 `infra/scripts/add-channel-message-ingest-credential.sh` oferece `--dry-run`
@@ -611,8 +612,52 @@ não encontrou serviço Channel/Baileys instalado na EC2. Conforme ADR-035 e
 ADR-038, o Channel de teste deve ser executado localmente, não instalado na
 EC2. Ele usa o túnel SSH local em `127.0.0.1:18080`; não se devem enviar
 bearer tokens por HTTP público. O procedimento está em
-[channel-node-teste-local.md](../guides/channel-node-teste-local.md); ainda
-não foi iniciado para o E2E inbound.
+[channel-node-teste-local.md](../guides/channel-node-teste-local.md).
+
+E2E sintético de saída executado em 2026-10-20 com autorização explícita:
+
+- ID `E2E-20261020100245`; túnel SSH respondeu `{"status":"healthy"}` e o
+  Channel local estava conectado;
+- resultado no banco: OS `assigned`, outbox `Processed`, triagem
+  `ContatoIniciado`, comando `Completed`, zero tentativas extras, sem erros e
+  nenhuma mensagem inbound registrada;
+- o responsável confirmou exatamente uma mensagem no destinatário de teste e
+  a mensagem visível na conversa do WhatsApp do Posto;
+- após autorização, somente os dados desse ID foram removidos; a consulta final
+  retornou zero linhas;
+- isso valida o fluxo de mensagem inicial de saída. Não valida ingestão inbound,
+  respostas do consumidor, transição para `EM_COLETA`, LLM ou mídias. O E2E
+  inbound foi validado em seguida (ver abaixo).
+
+E2E inbound executado em 2026-10-20 com autorização explícita (aprovado):
+
+- ID `E2E-20261020101138`; envio inicial `Completed`, zero tentativas extras,
+  sem erros; o responsável confirmou o recebimento no telefone de teste e
+  respondeu pelo aparelho;
+- primeira tentativa: nenhum evento inbound registrado e zero mensagens no
+  banco. O Channel recusava sessão pareada por QR (`creds.registered=false`)
+  e não tinha diagnóstico sanitizado de descarte; corrigido em `6f597e3` e
+  `a3a6bfb` (sessão com `me.id` aceita, motivos de descarte categorizados,
+  remetente aceito somente de JID `@s.whatsapp.net`). Testes do Channel:
+  36/36 aprovados;
+- segunda tentativa: logs `whatsapp_inbound_upsert_received` →
+  `whatsapp_inbound_message_received` → `channel_inbound_message_reported`,
+  mas a mensagem foi gravada como `SemTriagem`. Causa: o WhatsApp entrega o
+  remetente brasileiro sem o nono dígito (`55` + DDD + 8 dígitos), enquanto o
+  comando guarda o celular com 13 dígitos. Corrigido em `bd786e4` e `0cb749f`:
+  a associação usa chave que remove somente o nono dígito de celular
+  brasileiro; `SenderPhone` continua gravado como recebido. Suíte da API:
+  418/418 aprovados;
+- API republicada na EC2 de teste com conferência de MD5, serviço ativo e
+  health OK pelo túnel;
+- resultado final: triagem `EmColeta` e uma mensagem com resultado
+  `ColetaIniciada`;
+- limpeza autorizada: OS sintética removida (consulta final com zero linhas)
+  e cinco mensagens órfãs `SemTriagem` do número de teste, geradas em
+  2026-10-20 antes da correção, excluídas; `triagem_channel_messages` ficou
+  sem registros;
+- risco conhecido mantido: a fila inbound do Channel é em memória e não é
+  durável.
 
 Após as migrations, a tabela `triagem_channel_messages` foi verificada no RDS
 de teste com 17 colunas, 7 índices e sem registros inbound.
@@ -637,8 +682,11 @@ Validação local do incremento de retenção em 2026-10-18:
   diferença entre modelo e snapshot;
 - SQL idempotente das três migrations inbound gerado localmente, com
   connection string fictícia; nenhum acesso ao RDS;
-- o job de purge e as migrations ainda não foram executados contra
-  PostgreSQL nesta validação. A execução real e o E2E continuam pendentes.
+- naquela validação local, o job de purge e as migrations ainda não haviam sido
+  executados contra PostgreSQL. As migrations foram aplicadas ao RDS de teste
+  em 2026-10-18; o job de purge continua sem validação operacional;
+- em 2026-10-20 foram concluídos os E2E sintéticos de saída e inbound
+  descritos acima.
 
 ## 7. Bloqueios de produção
 
