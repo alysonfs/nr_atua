@@ -183,7 +183,7 @@ A fase 1 não classifica SubStatus. O risco é de confusão terminológica, e o 
 - A2: enviar template inicial por OS.
 - A3: tratar falha de envio (`FALHA_DE_CONTATO`).
 
-**Bloco B – Conversa e coleta**
+**Bloco B – Conversa e coleta** (B2, B4–B6 especificados em [triagem-llm-conducao.md](./triagem-llm-conducao.md))
 - B1: receber mensagens e anexos, vinculando à OS pelo número.
 - B2: a LLM conduz a coleta dos itens obrigatórios e opcionais.
 - B3: armazenar anexos vinculados à OS, incluindo o áudio original em S3;
@@ -192,7 +192,7 @@ A fase 1 não classifica SubStatus. O risco é de confusão terminológica, e o 
 - B5: sugerir peças. Depende do catálogo.
 - B6: a LLM decide a suficiência e libera a OS.
 
-**Bloco C – Humano**
+**Bloco C – Humano** (C1–C3 especificados em [triagem-pool-operador.md](./triagem-pool-operador.md))
 - C1: pool de triagem e notificações.
 - C2: painel com checklist, anexos e transcrição.
 - C3: o operador assume a OS (exclusividade para primeiro operador; os demais veem quem assumiu).
