@@ -5,7 +5,9 @@ Status: Proposta (fase 1). A especificação não depende de fornecedor.
 Arquitetura: [triagem-whatsapp-fase-1-arquitetura.md](../architecture/triagem-whatsapp-fase-1-arquitetura.md)
 (§2.5 e §7).
 
-Este documento não define prompts, modelo de dados nem fornecedor.
+Este documento não define prompts nem modelo de dados. Fornecedor:
+[ADR-048](../decisions/ADR-048-llm-bedrock-sa-east-1-cobranca-por-tenant.md).
+Tom de voz: [triagem-llm-identidade-tom.md](./triagem-llm-identidade-tom.md).
 
 ## 1. Papel da LLM
 
@@ -122,11 +124,13 @@ decisão é da API. O operador confere o resultado no painel C2.
 
 ## 7. Pendências (decisão do PO e da arquitetura)
 
-- **Fornecedor da LLM**: OpenAI, Anthropic ou Bedrock em `sa-east-1`. A
-  escolha afeta LGPD, região e custo. Bedrock mantém os dados na conta AWS.
-  O plano da conta (FREE ou PAID) deve ser verificado.
-- Contrato ou DPA e parecer jurídico.
-- Estimativa de custo por triagem e orçamento mensal.
+- ~~Fornecedor da LLM~~: **decidido**. Amazon Bedrock em `sa-east-1`, com
+  cobrança por tenant
+  ([ADR-048](../decisions/ADR-048-llm-bedrock-sa-east-1-cobranca-por-tenant.md)).
+  Falta escolher o modelo nativo na região e verificar o plano da conta.
+- Identidade e tom de voz: [triagem-llm-identidade-tom.md](./triagem-llm-identidade-tom.md).
+- Parecer jurídico e LGPD.
+- Estimativa de custo por triagem e orçamento mensal por tenant.
 - Catálogo de peças e sintomas por fabricante e produto, pré-requisito do
   B5.
 - Avaliação da legibilidade de imagens: pela LLM multimodal ou só pela
