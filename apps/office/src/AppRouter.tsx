@@ -12,6 +12,8 @@ import { DashboardPage } from './app/dashboard/pages/DashboardPage'
 import { ServiceOrdersPage } from './app/service-orders/pages/ServiceOrdersPage'
 import { WorkOrderDetailPage } from './app/dashboard/pages/WorkOrderDetailPage'
 import { SettingsPage } from './app/office/pages/SettingsPage'
+import { TriagePoolPage } from './app/triage-pool/pages/TriagePoolPage'
+import { TriagePoolDetailPage } from './app/triage-pool/pages/TriagePoolDetailPage'
 
 export function AppRouter() {
   return (
@@ -32,6 +34,8 @@ export function AppRouter() {
               <Route path="/home" element={<DashboardPage />} />
               <Route path="/service-orders" element={<ServiceOrdersPage />} />
               <Route path="/work-orders/:workOrderId" element={<WorkOrderDetailPage />} />
+              <Route path="/triage-pool" element={<TriagePoolPage />} />
+              <Route path="/triage-pool/:triagemId" element={<TriagePoolDetailPage />} />
               <Route path="/settings" element={<SettingsPage />} />
             </Route>
           </Route>

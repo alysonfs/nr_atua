@@ -2,6 +2,7 @@ import { Close } from '@icon-park/react'
 import { useTranslation } from 'react-i18next'
 import { SidebarItem } from './SidebarItem'
 import { getNavItems } from './navItems'
+import { useTriagePoolCount } from '../../../triage-pool/hooks/useTriagePoolCount'
 import logoBgDark from '../../../../../../../assets/logo-bg-dark.svg'
 
 interface MobileMenuProps {
@@ -17,7 +18,8 @@ interface MobileMenuProps {
  */
 export function MobileMenu({ open, onClose }: MobileMenuProps) {
   const { t } = useTranslation()
-  const items = getNavItems(t)
+  const { count: triagePoolCount } = useTriagePoolCount()
+  const items = getNavItems(t, triagePoolCount)
 
   return (
     <div

@@ -1,0 +1,1 @@
+export { TriagePoolTable } from './TriagePoolTable'

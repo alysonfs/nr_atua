@@ -137,3 +137,62 @@ Limitações/decisões conhecidas, para acompanhamento:
   para quando "o pool e o painel do operador consumirem este mesmo evento".
 
 `frontend-engineer`: telas em `apps/office`.
+
+### Frontend — implementado
+
+Telas em `apps/office/src/app/triage-pool`, seguindo os padrões já usados
+no Office (roteamento em `AppRouter.tsx`, cliente HTTP `apiClient`
+com sessão de navegador, layout/navegação, tabelas com `@tanstack/react-table`
++ `DataTable`, i18n via `react-i18next`):
+
+- `GET /triage-pool` — **C1**, `TriagePoolPage` + `TriagePoolTable`
+  (`useTriagePoolList`): colunas mínimas (OS, consumidor, produto/modelo,
+  estado, checklist "x/total", tempo no pool relativo, indicador de nova
+  atividade), filtro por estado persistido na URL
+  (`TriagePoolStatusFilter`) e polling de 30 s. Contador do pool na
+  navegação (Sidebar/MobileMenu) via `useTriagePoolCount`, com seu próprio
+  polling de 30 s independente da tabela.
+- `GET /triage-pool/{triagemId}` — **C2**, `TriagePoolDetailPage`
+  (`useTriagePoolDetail`): dados da OS/consumidor, motivo do estado
+  (`stateReason`), `ChecklistSection`, `AttachmentsSection` (miniatura para
+  imagem, player nativo para áudio/vídeo, link para os demais tipos; falha
+  de carregamento tratada com mensagem amigável via `onError`, antecipando a
+  pendência de `s3:GetObject` registrada acima) e `ConversationSection`
+  (ordem cronológica). 404 (`notFound`) exibe "Triagem não encontrada ou
+  sem acesso".
+- `POST /triage-pool/{triagemId}/assume` — **C3**, `AssumeButton` +
+  `useAssumeTriagem`: confirmação antes de assumir; em 409
+  (`triagem_already_assumed`) exibe "Já assumida por {userId} em {data}"
+  (sem resolução de nome — o Office ainda não expõe uma lista de membros do
+  tenant ao frontend; pendência registrada abaixo). Sucesso recarrega o
+  detalhe (`refetch`).
+
+Dependência compartilhada estendida (alteração aditiva, não quebra
+consumidores existentes): `ApiError` (`shared/lib/apiClient.ts`) passou a
+expor `body: unknown` com o corpo bruto da resposta de erro, necessário
+para ler `assumedByUserId`/`assumedAtUtc`/`status` do payload de conflito
+409 sem duplicar a chamada HTTP.
+
+Pendências conhecidas:
+
+- **Resolução de nome do operador que assumiu:** o Office não tem hoje uma
+  forma de obter membros do tenant por `userId`; a UI exibe o `userId` cru
+  no aviso de conflito e na assunção já efetivada. Se o produto quiser
+  nome, é necessário um endpoint de membros do tenant (fora deste
+  incremento).
+- **Testes de anexo real:** a validação funcional de carregamento de
+  imagem/áudio/vídeo com URL pré-assinada depende da permissão
+  `s3:GetObject` (ADR-046, pendência de infraestrutura já registrada acima)
+  — o tratamento de erro foi implementado e testado com URLs
+  simuladas, mas não há validação end-to-end contra o S3 real.
+- Traduções de `en-US`/`es-AR` não foram adicionadas para as novas chaves
+  (`triagePool`, `triagePoolDetail`, `layout.triagePool`,
+  `layout.breadcrumbs.triagePool*`); o fallback para `pt-BR`
+  (`fallbackLng`, `i18n.ts`) cobre esses locales sem quebrar a build, mas o
+  texto aparecerá em português mesmo nesses idiomas até que sejam
+  traduzidas.
+
+Testes: `apps/office/src/app/triage-pool/__tests__` (hooks de lista,
+contador, detalhe e assumir; componente de tabela com filtro/estados;
+páginas de lista e detalhe, incluindo o fluxo de 409). Suíte completa do
+Office (`pnpm --filter office test`) permanece verde.

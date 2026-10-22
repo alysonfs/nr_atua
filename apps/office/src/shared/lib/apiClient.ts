@@ -24,12 +24,15 @@ export interface ApiErrorPayload {
 export class ApiError extends Error {
   readonly status: number
   readonly code: string | undefined
+  /** Corpo bruto da resposta de erro (JSON), quando houver — além do campo `error` já exposto em `code`. */
+  readonly body: unknown
 
-  constructor(status: number, code: string | undefined, message: string) {
+  constructor(status: number, code: string | undefined, message: string, body?: unknown) {
     super(message)
     this.name = 'ApiError'
     this.status = status
     this.code = code
+    this.body = body
   }
 }
 
@@ -134,7 +137,7 @@ async function request<TResponse>(
 
   if (!response.ok) {
     const errorBody = body as ApiErrorPayload | null
-    throw new ApiError(response.status, errorBody?.error, errorBody?.error ?? response.statusText)
+    throw new ApiError(response.status, errorBody?.error, errorBody?.error ?? response.statusText, body)
   }
 
   return body as TResponse

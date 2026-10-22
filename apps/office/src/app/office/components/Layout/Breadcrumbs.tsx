@@ -17,6 +17,8 @@ export function Breadcrumbs() {
       { path: '/service-orders', breadcrumb: t('layout.breadcrumbs.serviceOrders') },
       { path: '/settings', breadcrumb: t('layout.breadcrumbs.settings') },
       { path: '/work-orders/:workOrderId', breadcrumb: t('layout.breadcrumbs.workOrderDetail') },
+      { path: '/triage-pool', breadcrumb: t('layout.breadcrumbs.triagePool') },
+      { path: '/triage-pool/:triagemId', breadcrumb: t('layout.breadcrumbs.triagePoolDetail') },
     ],
     [t],
   )
