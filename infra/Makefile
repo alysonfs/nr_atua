@@ -28,7 +28,7 @@ OFFICE_API_BASE_URL ?= https://api.atyno.com.br
 
 ACCOUNT_ID := $(shell aws sts get-caller-identity --query Account --output text --region $(REGION) 2>/dev/null)
 
-.PHONY: install synth diff bootstrap-cdk deploy-domain sync-api-domain up down destroy destroy-all-data status rds-bootstrap rds-up rds-down retrieve-keypair deploy-landing deploy-office deploy-manager deploy-tecnica deploy-api deploy-collector deploy-collector-bootstrap redeploy-api redeploy-collector collector-trigger-cycle logs-api logs-collector logs-api-follow logs-collector-follow ec2-exec mongo-peek mongo-peek-all pg-peek pg-peek-all
+.PHONY: install synth diff bootstrap-cdk deploy-domain sync-api-domain up down destroy destroy-all-data status rds-bootstrap rds-up rds-down retrieve-keypair deploy-landing deploy-office deploy-manager deploy-tecnica deploy-api deploy-collector deploy-collector-bootstrap deploy-channel redeploy-api redeploy-collector redeploy-channel collector-trigger-cycle logs-api logs-collector logs-channel logs-api-follow logs-collector-follow logs-channel-follow ec2-exec mongo-peek mongo-peek-all pg-peek pg-peek-all
 
 ## Instala dependências (pnpm, alinhado ao monorepo)
 install:
@@ -110,10 +110,15 @@ up:
 	$(MAKE) sync-api-domain
 	@echo "up concluído. API Master E Collector-base (sem lógica) no ar."
 	@echo "Rode 'make retrieve-keypair' se ainda não tiver a chave privada localmente."
+	@echo "Channel WhatsApp: runtime/bundle/unit ja restaurados pelo UserData (se 'make deploy-channel' ja tiver sido rodado antes)."
+	@echo "mas os tokens (/etc/atua-channel.env) NUNCA sao restaurados automaticamente - rode 'make deploy-channel' para reinjeta-los e iniciar o servico."
 
 ## Desliga: destrói Compute (EC2+EBS das DUAS instâncias - API e
 ## Collector-base) e RDS (com snapshot final). Preserva Network, S3 e
-## Secrets Manager.
+## Secrets Manager. ATENÇÃO: destrói também a sessão Baileys do Channel
+## WhatsApp (disco raiz, sem EBS dedicado - premissa do PO, ver ADR-049);
+## o pareamento deve ser refeito via QR nas Configurações do Office após o
+## próximo 'make up' + 'make deploy-channel'.
 down:
 	pnpm --filter @atua/infra exec cdk destroy $(STACK_COMPUTE) --force
 	$(MAKE) rds-down
@@ -290,6 +295,24 @@ deploy-collector-bootstrap:
 # framework multi-agente. Ver .github/skills/atua-deploy/SKILL.md.
 DEPLOY_SKILL_SCRIPTS := ../.github/skills/atua-deploy/scripts
 
+## Primeira instalação do Channel WhatsApp (apps/channel-node) na MESMA
+## instância EC2 da API (ADR-049/ADR-050) — NÃO cria instância nem EBS
+## dedicados. Idempotente: instala Node 22 runtime se ausente, cria usuário
+## de sistema sem privilégio 'atua-channel', diretórios (/opt/atua-channel/app
+## dono ec2-user; /var/lib/atua-channel/session modo 700 dono atua-channel),
+## grava a unit systemd 'atua-channel' (Restart=always) e o env file
+## /etc/atua-channel.env (modo 600, NUNCA versionado nem ecoado no terminal).
+## Pré-requisito: exporte localmente ChannelWorker__ClaimServiceToken,
+## ChannelWorker__CompleteServiceToken, ChannelWorker__MessageIngestServiceToken,
+## ChannelWorker__MediaIngestServiceToken (obrigatórios) e, se disponível,
+## ChannelWorker__SessionReportServiceToken (opcional) — ver
+## infra/scripts/seed-channel-credentials.sh, add-channel-media-ingest-credential.sh
+## e add-channel-session-report-credential.sh para gerar esses tokens.
+## Depois de pareado via QR no Office, a sessão Baileys vive SOMENTE no disco
+## raiz da instância: 'make down' destrói a sessão (premissa do PO, ver ADR-049).
+deploy-channel:
+	bash $(DEPLOY_SKILL_SCRIPTS)/deploy-channel.sh
+
 EC2_EXEC_SKILL_SCRIPTS := ../.github/skills/atua-ec2-exec/scripts
 
 ## Redeploy "a quente" da API já rodando (sem recriar a EC2): compila,
@@ -302,6 +325,16 @@ redeploy-api:
 ## Idem para o Collector (usa RID linux-x64 --self-contained false, igual ao deploy-collector).
 redeploy-collector:
 	bash $(DEPLOY_SKILL_SCRIPTS)/redeploy-live.sh collector
+
+## Redeploy "a quente" do Channel já instalado (ver deploy-channel para a
+## primeira instalação): compila (tsc), gera bundle de produção via
+## 'pnpm deploy --prod', sincroniza para /opt/atua-channel/app (a sessão
+## Baileys em /var/lib/atua-channel/session NÃO é tocada), reinicia o
+## systemd e verifica por MD5 que o bundle remoto realmente mudou. NÃO
+## reescreve /etc/atua-channel.env nem a unit systemd — use deploy-channel
+## se os tokens mudarem ou a instância tiver sido recriada (após make down + up).
+redeploy-channel:
+	bash $(DEPLOY_SKILL_SCRIPTS)/redeploy-channel.sh
 
 ## Dispara um novo ciclo de teste do Collector: renova o JWT do usuário de
 ## teste e desativa/reativa o collector-activation, gerando um novo
@@ -318,12 +351,19 @@ logs-api:
 logs-collector:
 	bash $(DEPLOY_SKILL_SCRIPTS)/tail-logs.sh collector
 
+## Logs do Channel (mesma instância/IP da API, unit systemd 'atua-channel').
+logs-channel:
+	bash $(DEPLOY_SKILL_SCRIPTS)/tail-logs.sh channel
+
 ## Acompanha os logs em tempo real (Ctrl+C para sair).
 logs-api-follow:
 	bash $(DEPLOY_SKILL_SCRIPTS)/tail-logs.sh api --follow
 
 logs-collector-follow:
 	bash $(DEPLOY_SKILL_SCRIPTS)/tail-logs.sh collector --follow
+
+logs-channel-follow:
+	bash $(DEPLOY_SKILL_SCRIPTS)/tail-logs.sh channel --follow
 
 ## Executa um comando remoto pontual na EC2 do ATUA (IP via CloudFormation Outputs).
 ## Uso: AWS_PROFILE=moldato make ec2-exec CMD="echo alyson"

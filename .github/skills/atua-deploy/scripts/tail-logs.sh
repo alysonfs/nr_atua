@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# .github/skills/atua-deploy/scripts/tail-logs.sh <api|collector> [--follow]
+# .github/skills/atua-deploy/scripts/tail-logs.sh <api|collector|channel> [--follow]
 #
 # Padroniza o acesso SSH + journalctl às instâncias vivas, resolvendo o IP
 # público via CloudFormation em vez de depender de IPs anotados manualmente
@@ -17,13 +17,15 @@ FOLLOW="${2:-}"
 SSH_KEY="${SSH_KEY:-$HOME/.ssh/atua-mvp-key.pem}"
 
 usage() {
-  echo "Uso: $0 <api|collector> [--follow]" >&2
+  echo "Uso: $0 <api|collector|channel> [--follow]" >&2
   exit 1
 }
 
 case "$SERVICE" in
   api) OUTPUT_KEY="ApiPublicIp"; SYSTEMD_UNIT="atua-api" ;;
   collector) OUTPUT_KEY="CollectorPublicIp"; SYSTEMD_UNIT="atua-collector" ;;
+  # Channel roda na MESMA instância da API (ADR-050) — IP via ApiPublicIp.
+  channel) OUTPUT_KEY="ApiPublicIp"; SYSTEMD_UNIT="atua-channel" ;;
   *) usage ;;
 esac
 

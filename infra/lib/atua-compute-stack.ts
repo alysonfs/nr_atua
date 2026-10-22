@@ -15,6 +15,27 @@ import * as path from 'path';
  */
 export const COLLECTOR_BOOTSTRAP_S3_KEY = 'bootstrap/collector-bootstrap.sh';
 
+/**
+ * Prefixo S3 (dentro do mesmo `releasesBucket` já lido pela apiRole) onde
+ * `make deploy-channel`/`make redeploy-channel` publicam o bundle de
+ * produção do Channel (ADR-050): `dist/` + `node_modules/` + `package.json`
+ * gerados por `pnpm --filter @atua/channel-node deploy --prod`. Reaproveita
+ * a permissão `ReadReleasesBucket` já concedida à apiRole (wildcard sobre
+ * todo o bucket) — não é uma permissão IAM nova.
+ *
+ * Diferente do Collector, o Channel NÃO lê nenhum secret do Secrets
+ * Manager/SSM no boot: as credenciais de serviço (tokens
+ * `ChannelWorker__*ServiceToken`) ficam fora deste bundle e fora deste
+ * prefixo S3 (nunca em texto plano em S3). Por isso o UserData só
+ * restaura runtime + bundle + unit systemd automaticamente em cada
+ * `make up`; o arquivo `/etc/atua-channel.env` (tokens) precisa ser
+ * reescrito manualmente após cada `make up` via `make deploy-channel`
+ * (ver docs/guides/channel-node-deploy-ec2.md) — decisão deliberada para
+ * não exigir nenhuma permissão IAM nova (Secrets Manager/SSM) para o
+ * Channel.
+ */
+export const CHANNEL_RELEASES_S3_PREFIX = 'channel-latest';
+
 export interface AtuaComputeStackProps extends cdk.StackProps {
   vpc: ec2.IVpc;
   sgApi: ec2.ISecurityGroup;
@@ -278,24 +299,28 @@ function collectorBootstrapCommands(
 /**
  * Cria um swapfile de 1GiB e ajusta `vm.swappiness`.
  *
- * Usado APENAS na topologia colocated (Recomendação 1 de corte de custo):
- * uma única t3.micro (1GiB de RAM física) precisa hospedar a API, o
- * Worker do Collector e o Chromium headless do Playwright ao mesmo
- * tempo. O swap é uma rede de segurança contra OOM-kill em picos
- * transitórios de memória (ex.: abertura de página pelo Playwright
- * coincidindo com uma rajada de requisições HTTP na API) — NÃO substitui
- * o monitoramento de memória livre recomendado na validação pós-rollout
- * (ver plano de validação).
+ * Aplicado INCONDICIONALMENTE ao `apiInstance` desde o ADR-050 (Channel
+ * WhatsApp Node/Baileys publicado na MESMA instância da API, nas DUAS
+ * topologias — ver `infra/lib/atua-compute-stack.ts`, chamada logo após o
+ * bootstrap da API). Antes, só era aplicado na topologia colocated
+ * (API + Collector + Chromium headless dividindo os mesmos 1GiB de RAM
+ * da t3.micro). Agora cobre também a topologia padrão (duas instâncias),
+ * onde a t3.micro da API passa a hospedar também o processo Node do
+ * Channel. O swap é uma rede de segurança contra OOM-kill em picos
+ * transitórios de memória — NÃO substitui o monitoramento de memória
+ * livre recomendado na validação pós-rollout (ver plano de validação).
  *
  * Idempotente: seguro de rodar novamente em cada boot (`make up`), pois
  * a instância é efêmera e o disco raiz é recriado do zero a cada ciclo.
  */
 function swapFileCommands(): string[] {
   return [
-    '# X) Swap de 1GiB — necessário apenas na topologia colocated (API +',
-    '#    Collector + Chromium headless dividindo os mesmos 1GiB de RAM',
-    '#    da t3.micro). Rede de segurança contra OOM-kill; não substitui o',
-    '#    monitoramento de memória livre recomendado na validação.',
+    '# X) Swap de 1GiB — rede de segurança contra OOM-kill na t3.micro',
+    '#    (1GiB de RAM física) que hospeda a API e, a partir do ADR-050,',
+    '#    também o processo Node do Channel WhatsApp (Baileys). Nas',
+    '#    instâncias colocated (ADR-034), ainda compartilha RAM com o',
+    '#    Collector + Chromium headless. Não substitui o monitoramento de',
+    '#    memória livre recomendado na validação.',
     'if [ ! -f /swapfile ]; then',
     '  fallocate -l 1G /swapfile || dd if=/dev/zero of=/swapfile bs=1M count=1024',
     '  chmod 600 /swapfile',
@@ -305,6 +330,109 @@ function swapFileCommands(): string[] {
     '  # Swappiness baixo: prefere liberar cache de página antes de recorrer',
     '  # ao swap (reduz a latência sob pressão moderada de memória).',
     '  sysctl -w vm.swappiness=10 || true',
+    'fi',
+  ];
+}
+
+/**
+ * Monta os comandos de bootstrap do Channel WhatsApp (Node/Baileys,
+ * ADR-035/038/049/050): runtime Node 22, usuário dedicado sem privilégio,
+ * diretórios (bundle + sessão Baileys), unit systemd e restauração do
+ * bundle de produção via S3 (reaproveitando a permissão `ReadReleasesBucket`
+ * já concedida à apiRole — nenhuma permissão IAM nova).
+ *
+ * Executado SEMPRE no `apiInstance` (nas duas topologias), pois a premissa
+ * do PO é publicar o Channel na MESMA EC2 da API (ADR-049/050).
+ *
+ * Deliberadamente NÃO escreve `/etc/atua-channel.env` (credenciais de
+ * serviço) nem inicia o serviço quando esse arquivo não existe — ver
+ * `CHANNEL_RELEASES_S3_PREFIX`. Após cada `make up`, rode
+ * `make deploy-channel` para reinjetar os tokens e iniciar o serviço (o
+ * runtime, o bundle e a unit já estarão prontos, restaurados por este
+ * UserData).
+ *
+ * @param releasesBucketName Nome do bucket de releases (Token do CDK já
+ *                            resolvido no pipeline de síntese — este bloco
+ *                            SEMPRE fica inline no UserData real da CDK,
+ *                            nunca em um arquivo estático gerado por
+ *                            `fs.writeFileSync`, diferente do bootstrap do
+ *                            Collector na topologia colocada).
+ */
+function channelBootstrapCommands(releasesBucketName: string): string[] {
+  return [
+    '# ============================================================',
+    '# CHANNEL WHATSAPP (Node/Baileys) — ADR-035/038/049/050',
+    '# ============================================================',
+    '# 1) Runtime Node 22 (pacote versionado do AL2023 — nenhum module',
+    '#    stream necessário). Idempotente: só instala se "node" ausente',
+    '#    ou se a versão instalada não for a 22.x.',
+    'if ! command -v node >/dev/null 2>&1 || ! node -v | grep -q "^v22\\."; then',
+    '  dnf install -y nodejs22 || yum install -y nodejs22 || true',
+    'fi',
+    '',
+    '# 2) Usuário de sistema sem privilégio, dedicado ao Channel (não',
+    '#    reutiliza o ec2-user da API — menor privilégio/isolamento).',
+    'id -u atua-channel >/dev/null 2>&1 || useradd --system --no-create-home --shell /sbin/nologin atua-channel',
+    '',
+    '# 3) Diretórios: bundle (lido pelo processo, escrito pelo deploy via',
+    '#    SSH como ec2-user) e sessão Baileys (lido/escrito SOMENTE pelo',
+    '#    processo do Channel, fora da árvore do bundle — ver nota sobre',
+    '#    ChannelWorker__SessionPath em docs/guides/channel-node-deploy-ec2.md).',
+    'mkdir -p /opt/atua-channel/app',
+    'chown ec2-user:ec2-user /opt/atua-channel/app',
+    'mkdir -p /var/lib/atua-channel/session',
+    'chown atua-channel:atua-channel /var/lib/atua-channel/session',
+    'chmod 700 /var/lib/atua-channel/session',
+    '',
+    '# 4) Unit systemd. Fonte de verdade: infra/systemd/atua-channel.service.',
+    'cat > /etc/systemd/system/atua-channel.service <<\'UNIT_EOF\'',
+    '# Gerado pelo user-data no boot. Não editar manualmente na instância.',
+    '# Fonte de verdade: infra/systemd/atua-channel.service no repositório.',
+    '',
+    '[Unit]',
+    'Description=ATUA Channel WhatsApp (Node/Baileys, ADR-035/038/049/050)',
+    'After=network-online.target',
+    'Wants=network-online.target',
+    '',
+    '[Service]',
+    'Type=simple',
+    'EnvironmentFile=/etc/atua-channel.env',
+    'WorkingDirectory=/opt/atua-channel/app',
+    'ExecStart=/usr/bin/node /opt/atua-channel/app/dist/main.js',
+    'Restart=always',
+    'RestartSec=10',
+    'User=atua-channel',
+    'Group=atua-channel',
+    'NoNewPrivileges=true',
+    'ProtectSystem=strict',
+    'ProtectHome=true',
+    'PrivateTmp=true',
+    'ReadWritePaths=/var/lib/atua-channel/session',
+    '',
+    '[Install]',
+    'WantedBy=multi-user.target',
+    'UNIT_EOF',
+    'systemctl daemon-reload',
+    'systemctl enable atua-channel',
+    '',
+    '# 5) Restaura o bundle de produção mais recente do bucket de releases',
+    '#    (mesmo bucket/permissão já usados pela API — sem IAM novo).',
+    `if aws s3 ls "s3://${releasesBucketName}/${CHANNEL_RELEASES_S3_PREFIX}/" >/dev/null 2>&1; then`,
+    `  aws s3 sync "s3://${releasesBucketName}/${CHANNEL_RELEASES_S3_PREFIX}/" /opt/atua-channel/app/`,
+    '  chown -R ec2-user:ec2-user /opt/atua-channel/app',
+    'else',
+    `  echo "WARN: Nenhum bundle publicado ainda em s3://${releasesBucketName}/${CHANNEL_RELEASES_S3_PREFIX}/. Rode 'make deploy-channel' apos este 'make up'."`,
+    'fi',
+    '',
+    '# 6) Inicia o serviço SOMENTE se o bundle E o arquivo de credenciais',
+    '#    (/etc/atua-channel.env, NUNCA restaurado automaticamente — ver',
+    '#    CHANNEL_RELEASES_S3_PREFIX) estiverem presentes. Evita um',
+    '#    crash-loop de "token obrigatório ausente" logo após o boot.',
+    'if [ -f /opt/atua-channel/app/dist/main.js ] && [ -f /etc/atua-channel.env ]; then',
+    '  systemctl restart atua-channel',
+    '  echo "atua-channel iniciado/reiniciado com sucesso."',
+    'else',
+    '  echo "WARN: atua-channel habilitado mas NAO iniciado (bundle e/ou /etc/atua-channel.env ausentes). Rode \'make deploy-channel\' apos este make up."',
     'fi',
   ];
 }
@@ -699,19 +827,34 @@ export class AtuaComputeStack extends cdk.Stack {
       'fi',
     );
 
+    // Swap de 1GiB — INCONDICIONAL a partir do ADR-050 (Channel WhatsApp
+    // Node/Baileys publicado na MESMA instância da API, nas DUAS
+    // topologias). Antes, só era aplicado na topologia colocated
+    // (API+Collector+Chromium). Agora a t3.micro (1 GiB físico) também
+    // hospeda o processo Node do Channel (~150-250 MB estimados,
+    // ADR-035) além da API .NET — rede de segurança adicional contra
+    // OOM-kill, sem custo extra (usa espaço já alocado no EBS de 20GiB
+    // do root volume, que já morre com a instância no `make down`).
+    // Medição real de 2026-10-22 (duas instâncias, API sozinha):
+    // 916MB totais, 517MB "available" — folga confortável mesmo sem
+    // swap, mas mantido como defesa em profundidade.
+    apiUserData.addCommands(...swapFileCommands());
+
+    // Channel WhatsApp (ADR-050): runtime + usuário + diretórios + unit +
+    // restauração do bundle via S3 — ver channelBootstrapCommands(). Roda
+    // nas DUAS topologias, sempre no apiInstance (mesma EC2 da API).
+    apiUserData.addCommands(...channelBootstrapCommands(props.releasesBucket.bucketName));
+
     if (collocate) {
       // ============================================================
       // TOPOLOGIA COLOCATED (Recomendação 1 de corte de custo)
       // ============================================================
-      // Anexa, ao MESMO script de user-data da API (mesma instância),
-      // primeiro o swapfile de segurança. O bootstrap do Collector NÃO é
-      // mais concatenado inline (ver ADR-034 — estourava os 16 KiB de
-      // limite do UserData): ele é gerado em disco e publicado como
-      // objeto dedicado no releasesBucket; o UserData só o baixa e
-      // executa, apontando para 127.0.0.1 (mesma instância) e sem
-      // reinstalar o runtime .NET (já instalado pelo bootstrap da API).
-      apiUserData.addCommands(...swapFileCommands());
-
+      // O bootstrap do Collector NÃO é mais concatenado inline (ver
+      // ADR-034 — estourava os 16 KiB de limite do UserData): ele é
+      // gerado em disco e publicado como objeto dedicado no
+      // releasesBucket; o UserData só o baixa e executa, apontando
+      // para 127.0.0.1 (mesma instância) e sem reinstalar o runtime
+      // .NET (já instalado pelo bootstrap da API).
       writeCollectorBootstrapScript(
         collectorBootstrapCommands(props, 'http://127.0.0.1', /* installRuntime */ false, /* declareReleasesBucketVar */ false),
       );

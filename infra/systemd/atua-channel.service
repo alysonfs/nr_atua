@@ -1,0 +1,51 @@
+# atua-channel.service — unit systemd do Channel WhatsApp (Node/Baileys)
+#
+# ATENÇÃO: este arquivo é a FONTE DE VERDADE documentada/legível do unit.
+# Ele NÃO deve ser editado manualmente na instância EC2.
+# O conteúdo é escrito em /etc/systemd/system/atua-channel.service:
+#   1. pelo user-data da AtuaComputeStack (infra/lib/atua-compute-stack.ts,
+#      função channelBootstrapCommands) a cada recriação da instância
+#      efêmera (ciclo make up/down); e
+#   2. de forma idêntica por `make deploy-channel`
+#      (.github/skills/atua-deploy/scripts/deploy-channel.sh), para a
+#      primeira instalação manual sem depender de um novo `make up`.
+# Qualquer alteração deve ser feita aqui E replicada nos dois lugares
+# acima (mantenha os três em sincronia).
+#
+# Decisão: ADR-035 (topologia), ADR-038 (persistência da sessão),
+# ADR-049 (pareamento via QR no Office) e ADR-050 (publicação na EC2 da
+# API, sem EBS persistente — ver docs/decisions/).
+
+[Unit]
+Description=ATUA Channel WhatsApp (Node/Baileys, ADR-035/038/049/050)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/atua-channel.env
+WorkingDirectory=/opt/atua-channel/app
+ExecStart=/usr/bin/node /opt/atua-channel/app/dist/main.js
+Restart=always
+RestartSec=10
+User=atua-channel
+Group=atua-channel
+
+# Usuário de sistema dedicado, sem privilégio (não reutiliza o ec2-user
+# da API) — o Channel não escuta nenhuma porta de rede (sem necessidade
+# de AmbientCapabilities, diferente da API, que precisa de
+# CAP_NET_BIND_SERVICE para a porta 80).
+
+# Hardening (defesa em profundidade — sem impacto funcional observado):
+# ProtectSystem=strict deixa a maior parte do filesystem somente leitura
+# para o processo; ReadWritePaths libera exclusivamente o diretório da
+# sessão Baileys, que precisa ser escrito a cada atualização de
+# credenciais/chaves (ADR-038).
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/atua-channel/session
+
+[Install]
+WantedBy=multi-user.target
