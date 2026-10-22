@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { ChannelApiClient, ChannelApiError } from './channel-api-client.js'
-import type { ClaimedChannelCommand, IncomingWhatsAppMessage } from './contracts.js'
+import { ChannelApiClient, ChannelApiError } from '../src/channel-api-client.js'
+import type { ClaimedChannelCommand, IncomingWhatsAppMedia, IncomingWhatsAppMessage } from '../src/contracts.js'
 
 const command: ClaimedChannelCommand = {
   commandId: '11111111-1111-1111-1111-111111111111',
@@ -39,6 +39,7 @@ test('claim uses the claim credential and deserializes the recipient snapshot', 
     'claim-only',
     'complete-only',
     'ingest-only',
+    'media-only',
     async (input, init) => {
       requestUrl = String(input)
       authorization = new Headers(init?.headers).get('authorization') ?? ''
@@ -59,6 +60,7 @@ test('claim maps HTTP 204 to no available command', async () => {
     'claim-only',
     'complete-only',
     'ingest-only',
+    'media-only',
     async () => new Response(null, { status: 204 }),
   )
 
@@ -73,6 +75,7 @@ test('complete uses its own credential and preserves the lease token', async () 
     'claim-only',
     'complete-only',
     'ingest-only',
+    'media-only',
     async (_input, init) => {
       authorization = new Headers(init?.headers).get('authorization') ?? ''
       payload = JSON.parse(String(init?.body))
@@ -104,6 +107,7 @@ test('complete maps HTTP 409 to a lost lease without retrying the side effect', 
     'claim-only',
     'complete-only',
     'ingest-only',
+    'media-only',
     async () => new Response(null, { status: 409 }),
   )
 
@@ -122,6 +126,7 @@ test('ingestMessage uses the isolated credential and sends the stable event enve
     'claim-only',
     'complete-only',
     'ingest-only',
+    'media-only',
     async (input, init) => {
       requestUrl = String(input)
       authorization = new Headers(init?.headers).get('authorization') ?? ''
@@ -137,12 +142,83 @@ test('ingestMessage uses the isolated credential and sends the stable event enve
   assert.deepEqual(payload, inboundMessage)
 })
 
+const inboundMedia: IncomingWhatsAppMedia = {
+  contractVersion: '1',
+  channelMessageId: 'message-456',
+  channelIdempotencyKey: 'b'.repeat(64),
+  correlationId: '66666666-6666-4666-8666-666666666666',
+  senderPhone: '5511999991234',
+  conversationKind: 'individual',
+  fromMe: false,
+  receivedAtUtc: '2026-10-17T12:00:00.000Z',
+  mediaKind: 'audio',
+  contentType: 'audio/ogg',
+  sizeBytes: 4,
+  sha256: 'c'.repeat(64),
+  isVoiceNote: true,
+  durationSeconds: 3,
+  caption: null,
+  content: Buffer.from([1, 2, 3, 4]),
+}
+
+test('ingestMedia uses the isolated credential and sends metadata plus file as multipart', async () => {
+  let requestUrl = ''
+  let authorization = ''
+  let form: FormData | undefined
+  const client = new ChannelApiClient(
+    'http://localhost:5080',
+    'claim-only',
+    'complete-only',
+    'ingest-only',
+    'media-only',
+    async (input, init) => {
+      requestUrl = String(input)
+      authorization = new Headers(init?.headers).get('authorization') ?? ''
+      form = init?.body as FormData
+      return new Response(null, { status: 200 })
+    },
+  )
+
+  await client.ingestMedia(inboundMedia, new AbortController().signal)
+
+  assert.equal(requestUrl, 'http://localhost:5080/api/internal/triagens/canal/midias')
+  assert.equal(authorization, 'Bearer media-only')
+  assert.ok(form instanceof FormData)
+  const metadata = JSON.parse(String(form?.get('metadata')))
+  assert.equal(metadata.channelMessageId, inboundMedia.channelMessageId)
+  assert.equal(metadata.mediaKind, 'audio')
+  assert.equal(metadata.content, undefined)
+  const file = form?.get('file') as Blob
+  assert.equal(file.type, 'audio/ogg')
+  assert.equal(file.size, 4)
+})
+
+test('ingestMedia maps a non-200 response to a typed, retryable-aware error', async () => {
+  const client = new ChannelApiClient(
+    'http://localhost:5080',
+    'claim-only',
+    'complete-only',
+    'ingest-only',
+    'media-only',
+    async () => new Response(null, { status: 409 }),
+  )
+
+  await assert.rejects(
+    client.ingestMedia(inboundMedia, new AbortController().signal),
+    (error: unknown) => error instanceof ChannelApiError &&
+      error.operation === 'ingestMedia' &&
+      error.statusCode === 409 &&
+      !error.isRetryable,
+  )
+})
+
 test('API errors expose status but never retain a response body', async () => {
   const client = new ChannelApiClient(
     'http://localhost:5080',
     'claim-only',
     'complete-only',
     'ingest-only',
+    'media-only',
     async () => new Response('sensitive server body', { status: 503 }),
   )
 

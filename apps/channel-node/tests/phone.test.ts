@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { messageIdForIdempotencyKey, normalizeWhatsAppJid, PermanentChannelSendError } from './phone.js'
+import { messageIdForIdempotencyKey, normalizeWhatsAppJid, PermanentChannelSendError } from '../src/phone.js'
 
 test('normalizeWhatsAppJid strips formatting and keeps the international calling code', () => {
   assert.equal(normalizeWhatsAppJid('+55 (11) 99999-1234'), '5511999991234@s.whatsapp.net')

@@ -4,6 +4,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { createRequire } from 'node:module'
 import makeWASocket, {
   DisconnectReason,
+  downloadMediaMessage,
   useMultiFileAuthState,
   type AuthenticationState,
   type BinaryNode,
@@ -13,6 +14,8 @@ import makeWASocket, {
 } from '@whiskeysockets/baileys'
 import pino from 'pino'
 import type {
+  IncomingWhatsAppMedia,
+  IncomingWhatsAppMediaKind,
   IncomingWhatsAppMessage,
   SafeLogger,
   WhatsAppMessageReceiver,
@@ -48,11 +51,14 @@ export interface BaileysSessionDependencies {
   loadAuthState?: typeof useMultiFileAuthState
   createSocket?: (auth: AuthenticationState) => BaileysSessionSocket
   wait?: (milliseconds: number, signal: AbortSignal) => Promise<void>
+  /** Baixa e descriptografa o binário de uma mensagem de mídia — injetável para testes com buffers sintéticos. */
+  downloadMedia?: (message: WAMessage) => Promise<Buffer>
 }
 
 export class BaileysSession implements WhatsAppMessageSender, WhatsAppMessageReceiver {
   private readonly stateEvents = new EventEmitter()
   private readonly incomingMessageListeners = new Set<(message: IncomingWhatsAppMessage) => void>()
+  private readonly incomingMediaListeners = new Set<(media: IncomingWhatsAppMedia) => void>()
   private readonly sessionPath: string
   private readonly printQr: boolean
   private readonly logger: SafeLogger
@@ -63,6 +69,7 @@ export class BaileysSession implements WhatsAppMessageSender, WhatsAppMessageRec
   private readonly loadAuthState: typeof useMultiFileAuthState
   private readonly createSocket: (auth: AuthenticationState) => BaileysSessionSocket
   private readonly wait: (milliseconds: number, signal: AbortSignal) => Promise<void>
+  private readonly downloadMedia: (message: WAMessage) => Promise<Buffer>
 
   constructor(
     sessionPath: string,
@@ -76,6 +83,7 @@ export class BaileysSession implements WhatsAppMessageSender, WhatsAppMessageRec
     this.loadAuthState = dependencies.loadAuthState ?? useMultiFileAuthState
     this.createSocket = dependencies.createSocket ?? createBaileysSocket
     this.wait = dependencies.wait ?? delay
+    this.downloadMedia = dependencies.downloadMedia ?? defaultDownloadMedia
   }
 
   async run(signal: AbortSignal): Promise<void> {
@@ -152,6 +160,65 @@ export class BaileysSession implements WhatsAppMessageSender, WhatsAppMessageRec
   onIncomingMessage(listener: (message: IncomingWhatsAppMessage) => void): () => void {
     this.incomingMessageListeners.add(listener)
     return () => this.incomingMessageListeners.delete(listener)
+  }
+
+  onIncomingMedia(listener: (media: IncomingWhatsAppMedia) => void): () => void {
+    this.incomingMediaListeners.add(listener)
+    return () => this.incomingMediaListeners.delete(listener)
+  }
+
+  /**
+   * Baixa o binário e entrega o evento de mídia aos listeners. Executado de
+   * forma assíncrona e isolada por mensagem (não bloqueia o processamento
+   * das demais mensagens do mesmo upsert). Uma falha de download é
+   * registrada e a mensagem é descartada — não há fallback para texto, pois
+   * mídia é sempre um evento único.
+   */
+  private async deliverIncomingMedia(
+    message: WAMessage,
+    envelope: ParsedEnvelope,
+    metadata: IncomingMediaMetadata,
+  ): Promise<void> {
+    let content: Buffer
+    try {
+      content = await this.downloadMedia(message)
+    } catch (error) {
+      this.logger.error('whatsapp_inbound_media_download_failed', {
+        channelMessageId: envelope.messageId,
+        correlationId: envelope.correlationId,
+        errorType: error instanceof Error ? error.name : 'UnknownError',
+      })
+      return
+    }
+
+    const media: IncomingWhatsAppMedia = {
+      contractVersion: '1',
+      channelMessageId: envelope.messageId,
+      channelIdempotencyKey: envelope.channelIdempotencyKey,
+      correlationId: envelope.correlationId,
+      senderPhone: envelope.senderPhone,
+      conversationKind: 'individual',
+      fromMe: envelope.fromMe,
+      receivedAtUtc: envelope.receivedAtUtc,
+      mediaKind: metadata.mediaKind,
+      contentType: metadata.contentType,
+      sizeBytes: content.length,
+      sha256: createHash('sha256').update(content).digest('hex'),
+      isVoiceNote: metadata.isVoiceNote,
+      durationSeconds: metadata.durationSeconds,
+      caption: metadata.caption,
+      content,
+    }
+
+    this.logger.info('whatsapp_inbound_media_downloaded', {
+      channelMessageId: envelope.messageId,
+      correlationId: envelope.correlationId,
+      mediaKind: metadata.mediaKind,
+      sizeBytes: content.length,
+    })
+    for (const listener of this.incomingMediaListeners) {
+      listener(media)
+    }
   }
 
   async sendText(
@@ -372,21 +439,62 @@ export class BaileysSession implements WhatsAppMessageSender, WhatsAppMessageRec
         })
 
         for (const message of messages) {
-          const parsed = parseIncomingWhatsAppMessage(message)
-          if (parsed.message === null) {
+          const envelopeResult = parseEnvelope(message)
+          if (envelopeResult.envelope === null) {
             this.logger.info('whatsapp_inbound_message_ignored', {
-              reason: parsed.reason,
+              reason: envelopeResult.reason,
               remoteJidKind: getJidKind(message.key.remoteJid ?? ''),
             })
             continue
           }
 
+          const mediaResult = extractMediaMetadata(message)
+          if (mediaResult.media !== null) {
+            this.logger.info('whatsapp_inbound_media_received', {
+              channelMessageId: envelopeResult.envelope.messageId,
+              correlationId: envelopeResult.envelope.correlationId,
+              mediaKind: mediaResult.media.mediaKind,
+            })
+            void this.deliverIncomingMedia(message, envelopeResult.envelope, mediaResult.media)
+            continue
+          }
+
+          if (mediaResult.reason === 'document_type_excluded') {
+            this.logger.info('whatsapp_inbound_message_ignored', {
+              reason: mediaResult.reason,
+              remoteJidKind: getJidKind(message.key.remoteJid ?? ''),
+            })
+            continue
+          }
+
+          const text = extractText(message)
+          if (text === null) {
+            this.logger.info('whatsapp_inbound_message_ignored', {
+              reason: 'missing_text',
+              remoteJidKind: getJidKind(message.key.remoteJid ?? ''),
+            })
+            continue
+          }
+
+          const parsedMessage: IncomingWhatsAppMessage = {
+            contractVersion: '1',
+            channelMessageId: envelopeResult.envelope.messageId,
+            channelIdempotencyKey: envelopeResult.envelope.channelIdempotencyKey,
+            correlationId: envelopeResult.envelope.correlationId,
+            senderPhone: envelopeResult.envelope.senderPhone,
+            conversationKind: 'individual',
+            fromMe: envelopeResult.envelope.fromMe,
+            receivedAtUtc: envelopeResult.envelope.receivedAtUtc,
+            kind: 'text',
+            text,
+          }
+
           this.logger.info('whatsapp_inbound_message_received', {
-            channelMessageId: parsed.message.channelMessageId,
-            correlationId: parsed.message.correlationId,
+            channelMessageId: parsedMessage.channelMessageId,
+            correlationId: parsedMessage.correlationId,
           })
           for (const listener of this.incomingMessageListeners) {
-            listener(parsed.message)
+            listener(parsedMessage)
           }
         }
       }
@@ -464,51 +572,53 @@ function createBaileysSocket(auth: AuthenticationState): BaileysSessionSocket {
   }
 }
 
-type IncomingMessageParseResult =
-  | { message: IncomingWhatsAppMessage; reason: null }
-  | {
-      message: null
-      reason:
-        | 'missing_remote_jid'
-        | 'missing_message_id'
-        | 'group_message'
-        | 'from_me'
-        | 'invalid_sender_phone'
-        | 'missing_text'
-    }
+type EnvelopeFailureReason =
+  | 'missing_remote_jid'
+  | 'missing_message_id'
+  | 'group_message'
+  | 'from_me'
+  | 'invalid_sender_phone'
 
-function parseIncomingWhatsAppMessage(message: WAMessage): IncomingMessageParseResult {
+interface ParsedEnvelope {
+  messageId: string
+  fromMe: boolean
+  senderPhone: string
+  channelIdempotencyKey: string
+  correlationId: string
+  receivedAtUtc: string
+}
+
+type EnvelopeParseResult =
+  | { envelope: ParsedEnvelope; reason: null }
+  | { envelope: null; reason: EnvelopeFailureReason }
+
+/**
+ * Extrai e valida os campos de envelope compartilhados por texto e mídia —
+ * remetente individual, identificador estável e chave idempotente. Usado
+ * como primeiro estágio antes de decidir se a mensagem é mídia ou texto.
+ */
+function parseEnvelope(message: WAMessage): EnvelopeParseResult {
   const key = message.key
   const remoteJid = key.remoteJid ?? ''
   const messageId = key.id
   const fromMe = key.fromMe ?? false
   if (remoteJid === '') {
-    return { message: null, reason: 'missing_remote_jid' }
+    return { envelope: null, reason: 'missing_remote_jid' }
   }
   if (messageId === undefined || messageId === null || messageId === '') {
-    return { message: null, reason: 'missing_message_id' }
+    return { envelope: null, reason: 'missing_message_id' }
   }
   if (remoteJid.endsWith('@g.us')) {
-    return { message: null, reason: 'group_message' }
+    return { envelope: null, reason: 'group_message' }
   }
   if (fromMe) {
-    return { message: null, reason: 'from_me' }
+    return { envelope: null, reason: 'from_me' }
   }
 
   const senderJid = key.senderPn ?? key.participantPn ?? remoteJid
   const senderPhone = /^(?<phone>[1-9]\d{7,14})(?::\d+)?@s\.whatsapp\.net$/.exec(senderJid)?.groups?.phone
   if (senderPhone === undefined) {
-    return { message: null, reason: 'invalid_sender_phone' }
-  }
-
-  const body = normalizeMessageContent(message.message)
-  const text = body?.conversation ??
-    body?.extendedTextMessage?.text ??
-    body?.imageMessage?.caption ??
-    body?.videoMessage?.caption ??
-    null
-  if (typeof text !== 'string' || text.trim() === '') {
-    return { message: null, reason: 'missing_text' }
+    return { envelope: null, reason: 'invalid_sender_phone' }
   }
 
   const channelIdempotencyKey = createHash('sha256')
@@ -521,19 +631,97 @@ function parseIncomingWhatsAppMessage(message: WAMessage): IncomingMessageParseR
 
   return {
     reason: null,
-    message: {
-      contractVersion: '1',
-      channelMessageId: messageId,
+    envelope: {
+      messageId,
+      fromMe,
+      senderPhone,
       channelIdempotencyKey,
       correlationId: randomUUID(),
-      senderPhone,
-      conversationKind: 'individual',
-      fromMe,
       receivedAtUtc: receivedAtUtc.toISOString(),
-      kind: 'text',
-      text,
     },
   }
+}
+
+/** Extrai o texto de uma mensagem já validada como envelope — nunca usa legenda de mídia (mídia é um evento único). */
+function extractText(message: WAMessage): string | null {
+  const body = normalizeMessageContent(message.message)
+  const text = body?.conversation ?? body?.extendedTextMessage?.text ?? null
+  return typeof text === 'string' && text.trim() !== '' ? text : null
+}
+
+interface IncomingMediaMetadata {
+  mediaKind: IncomingWhatsAppMediaKind
+  contentType: string
+  isVoiceNote: boolean
+  durationSeconds: number | null
+  caption: string | null
+}
+
+type MediaMetadataFailureReason = 'no_media_content' | 'document_type_excluded' | 'missing_mimetype_or_length'
+
+type MediaMetadataParseResult =
+  | { media: IncomingMediaMetadata; reason: null }
+  | { media: null; reason: MediaMetadataFailureReason }
+
+/**
+ * Identifica se a mensagem é uma mídia aceita (áudio, imagem, vídeo ou
+ * PDF) e extrai os metadados declarados pelo WhatsApp — nunca baixa o
+ * binário aqui (feito separadamente por {@link BaileysSession.deliverIncomingMedia},
+ * apenas quando a mensagem é aceita). Figurinhas e documentos que não sejam
+ * PDF são excluídos (decisão do PO, 2026-10-21) — nunca chegam a ser
+ * relatados como mídia nem como texto.
+ */
+function extractMediaMetadata(message: WAMessage): MediaMetadataParseResult {
+  const body = normalizeMessageContent(message.message)
+  if (body?.imageMessage) {
+    return buildMediaMetadata('image', body.imageMessage.mimetype, body.imageMessage.fileLength,
+      false, null, body.imageMessage.caption)
+  }
+  if (body?.videoMessage) {
+    return buildMediaMetadata('video', body.videoMessage.mimetype, body.videoMessage.fileLength,
+      false, body.videoMessage.seconds ?? null, body.videoMessage.caption)
+  }
+  if (body?.audioMessage) {
+    return buildMediaMetadata('audio', body.audioMessage.mimetype, body.audioMessage.fileLength,
+      body.audioMessage.ptt ?? false, body.audioMessage.seconds ?? null, null)
+  }
+  if (body?.documentMessage) {
+    if (body.documentMessage.mimetype !== 'application/pdf') {
+      return { media: null, reason: 'document_type_excluded' }
+    }
+    return buildMediaMetadata('document', body.documentMessage.mimetype, body.documentMessage.fileLength,
+      false, null, body.documentMessage.caption)
+  }
+
+  return { media: null, reason: 'no_media_content' }
+}
+
+function buildMediaMetadata(
+  mediaKind: IncomingWhatsAppMediaKind,
+  mimetype: string | null | undefined,
+  fileLength: unknown,
+  isVoiceNote: boolean,
+  durationSeconds: number | null,
+  caption: string | null | undefined,
+): MediaMetadataParseResult {
+  if (typeof mimetype !== 'string' || mimetype === '' || fileLength === null || fileLength === undefined) {
+    return { media: null, reason: 'missing_mimetype_or_length' }
+  }
+
+  return {
+    reason: null,
+    media: {
+      mediaKind,
+      contentType: mimetype,
+      isVoiceNote,
+      durationSeconds,
+      caption: typeof caption === 'string' && caption.trim() !== '' ? caption : null,
+    },
+  }
+}
+
+async function defaultDownloadMedia(message: WAMessage): Promise<Buffer> {
+  return downloadMediaMessage(message, 'buffer', {})
 }
 
 function getJidKind(jid: string): 'phone' | 'group' | 'lid' | 'other' {

@@ -6,6 +6,7 @@ export interface ChannelConfig {
   claimServiceToken: string
   completeServiceToken: string
   messageIngestServiceToken: string
+  mediaIngestServiceToken: string
   pollingIntervalMs: number
   sendTimeoutMs: number
   sessionPath: string
@@ -24,8 +25,16 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env): Channe
   const claimServiceToken = required(environment, 'ChannelWorker__ClaimServiceToken')
   const completeServiceToken = required(environment, 'ChannelWorker__CompleteServiceToken')
   const messageIngestServiceToken = required(environment, 'ChannelWorker__MessageIngestServiceToken')
-  if (new Set([claimServiceToken, completeServiceToken, messageIngestServiceToken]).size !== 3) {
-    throw new Error('As credenciais de claim, complete e ingest devem ser distintas.')
+  const mediaIngestServiceToken = required(environment, 'ChannelWorker__MediaIngestServiceToken')
+  if (
+    new Set([
+      claimServiceToken,
+      completeServiceToken,
+      messageIngestServiceToken,
+      mediaIngestServiceToken,
+    ]).size !== 4
+  ) {
+    throw new Error('As credenciais de claim, complete, message ingest e media ingest devem ser distintas.')
   }
 
   const configuredSessionPath = required(environment, 'ChannelWorker__SessionPath')
@@ -49,6 +58,7 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env): Channe
     claimServiceToken,
     completeServiceToken,
     messageIngestServiceToken,
+    mediaIngestServiceToken,
     pollingIntervalMs: parseSeconds(environment, 'ChannelWorker__PollingIntervalSeconds', 15, 1, 30),
     sendTimeoutMs: parseSeconds(environment, 'ChannelWorker__SendTimeoutSeconds', 30, 1, 45),
     sessionPath,

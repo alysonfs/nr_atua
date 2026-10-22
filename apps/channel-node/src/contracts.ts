@@ -18,6 +18,7 @@ export interface ClaimedChannelCommand {
 export interface ChannelApi {
   claim(signal: AbortSignal): Promise<ClaimedChannelCommand | null>
   ingestMessage(message: IncomingWhatsAppMessage, signal: AbortSignal): Promise<void>
+  ingestMedia(media: IncomingWhatsAppMedia, signal: AbortSignal): Promise<void>
   complete(
     command: ClaimedChannelCommand,
     outcome: ChannelOutcome,
@@ -40,8 +41,37 @@ export interface IncomingWhatsAppMessage {
   text: string | null
 }
 
+export type IncomingWhatsAppMediaKind = 'audio' | 'image' | 'video' | 'document'
+
+/**
+ * Evento de mídia recebido pelo canal WhatsApp — campos de envelope
+ * compartilhados com {@link IncomingWhatsAppMessage} mais os metadados e o
+ * binário da mídia. Mídia é sempre um evento único: nunca também relatado
+ * como {@link IncomingWhatsAppMessage} (decisão do PO, 2026-10-21).
+ */
+export interface IncomingWhatsAppMedia {
+  contractVersion: '1'
+  channelMessageId: string
+  channelIdempotencyKey: string
+  correlationId: string
+  senderPhone: string
+  conversationKind: 'individual' | 'group'
+  fromMe: boolean
+  receivedAtUtc: string
+  mediaKind: IncomingWhatsAppMediaKind
+  contentType: string
+  sizeBytes: number
+  sha256: string
+  isVoiceNote: boolean
+  durationSeconds: number | null
+  caption: string | null
+  /** Binário já baixado e descriptografado do WhatsApp — nunca persistido localmente, apenas enviado ao endpoint de ingestão. */
+  content: Buffer
+}
+
 export interface WhatsAppMessageReceiver {
   onIncomingMessage(listener: (message: IncomingWhatsAppMessage) => void): () => void
+  onIncomingMedia(listener: (media: IncomingWhatsAppMedia) => void): () => void
 }
 
 export interface WhatsAppMessageSender {

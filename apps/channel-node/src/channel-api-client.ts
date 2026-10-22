@@ -2,19 +2,21 @@ import type {
   ChannelApi,
   ChannelOutcome,
   ClaimedChannelCommand,
+  IncomingWhatsAppMedia,
   IncomingWhatsAppMessage,
 } from './contracts.js'
 
 const claimPath = '/api/internal/triagens/canal/claim'
 const completePath = '/api/internal/triagens/canal/complete'
 const messageIngestPath = '/api/internal/triagens/canal/mensagens'
+const mediaIngestPath = '/api/internal/triagens/canal/midias'
 
 export class ChannelApiError extends Error {
-  readonly operation: 'claim' | 'complete' | 'ingest'
+  readonly operation: 'claim' | 'complete' | 'ingest' | 'ingestMedia'
   readonly statusCode: number | null
 
   constructor(
-    operation: 'claim' | 'complete' | 'ingest',
+    operation: 'claim' | 'complete' | 'ingest' | 'ingestMedia',
     statusCode: number | null,
   ) {
     super(statusCode === null
@@ -38,6 +40,7 @@ export class ChannelApiClient implements ChannelApi {
   private readonly claimToken: string
   private readonly completeToken: string
   private readonly messageIngestToken: string
+  private readonly mediaIngestToken: string
   private readonly fetcher: typeof fetch
 
   constructor(
@@ -45,12 +48,14 @@ export class ChannelApiClient implements ChannelApi {
     claimToken: string,
     completeToken: string,
     messageIngestToken: string,
+    mediaIngestToken: string,
     fetcher: typeof fetch = fetch,
   ) {
     this.baseUrl = baseUrl
     this.claimToken = claimToken
     this.completeToken = completeToken
     this.messageIngestToken = messageIngestToken
+    this.mediaIngestToken = mediaIngestToken
     this.fetcher = fetcher
   }
 
@@ -73,6 +78,34 @@ export class ChannelApiClient implements ChannelApi {
 
     if (response.status !== 200) {
       throw new ChannelApiError('ingest', response.status)
+    }
+
+    await response.body?.cancel()
+  }
+
+  async ingestMedia(media: IncomingWhatsAppMedia, signal: AbortSignal): Promise<void> {
+    const { content, ...metadata } = media
+    const form = new FormData()
+    form.set('metadata', JSON.stringify(metadata))
+    form.set('file', new Blob([content], { type: media.contentType }), 'inbound-media.bin')
+
+    let response: Response
+    try {
+      response = await this.fetcher(new URL(mediaIngestPath, this.baseUrl), {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${this.mediaIngestToken}`,
+          accept: 'application/json',
+        },
+        body: form,
+        signal,
+      })
+    } catch {
+      throw new ChannelApiError('ingestMedia', null)
+    }
+
+    if (response.status !== 200) {
+      throw new ChannelApiError('ingestMedia', response.status)
     }
 
     await response.body?.cancel()

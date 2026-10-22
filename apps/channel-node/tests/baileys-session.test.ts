@@ -14,8 +14,8 @@ import {
   SessionFatalError,
   type BaileysSessionDependencies,
   type BaileysSessionSocket,
-} from './baileys-session.js'
-import type { SafeLogger } from './contracts.js'
+} from '../src/baileys-session.js'
+import type { SafeLogger } from '../src/contracts.js'
 
 const logger: SafeLogger = {
   info: () => {},
@@ -114,7 +114,7 @@ interface SessionHarness {
 }
 
 async function createHarness(
-  dependencies: Pick<BaileysSessionDependencies, 'loadAuthState' | 'wait'> = {},
+  dependencies: Pick<BaileysSessionDependencies, 'loadAuthState' | 'wait' | 'downloadMedia'> = {},
   sessionLogger: SafeLogger = logger,
 ): Promise<SessionHarness> {
   const directory = await mkdtemp(join(tmpdir(), 'atua-baileys-session-'))
@@ -246,6 +246,169 @@ test('forwards only individual inbound text messages with a stable idempotency k
     assert.equal(received[0]?.channelIdempotencyKey, received[1]?.channelIdempotencyKey)
   } finally {
     unsubscribe()
+    await harness.dispose()
+  }
+})
+
+test('extracts and delivers audio, image, video and PDF media as a single event, excluding non-PDF documents and never falling back to text', async () => {
+  const downloadedMessages: WAMessage[] = []
+  const harness = await createHarness({
+    downloadMedia: async (message) => {
+      downloadedMessages.push(message)
+      return Buffer.from('synthetic-media-bytes')
+    },
+  })
+  const receivedMedia: Array<{ channelMessageId: string; mediaKind: string; contentType: string; isVoiceNote: boolean }> = []
+  const receivedText: Array<{ channelMessageId: string }> = []
+  const unsubscribeMedia = harness.session.onIncomingMedia((media) => receivedMedia.push(media))
+  const unsubscribeText = harness.session.onIncomingMessage((message) => receivedText.push(message))
+
+  try {
+    const socket = await harness.waitForSocket(1)
+    socket.emitConnectionUpdate({ connection: 'open' })
+    await harness.session.waitUntilReady(harness.controller.signal)
+
+    const baseKey = {
+      remoteJid: '5511999991234@s.whatsapp.net',
+      senderPn: '5511999991234@s.whatsapp.net',
+      fromMe: false,
+    }
+    const audioMessage = {
+      key: { ...baseKey, id: 'wamid-audio' },
+      message: { audioMessage: { mimetype: 'audio/ogg; codecs=opus', fileLength: 1_024, seconds: 7, ptt: true } },
+      messageTimestamp: 1_792_243_200,
+    } as unknown as WAMessage
+    const imageMessage = {
+      key: { ...baseKey, id: 'wamid-image' },
+      message: { imageMessage: { mimetype: 'image/jpeg', fileLength: 2_048, caption: 'legenda da imagem' } },
+      messageTimestamp: 1_792_243_200,
+    } as unknown as WAMessage
+    const videoMessage = {
+      key: { ...baseKey, id: 'wamid-video' },
+      message: { videoMessage: { mimetype: 'video/mp4', fileLength: 4_096, seconds: 12, caption: 'legenda do vídeo' } },
+      messageTimestamp: 1_792_243_200,
+    } as unknown as WAMessage
+    const pdfMessage = {
+      key: { ...baseKey, id: 'wamid-pdf' },
+      message: { documentMessage: { mimetype: 'application/pdf', fileLength: 8_192, fileName: 'laudo.pdf' } },
+      messageTimestamp: 1_792_243_200,
+    } as unknown as WAMessage
+    const excludedDocumentMessage = {
+      key: { ...baseKey, id: 'wamid-docx' },
+      message: { documentMessage: { mimetype: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', fileLength: 512 } },
+      messageTimestamp: 1_792_243_200,
+    } as unknown as WAMessage
+
+    socket.emitMessagesUpsert([audioMessage, imageMessage, videoMessage, pdfMessage, excludedDocumentMessage])
+
+    for (let attempt = 0; attempt < 1_000 && receivedMedia.length < 4; attempt += 1) {
+      await new Promise<void>((resolve) => setImmediate(resolve))
+    }
+
+    assert.equal(receivedMedia.length, 4)
+    assert.equal(downloadedMessages.length, 4)
+    assert.equal(receivedText.length, 0)
+
+    const audio = receivedMedia.find((item) => item.channelMessageId === 'wamid-audio')
+    assert.equal(audio?.mediaKind, 'audio')
+    assert.equal(audio?.contentType, 'audio/ogg; codecs=opus')
+    assert.equal(audio?.isVoiceNote, true)
+
+    const image = receivedMedia.find((item) => item.channelMessageId === 'wamid-image')
+    assert.equal(image?.mediaKind, 'image')
+    assert.equal(image?.contentType, 'image/jpeg')
+
+    const video = receivedMedia.find((item) => item.channelMessageId === 'wamid-video')
+    assert.equal(video?.mediaKind, 'video')
+
+    const pdf = receivedMedia.find((item) => item.channelMessageId === 'wamid-pdf')
+    assert.equal(pdf?.mediaKind, 'document')
+    assert.equal(pdf?.contentType, 'application/pdf')
+
+    assert.equal(receivedMedia.some((item) => item.channelMessageId === 'wamid-docx'), false)
+  } finally {
+    unsubscribeMedia()
+    unsubscribeText()
+    await harness.dispose()
+  }
+})
+
+test('a media download failure is logged and discarded without a text fallback', async () => {
+  const harness = await createHarness({
+    downloadMedia: async () => {
+      throw new Error('transient network failure')
+    },
+  })
+  const receivedMedia: unknown[] = []
+  const receivedText: unknown[] = []
+  const unsubscribeMedia = harness.session.onIncomingMedia((media) => receivedMedia.push(media))
+  const unsubscribeText = harness.session.onIncomingMessage((message) => receivedText.push(message))
+
+  try {
+    const socket = await harness.waitForSocket(1)
+    socket.emitConnectionUpdate({ connection: 'open' })
+    await harness.session.waitUntilReady(harness.controller.signal)
+
+    const audioMessage = {
+      key: {
+        remoteJid: '5511999991234@s.whatsapp.net',
+        senderPn: '5511999991234@s.whatsapp.net',
+        id: 'wamid-audio-fail',
+        fromMe: false,
+      },
+      message: { audioMessage: { mimetype: 'audio/ogg', fileLength: 1_024, ptt: true } },
+      messageTimestamp: 1_792_243_200,
+    } as unknown as WAMessage
+
+    socket.emitMessagesUpsert([audioMessage])
+    await new Promise<void>((resolve) => setTimeout(resolve, 20))
+
+    assert.equal(receivedMedia.length, 0)
+    assert.equal(receivedText.length, 0)
+  } finally {
+    unsubscribeMedia()
+    unsubscribeText()
+    await harness.dispose()
+  }
+})
+
+test('an image or video caption is never forwarded as a standalone text message', async () => {
+  const harness = await createHarness({
+    downloadMedia: async () => Buffer.from('synthetic-bytes'),
+  })
+  const receivedText: unknown[] = []
+  const receivedMedia: Array<{ caption: string | null }> = []
+  const unsubscribeText = harness.session.onIncomingMessage((message) => receivedText.push(message))
+  const unsubscribeMedia = harness.session.onIncomingMedia((media) => receivedMedia.push(media))
+
+  try {
+    const socket = await harness.waitForSocket(1)
+    socket.emitConnectionUpdate({ connection: 'open' })
+    await harness.session.waitUntilReady(harness.controller.signal)
+
+    const imageWithCaption = {
+      key: {
+        remoteJid: '5511999991234@s.whatsapp.net',
+        senderPn: '5511999991234@s.whatsapp.net',
+        id: 'wamid-image-caption',
+        fromMe: false,
+      },
+      message: { imageMessage: { mimetype: 'image/png', fileLength: 1_000, caption: 'legenda' } },
+      messageTimestamp: 1_792_243_200,
+    } as unknown as WAMessage
+
+    socket.emitMessagesUpsert([imageWithCaption])
+
+    for (let attempt = 0; attempt < 1_000 && receivedMedia.length < 1; attempt += 1) {
+      await new Promise<void>((resolve) => setImmediate(resolve))
+    }
+
+    assert.equal(receivedText.length, 0)
+    assert.equal(receivedMedia.length, 1)
+    assert.equal(receivedMedia[0]?.caption, 'legenda')
+  } finally {
+    unsubscribeText()
+    unsubscribeMedia()
     await harness.dispose()
   }
 })

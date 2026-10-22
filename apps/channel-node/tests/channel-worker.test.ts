@@ -1,15 +1,15 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { ChannelWorker } from './channel-worker.js'
+import { ChannelWorker } from '../src/channel-worker.js'
 import type {
   ChannelApi,
   ChannelOutcome,
   ClaimedChannelCommand,
   SafeLogger,
   WhatsAppMessageSender,
-} from './contracts.js'
-import { messageIdForIdempotencyKey, normalizeWhatsAppJid } from './phone.js'
-import { FIXED_TEST_RECIPIENT_PHONE } from './test-safeguard.js'
+} from '../src/contracts.js'
+import { messageIdForIdempotencyKey, normalizeWhatsAppJid } from '../src/phone.js'
+import { FIXED_TEST_RECIPIENT_PHONE } from '../src/test-safeguard.js'
 
 const command: ClaimedChannelCommand = {
   commandId: '11111111-1111-1111-1111-111111111111',
@@ -36,6 +36,8 @@ class FakeApi implements ChannelApi {
   }
 
   async ingestMessage(): Promise<void> {}
+
+  async ingestMedia(): Promise<void> {}
 
   async complete(
     _command: ClaimedChannelCommand,
@@ -176,6 +178,7 @@ test('the worker waits for WhatsApp readiness before claiming', async () => {
       return null
     },
     async ingestMessage() {},
+    async ingestMedia() {},
     async complete() {
       return true
     },

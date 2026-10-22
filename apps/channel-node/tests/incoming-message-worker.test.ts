@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { IncomingMessageWorker } from './incoming-message-worker.js'
+import { IncomingMessageWorker } from '../src/incoming-message-worker.js'
 import type {
   ChannelApi,
   IncomingWhatsAppMessage,
   SafeLogger,
   WhatsAppMessageReceiver,
-} from './contracts.js'
+} from '../src/contracts.js'
 
 const message: IncomingWhatsAppMessage = {
   contractVersion: '1',
@@ -38,6 +38,9 @@ test('reports queued inbound messages and releases the listener on shutdown', as
         listener = undefined
       }
     },
+    onIncomingMedia() {
+      return () => {}
+    },
   }
   let resolveReported: (() => void) | undefined
   const reported = new Promise<void>((resolve) => {
@@ -52,6 +55,7 @@ test('reports queued inbound messages and releases the listener on shutdown', as
       received.push(value)
       resolveReported?.()
     },
+    async ingestMedia() {},
     async complete() {
       return true
     },
