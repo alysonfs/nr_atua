@@ -4,6 +4,7 @@ import { TrialCard, TrialExpiryAlert } from '../components/Trial'
 import { CreateTenantForm, TenantSelector } from '../components/Onboarding'
 import { ProviderIntegrationSection } from '../components/Integrations'
 import { TriagemMessageTemplatesSection } from '../components/TriagemTemplates'
+import { WhatsAppSessionSection } from '../components/WhatsApp'
 import { useMyTenants } from '../hooks/useTenants'
 import { useTranslation } from 'react-i18next'
 
@@ -50,22 +51,23 @@ export function SettingsPage() {
       <aside className="hidden lg:block">
         <nav aria-label={t('layout.mainNavigation')} className="sticky top-22 space-y-1">
           {[
-            t('settings.navigation.overview'),
-            t('settings.navigation.integrations'),
-            t('settings.navigation.collector'),
-            t('settings.navigation.triageTemplates'),
-            t('settings.navigation.preferences'),
+            { label: t('settings.navigation.overview'), href: '#trial-heading' },
+            { label: t('settings.navigation.integrations'), href: '#integration-heading' },
+            { label: t('settings.navigation.collector'), href: '#integration-heading' },
+            { label: t('settings.navigation.triageTemplates'), href: '#triage-templates-heading' },
+            { label: t('settings.navigation.whatsapp'), href: '#whatsapp-heading' },
+            { label: t('settings.navigation.preferences'), href: '#preferences-heading' },
           ].map((item, index) => (
             <a
-              key={item}
-              href={index === 0 ? '#trial-heading' : index <= 2 ? '#integration-heading' : index === 3 ? '#triage-templates-heading' : '#preferences-heading'}
+              key={item.label}
+              href={item.href}
               className={`block rounded-md px-3 py-2 text-sm font-medium transition ${
                 index === 0
                   ? 'bg-slate-900 text-white shadow-sm'
                   : 'text-slate-600 hover:bg-white hover:text-slate-950'
               }`}
             >
-              {item}
+              {item.label}
             </a>
           ))}
         </nav>
@@ -123,6 +125,22 @@ export function SettingsPage() {
               <p className="text-sm text-slate-700">{t('triageTemplates.description')}</p>
             </div>
             <TriagemMessageTemplatesSection
+              tenantId={activeTenantId}
+              integrationId={integrationId}
+              canManage={canManageIntegration}
+            />
+          </section>
+        )}
+
+        {!isLoading && !isError && activeTenantId && (
+          <section aria-labelledby="whatsapp-heading" className="space-y-3">
+            <div>
+              <h2 id="whatsapp-heading" className="text-sm font-semibold uppercase text-slate-500">
+                {t('whatsapp.title')}
+              </h2>
+              <p className="text-sm text-slate-700">{t('whatsapp.description')}</p>
+            </div>
+            <WhatsAppSessionSection
               tenantId={activeTenantId}
               integrationId={integrationId}
               canManage={canManageIntegration}
