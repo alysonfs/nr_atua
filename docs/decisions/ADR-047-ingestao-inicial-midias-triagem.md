@@ -102,8 +102,12 @@ IAM, credenciais de serviço ou deploy.
   portanto nenhuma instrução DDL foi executada nessa autorização.
 - Em 2026-10-22, o deploy da infraestrutura concedeu à role da API somente
   `s3:PutObject` e `s3:DeleteObject` nos objetos do bucket persistente
-  `atua-462991286554-media-triagem`. A publicação a quente da API permanece
-  pendente.
+  `atua-462991286554-media-triagem`.
+- A API foi redeployada a quente em 2026-10-22 a partir do commit
+  `eae1edc05e2fb609a83b397c06d6ffae9c3c1289`. O serviço ficou
+  `active (running)`, o MD5 local/remoto coincidiu, `GET /health` retornou
+  200 e a rota de mídia sem credenciais retornou 401. O E2E remoto de mídia
+  permanece pendente.
 - A transcrição continua condicionada aos gates do ADR-046, incluindo
   amostra autorizada e desidentificada, avaliação de qualidade e dados de
   volume/custo.

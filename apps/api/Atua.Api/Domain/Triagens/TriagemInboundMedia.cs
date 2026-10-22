@@ -10,8 +10,9 @@ namespace Atua.Api.Domain.Triagens;
 ///
 /// Retenção: segue a mesma política dos ADR-045/046 — cinco anos desde
 /// <see cref="ReceivedAtUtc"/>, elegibilidade de expurgo físico um ano
-/// depois. O expurgo em si (metadados e objeto S3) não é implementado por
-/// este incremento.
+/// depois. O expurgo é executado pelo
+/// <see cref="Atua.Api.Application.Triagens.TriagemInboundMediaPurgeService"/> e
+/// hospedado por <c>TriagemInboundMediaPurgeJob</c>.
 /// </summary>
 public sealed class TriagemInboundMedia
 {

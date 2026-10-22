@@ -862,14 +862,16 @@ pendentes. O status atualizado está na seção 11.
 - O job está habilitado no código, mas ainda não foi implantado em serviço
   remoto. A migration aplicada abaixo cria a tabela que ele consulta.
 
-### Migration no ambiente de teste
+### Estado da migration do banco compartilhado
 
-- O Product Owner confirmou `atua-postgres-mvp` como banco de teste e
-  autorizou aplicar a migration de mídia.
-- `20261021194516_AddTriagemChannelInboundMedia` foi aplicada ao banco
-  `atua` nesse RDS. Verificação somente leitura confirmou a migration no
-  histórico, a tabela `triagem_channel_media` e seus índices.
-- Nenhuma migration foi aplicada em produção.
+- A migration `20261021194516_AddTriagemChannelInboundMedia` foi aplicada ao
+  banco `atua` no RDS `atua-postgres-mvp`, inicialmente tratado como banco de
+  teste. Em 2026-10-22, comparação somente leitura confirmou que a conexão
+  local, a secret `atua/rds-postgres` usada pela API implantada e esse RDS
+  apontam para o mesmo banco.
+- O Product Owner autorizou a preparação da publicação da API e da migration
+  em produção. Como a migration já constava no histórico do banco usado pela
+  API, nenhuma instrução DDL foi executada nessa autorização.
 
 ### E2E com S3 (2026-10-22): aprovado
 
@@ -902,12 +904,20 @@ pendentes. O status atualizado está na seção 11.
 - Limpeza autorizada: objeto exato excluído (bucket com 0 objetos, 0 versões,
   0 delete markers), linha de mídia excluída, `cleanup E2E-20261022111425`
   com status final de 0 linhas e API local desligada.
-- Em validação local posterior, `TriagemChannelMediaEndpointsTests` passou
-  18/18, incluindo buffers sintéticos com assinaturas PDF, OGG e MP4 usando
-  storage fake. Isso valida o endpoint sem exercitar WhatsApp ou S3 para
-  esses formatos.
-- Pendências: o Channel deve voltar ao túnel (`127.0.0.1:18080`); a API da
-  EC2 ainda não tem o endpoint de mídia nem permissão S3 — o deploy remoto
-  exige permissão `PutObject`/`DeleteObject` na `atua-api-ec2-role` via CDK.
-  PDF/áudio/vídeo não foram exercitados em E2E. A transcrição permanece
-  bloqueada pelos gates do ADR-046.
+- Em validação local, os testes focados da API passaram 23/23 após as
+  correções de comparação de hash na reentrega e interrupção de lotes de
+  expurgo sem progresso. A suíte também inclui buffers sintéticos com
+  assinaturas PDF, OGG e MP4 usando storage fake; isso não exercita WhatsApp
+  ou S3 para esses formatos.
+- Em 2026-10-22, a infraestrutura foi implantada: bucket persistente
+  `atua-462991286554-media-triagem` e somente `s3:PutObject`/
+  `s3:DeleteObject` para a role da API nos objetos desse bucket.
+- A API foi redeployada a quente em 2026-10-22 a partir do commit
+  `eae1edc05e2fb609a83b397c06d6ffae9c3c1289`. O alvo validou o mesmo MD5
+  local/remoto e `atua-api` ficou `active (running)`; depois, `GET /health`
+  retornou 200 e um POST sem credenciais à rota de mídia retornou 401.
+- Pendências: publicar o Channel após resolver os riscos de fila/memória e
+  isolamento de erros identificados na revisão; reconectar o Channel ao
+  túnel (`127.0.0.1:18080`); executar E2E remoto de mídia com dados sintéticos.
+  PDF/áudio/vídeo ainda não foram exercitados em E2E remoto. A transcrição
+  permanece bloqueada pelos gates do ADR-046.
