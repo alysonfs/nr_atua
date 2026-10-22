@@ -59,8 +59,11 @@ public class TriagemTests
         triagem.LiberarAoPool(Now);
         Assert.Equal(ETriagemStatus.LiberadaAoPool, triagem.Status);
 
-        triagem.AssumirPorOperador(Now);
+        var operadorUserId = Guid.NewGuid();
+        triagem.AssumirPorOperador(operadorUserId, Now);
         Assert.Equal(ETriagemStatus.AssumidaPorOperador, triagem.Status);
+        Assert.Equal(operadorUserId, triagem.AssumidaPorUserId);
+        Assert.Equal(Now, triagem.AssumidaEmUtc);
     }
 
     // -----------------------------------------------------------------------
@@ -237,7 +240,7 @@ public class TriagemTests
     {
         var triagem = CriarTriagemNova();
 
-        Assert.Throws<InvalidTriagemTransitionException>(() => triagem.AssumirPorOperador(Now));
+        Assert.Throws<InvalidTriagemTransitionException>(() => triagem.AssumirPorOperador(Guid.NewGuid(), Now));
         Assert.Equal(ETriagemStatus.AguardandoEnvio, triagem.Status);
 
         Assert.Throws<InvalidTriagemTransitionException>(() => triagem.IniciarColeta(Now));
@@ -296,5 +299,108 @@ public class TriagemTests
             () => new TriagemIdempotencyKey(Guid.Empty, Guid.NewGuid(), "BRWO260909869"));
         Assert.Throws<ArgumentException>(
             () => new TriagemIdempotencyKey(Guid.NewGuid(), Guid.Empty, "BRWO260909869"));
+    }
+
+    // -----------------------------------------------------------------------
+    // AssumirPorOperador — pool de triagem (épico, bloco C)
+    // -----------------------------------------------------------------------
+
+    [Theory]
+    [InlineData(ETriagemStatus.LiberadaAoPool)]
+    [InlineData(ETriagemStatus.Expirada)]
+    [InlineData(ETriagemStatus.FalhaDeContato)]
+    [InlineData(ETriagemStatus.AguardandoIntervencao)]
+    public void AssumirPorOperador_PermiteAPartirDeQualquerEstadoDoPool(ETriagemStatus estadoDoPool)
+    {
+        var triagem = CriarTriagemNoEstado(estadoDoPool);
+        var operadorUserId = Guid.NewGuid();
+
+        triagem.AssumirPorOperador(operadorUserId, Now);
+
+        Assert.Equal(ETriagemStatus.AssumidaPorOperador, triagem.Status);
+        Assert.Equal(operadorUserId, triagem.AssumidaPorUserId);
+        Assert.Equal(Now, triagem.AssumidaEmUtc);
+    }
+
+    [Theory]
+    [InlineData(ETriagemStatus.AguardandoEnvio)]
+    [InlineData(ETriagemStatus.ContatoIniciado)]
+    [InlineData(ETriagemStatus.EmColeta)]
+    [InlineData(ETriagemStatus.InformacoesSuficientes)]
+    public void AssumirPorOperador_RejeitaEstadosForaDoPool(ETriagemStatus estadoForaDoPool)
+    {
+        var triagem = CriarTriagemNoEstado(estadoForaDoPool);
+
+        Assert.Throws<InvalidTriagemTransitionException>(
+            () => triagem.AssumirPorOperador(Guid.NewGuid(), Now));
+        Assert.Equal(estadoForaDoPool, triagem.Status);
+        Assert.Null(triagem.AssumidaPorUserId);
+        Assert.Null(triagem.AssumidaEmUtc);
+    }
+
+    [Fact]
+    public void AssumirPorOperador_RejeitaOperadorVazio()
+    {
+        var triagem = CriarTriagemNoEstado(ETriagemStatus.LiberadaAoPool);
+
+        Assert.Throws<ArgumentException>(() => triagem.AssumirPorOperador(Guid.Empty, Now));
+        Assert.Equal(ETriagemStatus.LiberadaAoPool, triagem.Status);
+    }
+
+    [Fact]
+    public void AssumirPorOperador_RenovaConcurrencyTokenEAtualizaUpdatedAt()
+    {
+        var triagem = CriarTriagemNoEstado(ETriagemStatus.LiberadaAoPool);
+        var tokenAntes = triagem.ConcurrencyToken;
+        var depois = Now.AddMinutes(5);
+
+        triagem.AssumirPorOperador(Guid.NewGuid(), depois);
+
+        Assert.NotEqual(tokenAntes, triagem.ConcurrencyToken);
+        Assert.Equal(depois, triagem.UpdatedAtUtc);
+    }
+
+    /// <summary>
+    /// Constrói uma triagem já no estado solicitado, percorrendo as
+    /// transições de domínio válidas (nunca via reflexão/atribuição direta).
+    /// </summary>
+    private static Triagem CriarTriagemNoEstado(ETriagemStatus estado)
+    {
+        var triagem = CriarTriagemNova();
+        if (estado == ETriagemStatus.AguardandoEnvio) return triagem;
+
+        triagem.MarcarContatoIniciado(Now);
+        if (estado == ETriagemStatus.ContatoIniciado) return triagem;
+        if (estado == ETriagemStatus.FalhaDeContato)
+        {
+            // FalhaDeContato só é alcançável a partir de AguardandoEnvio —
+            // reconstrói a triagem para esse caminho específico.
+            var falha = CriarTriagemNova();
+            falha.MarcarFalhaDeContato(Now);
+            return falha;
+        }
+
+        triagem.IniciarColeta(Now);
+        if (estado == ETriagemStatus.EmColeta) return triagem;
+        if (estado == ETriagemStatus.Expirada)
+        {
+            triagem.Expirar(Now);
+            return triagem;
+        }
+
+        if (estado == ETriagemStatus.AguardandoIntervencao)
+        {
+            triagem.RegistrarDesvio(Now);
+            triagem.RegistrarDesvio(Now);
+            triagem.RegistrarDesvio(Now);
+            return triagem;
+        }
+
+        PreencherChecklistMinimo(triagem);
+        triagem.MarcarInformacoesSuficientes(Now);
+        if (estado == ETriagemStatus.InformacoesSuficientes) return triagem;
+
+        triagem.LiberarAoPool(Now);
+        return triagem;
     }
 }

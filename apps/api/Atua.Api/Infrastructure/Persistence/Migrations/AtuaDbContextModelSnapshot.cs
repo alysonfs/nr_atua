@@ -644,6 +644,12 @@ namespace Atua.Api.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("Id")
                         .HasColumnType("uuid");
 
+                    b.Property<DateTimeOffset?>("AssumidaEmUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("AssumidaPorUserId")
+                        .HasColumnType("uuid");
+
                     b.Property<Guid>("ConcurrencyToken")
                         .IsConcurrencyToken()
                         .HasColumnType("uuid");
@@ -723,6 +729,9 @@ namespace Atua.Api.Infrastructure.Persistence.Migrations
                     b.HasIndex("TenantId", "IntegrationId", "WorkOrderProviderId")
                         .IsUnique()
                         .HasDatabaseName("uq_triagens_tenant_integration_work_order_provider_id");
+
+                    b.HasIndex("TenantId", "Status", "UpdatedAtUtc")
+                        .HasDatabaseName("ix_triagens_tenant_status_updated_at");
 
                     b.ToTable("triagens", (string)null);
                 });

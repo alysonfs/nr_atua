@@ -61,6 +61,12 @@ public sealed class Triagem
     /// </summary>
     public Guid ConcurrencyToken { get; private set; } = Guid.NewGuid();
 
+    /// <summary>Operador que assumiu a triagem (<see cref="ETriagemStatus.AssumidaPorOperador"/>); <c>null</c> enquanto não assumida.</summary>
+    public Guid? AssumidaPorUserId { get; private set; }
+
+    /// <summary>Momento da assunção (auditoria — épico, seção "C3 — Assumir").</summary>
+    public DateTimeOffset? AssumidaEmUtc { get; private set; }
+
     // ------------------------------------------------------------------
     // Checklist mínimo (épico, pergunta 10 resolvida em 2026-10-13).
     // Somente metadados são armazenados — nenhum binário de mídia.
@@ -101,6 +107,22 @@ public sealed class Triagem
         && !string.IsNullOrWhiteSpace(EtiquetaSerie)
         && MidiaDefeitoTipo is not null
         && !string.IsNullOrWhiteSpace(EnderecoCompleto);
+
+    /// <summary>Quantidade total de itens do checklist mínimo rígido (épico, pool, coluna "itens completos/total").</summary>
+    public const int ChecklistItensMinimosTotal = 5;
+
+    /// <summary>
+    /// Quantidade de itens do checklist mínimo rígido já preenchidos — cada
+    /// um dos cinco itens de <see cref="ChecklistMinimoCompleto"/> conta
+    /// no máximo 1, independentemente de quantas tentativas/mensagens o
+    /// preencheram.
+    /// </summary>
+    public int ChecklistItensMinimosCompletos =>
+        (string.IsNullOrWhiteSpace(DescricaoDefeito) ? 0 : 1)
+        + (NotaFiscalLegivel ? 1 : 0)
+        + (!string.IsNullOrWhiteSpace(EtiquetaModelo) && !string.IsNullOrWhiteSpace(EtiquetaSerie) ? 1 : 0)
+        + (MidiaDefeitoTipo is not null ? 1 : 0)
+        + (!string.IsNullOrWhiteSpace(EnderecoCompleto) ? 1 : 0);
 
     // ------------------------------------------------------------------
     // Transições de estado
@@ -168,10 +190,44 @@ public sealed class Triagem
         Touch(now);
     }
 
-    public void AssumirPorOperador(DateTimeOffset now)
+    /// <summary>
+    /// Estados do pool compartilhado de operadores (épico, bloco C — pool de
+    /// triagem). Fonte única usada tanto por <see cref="AssumirPorOperador"/>
+    /// quanto pela listagem do pool, para que os dois nunca divirjam.
+    /// </summary>
+    public static readonly IReadOnlyCollection<ETriagemStatus> PoolStatuses =
+    [
+        ETriagemStatus.LiberadaAoPool,
+        ETriagemStatus.Expirada,
+        ETriagemStatus.FalhaDeContato,
+        ETriagemStatus.AguardandoIntervencao,
+    ];
+
+    /// <summary>
+    /// Um operador do posto assume a triagem com exclusividade (épico, "C3 —
+    /// Assumir"). Permitida a partir de qualquer um dos <see cref="PoolStatuses"/>
+    /// — não apenas <see cref="ETriagemStatus.LiberadaAoPool"/>, já que
+    /// <see cref="ETriagemStatus.Expirada"/>, <see cref="ETriagemStatus.FalhaDeContato"/>
+    /// e <see cref="ETriagemStatus.AguardandoIntervencao"/> também são
+    /// encaminhadas ao pool para decisão humana. Estado terminal: a LLM para
+    /// definitivamente neste atendimento (RF-TRIAGEM-005) e não há retorno
+    /// ao pool na fase 1.
+    /// </summary>
+    public void AssumirPorOperador(Guid operadorUserId, DateTimeOffset now)
     {
-        ExigirEstado(ETriagemStatus.LiberadaAoPool, nameof(AssumirPorOperador));
+        if (!PoolStatuses.Contains(Status))
+        {
+            throw new InvalidTriagemTransitionException(Status, nameof(AssumirPorOperador));
+        }
+
+        if (operadorUserId == Guid.Empty)
+        {
+            throw new ArgumentException("OperadorUserId não pode ser vazio.", nameof(operadorUserId));
+        }
+
         Status = ETriagemStatus.AssumidaPorOperador;
+        AssumidaPorUserId = operadorUserId;
+        AssumidaEmUtc = now;
         Touch(now);
     }
 

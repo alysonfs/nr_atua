@@ -477,6 +477,10 @@ public sealed class AtuaDbContext(DbContextOptions<AtuaDbContext> options) : DbC
 
         builder.Property(triagem => triagem.DesviosConsecutivos).IsRequired();
 
+        // Auditoria da assunção pelo operador (épico, bloco C — "C3 — Assumir").
+        builder.Property(triagem => triagem.AssumidaPorUserId);
+        builder.Property(triagem => triagem.AssumidaEmUtc);
+
         // Contadores de tentativa inválida por item do checklist (campo
         // privado `_tentativasInvalidasPorItem`, exposto como
         // IReadOnlyDictionary somente leitura). Mapeado diretamente pelo
@@ -513,6 +517,11 @@ public sealed class AtuaDbContext(DbContextOptions<AtuaDbContext> options) : DbC
         // isolamento, mesmo padrão de WorkOrder).
         builder.HasIndex(triagem => triagem.TenantId);
         builder.HasIndex(triagem => triagem.IntegrationId);
+
+        // Listagem do pool por tenant + estado (épico, bloco C — "C1 — Lista
+        // do pool"), ordenada pela entrada mais antiga (UpdatedAtUtc).
+        builder.HasIndex(nameof(Triagem.TenantId), nameof(Triagem.Status), nameof(Triagem.UpdatedAtUtc))
+            .HasDatabaseName("ix_triagens_tenant_status_updated_at");
 
         // Mesmo padrão de WorkOrder: obrigatório, sem FK para Tenant (redundante
         // apenas para isolamento, ver doc da propriedade).

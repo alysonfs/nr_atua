@@ -1,6 +1,6 @@
 # Pool de triagem — visão do operador (C1, C2, C3)
 
-**Status:** REQUIREMENTS_DEFINED
+**Status:** IMPLEMENTATION
 **Épico:** [Triagem WhatsApp Fase 1](./triagem-whatsapp-fase-1.md), seção 10, Bloco C.
 **Frontend:** `apps/office`. **Autoridade de estado:** Master API (`Triagem`).
 
@@ -95,6 +95,45 @@ sugestão de peças, condução pela LLM, devolver ao pool e arquivamento.
 
 ## 6. Próximos passos
 
-`software-architect`/`backend-engineer`: endpoints autenticados (listar,
-detalhar, assumir) com isolamento por tenant e concorrência otimista via
-`ConcurrencyToken` existente. `frontend-engineer`: telas em `apps/office`.
+### Backend — implementado
+
+Rotas autenticadas por sessão do Office (`BrowserSession`), isolamento por
+tenant obrigatório (`/api/tenants/{tenantId}/triage-pool...`):
+
+- `GET /api/tenants/{tenantId}/triage-pool?status={estado}` — C1, lista do
+  pool. `status` opcional, aceita apenas um dos quatro estados do pool.
+- `GET /api/tenants/{tenantId}/triage-pool/{triagemId}` — C2, detalhe
+  (checklist, anexos com URL pré-assinada temporária, conversa cronológica,
+  motivo do estado).
+- `POST /api/tenants/{tenantId}/triage-pool/{triagemId}/assume` — C3,
+  assumir com concorrência otimista.
+
+Casos de uso: `IListTriagemPoolUseCase`, `IGetTriagemPoolDetailUseCase`,
+`IAssumeTriagemUseCase` (`Application/Triagens/Contracts`). Domínio:
+`Triagem.AssumirPorOperador(operadorUserId, now)` passou a aceitar os
+quatro estados do pool e registra `AssumidaPorUserId`/`AssumidaEmUtc`.
+Migration `AddTriagemAssumidaPorOperador` adiciona as colunas e um índice
+de apoio (`ix_triagens_tenant_status_updated_at`) — gerada, **não aplicada**
+em nenhum banco.
+
+Limitações/decisões conhecidas, para acompanhamento:
+
+- Não existe coluna dedicada para o momento de entrada no pool; usa-se
+  `UpdatedAtUtc` como aproximação (coincide com a transição mais recente,
+  incluindo a entrada no estado do pool).
+- "Triagem assumida por outro operador não-gestor" e "triagem de outro
+  tenant" retornam ambos 404 no detalhe (nunca 403), para não revelar a
+  existência/estado do recurso a quem não tem acesso.
+- **Pendência de infraestrutura:** o anexo usa URL pré-assinada do S3
+  (`ITriagemInboundMediaStorage.CreatePresignedReadUrlAsync`), mas a role
+  da EC2 hoje só tem `s3:PutObject`/`s3:DeleteObject` (ADR-046). A geração
+  da URL não exige `s3:GetObject`, mas o **uso** da URL por quem a recebe
+  exige — permissão a ser concedida via CDK pelo `aws-architect` (fora do
+  escopo deste incremento).
+- A matéria-prima do indicador de "nova atividade" (critério de aceite 10)
+  exigiu estender o casamento de mensagens inbound
+  (`TriagemInboundMessageRepository`) para qualquer estado da triagem, não
+  mais restrito a `ContatoIniciado`/`EmColeta` — o que o ADR-043 já previa
+  para quando "o pool e o painel do operador consumirem este mesmo evento".
+
+`frontend-engineer`: telas em `apps/office`.

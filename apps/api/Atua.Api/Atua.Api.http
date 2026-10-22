@@ -1,5 +1,7 @@
 @Atua.Api_HostAddress = http://localhost:5240
 @Atua.Api.ServiceCredentialToken = {{serviceCredentialToken}}
+@tenantId = 00000000-0000-0000-0000-000000000000
+@triagemId = 00000000-0000-0000-0000-000000000000
 
 GET {{Atua.Api_HostAddress}}/weatherforecast/
 Accept: application/json
@@ -39,5 +41,37 @@ Authorization: Bearer {{channelMessageIngestServiceToken}}
   "kind": "text",
   "text": "O produto não liga."
 }
+
+###
+
+# Pool de triagem — C1: lista (épico "Pool de triagem — visão do
+# operador"). Autenticado via sessão do Office (cookie "BrowserSession" —
+# substitua pelo cookie real de uma sessão autenticada local). Isolamento
+# por tenant obrigatório: usuário precisa ser membro de {{tenantId}}.
+# Filtro opcional "status" aceita apenas um dos quatro estados do pool:
+# LiberadaAoPool, Expirada, FalhaDeContato, AguardandoIntervencao.
+GET {{Atua.Api_HostAddress}}/api/tenants/{{tenantId}}/triage-pool
+Cookie: BrowserSession=******
+
+###
+
+# Pool de triagem — C1: lista filtrada por estado.
+GET {{Atua.Api_HostAddress}}/api/tenants/{{tenantId}}/triage-pool?status=LiberadaAoPool
+Cookie: BrowserSession=******
+
+###
+
+# Pool de triagem — C2: detalhe. Triagem assumida só é visível para quem
+# assumiu ou para gestores (OWNER/ADMIN) — demais casos retornam 404.
+# Outro tenant também retorna 404 (isolamento multi-tenant).
+GET {{Atua.Api_HostAddress}}/api/tenants/{{tenantId}}/triage-pool/{{triagemId}}
+Cookie: BrowserSession=******
+
+###
+
+# Pool de triagem — C3: assumir. Concorrência otimista: o perdedor de uma
+# corrida recebe 409 com quem assumiu e quando.
+POST {{Atua.Api_HostAddress}}/api/tenants/{{tenantId}}/triage-pool/{{triagemId}}/assume
+Cookie: BrowserSession=******
 
 ###

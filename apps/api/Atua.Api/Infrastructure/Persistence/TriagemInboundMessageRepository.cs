@@ -35,14 +35,20 @@ public sealed partial class TriagemInboundMessageRepository(AtuaDbContext dbCont
         if (outcome is null)
         {
             var senderKey = ToPhoneMatchKey(command.SenderPhone);
+            // A resolução da triagem candidata não se restringe a
+            // ContatoIniciado/EmColeta (ADR-043 deixou explicitamente para
+            // quando "o pool e o painel do operador consumirem este mesmo
+            // evento" — RF-TRIAGEM-003/ETriagemStatus.PoolStatuses, este
+            // incremento). Mesmo padrão já adotado para mídia (decisão do PO
+            // em 2026-10-21, ver TriagemInboundMediaRepository): qualquer
+            // status é elegível para vínculo, sem reabrir conversa — a LLM
+            // nunca é acionada aqui, apenas IniciarColeta quando aplicável.
             var possibleMatches = await (
                 from triagem in dbContext.Triagens
                 join channelCommand in dbContext.TriagemChannelCommands
                     on triagem.Id equals channelCommand.TriagemId
                 where triagem.TenantId == command.TenantId
                     && triagem.IntegrationId == command.IntegrationId
-                    && (triagem.Status == ETriagemStatus.ContatoIniciado
-                        || triagem.Status == ETriagemStatus.EmColeta)
                 select new { Triagem = triagem, channelCommand.RecipientPhone }
             ).ToListAsync(cancellationToken);
 

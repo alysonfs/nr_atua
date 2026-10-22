@@ -56,4 +56,15 @@ public sealed class FakeTriagemInboundMediaStorage : ITriagemInboundMediaStorage
             ? ETriagemInboundMediaDeleteOutcome.Deleted
             : ETriagemInboundMediaDeleteOutcome.NotFound);
     }
+
+    /// <summary>
+    /// URL fake, determinística e nunca navegável — suficiente para testes
+    /// verificarem que o chamador recebeu uma URL, sem depender de AWS real.
+    /// </summary>
+    public Task<Uri> CreatePresignedReadUrlAsync(
+        TriagemInboundMediaStorageKey key,
+        TimeSpan expiresIn,
+        CancellationToken cancellationToken) =>
+        Task.FromResult(new Uri(
+            $"https://fake-triagem-inbound-media.local/{key.Value}?expiresInSeconds={(int)expiresIn.TotalSeconds}"));
 }

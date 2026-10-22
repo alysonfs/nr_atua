@@ -36,6 +36,24 @@ public interface ITriagemInboundMediaStorage
     Task<ETriagemInboundMediaDeleteOutcome> DeleteAsync(
         TriagemInboundMediaStorageKey key,
         CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Gera uma URL temporária e pré-assinada para leitura (GET) do objeto —
+    /// usada pelo painel do operador (épico, bloco C — "C2 — Detalhe") para
+    /// exibir anexos sem expor o bucket nem credenciais.
+    ///
+    /// PENDÊNCIA DE INFRAESTRUTURA: a role atual da EC2 só concede
+    /// <c>s3:PutObject</c>/<c>s3:DeleteObject</c> (ADR-046) — a assinatura em
+    /// si é feita localmente pelo SDK e não exige <c>s3:GetObject</c> para
+    /// ser *gerada*, mas a URL gerada só funcionará quando acessada
+    /// (navegador/cliente chamando o S3 diretamente) se a role tiver também
+    /// <c>s3:GetObject</c> no bucket. Essa permissão precisa ser concedida
+    /// via CDK pelo `aws-architect` — não alterada aqui.
+    /// </summary>
+    Task<Uri> CreatePresignedReadUrlAsync(
+        TriagemInboundMediaStorageKey key,
+        TimeSpan expiresIn,
+        CancellationToken cancellationToken);
 }
 
 /// <summary>Chave determinística do objeto S3 — sem telefone/IDs do consumidor (decisão do `software-architect`).</summary>

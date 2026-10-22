@@ -19,7 +19,8 @@ public class TriagemPersistenceMappingTests
         using var context = CreateContext();
         var triagem = context.Model.FindEntityType(typeof(Triagem))!;
 
-        var index = triagem.GetIndexes().Single(item => item.Properties.Count == 3);
+        var index = triagem.GetIndexes().Single(item => item.GetDatabaseName()
+            == "uq_triagens_tenant_integration_work_order_provider_id");
 
         Assert.True(index.IsUnique);
         Assert.Equal("uq_triagens_tenant_integration_work_order_provider_id", index.GetDatabaseName());
@@ -92,6 +93,35 @@ public class TriagemPersistenceMappingTests
             index => index.Properties.Count == 1 && index.Properties[0].Name == nameof(Triagem.TenantId));
         Assert.Contains(triagem.GetIndexes(),
             index => index.Properties.Count == 1 && index.Properties[0].Name == nameof(Triagem.IntegrationId));
+    }
+
+    [Fact]
+    public void TriagemPersisteAssumidaPorUserIdEAssumidaEmUtc()
+    {
+        using var context = CreateContext();
+        var triagem = context.Model.FindEntityType(typeof(Triagem))!;
+
+        var assumidaPorUserId = triagem.FindProperty(nameof(Triagem.AssumidaPorUserId));
+        var assumidaEmUtc = triagem.FindProperty(nameof(Triagem.AssumidaEmUtc));
+
+        Assert.NotNull(assumidaPorUserId);
+        Assert.NotNull(assumidaEmUtc);
+        Assert.True(assumidaPorUserId!.IsNullable);
+        Assert.True(assumidaEmUtc!.IsNullable);
+    }
+
+    [Fact]
+    public void TriagemPossuiIndiceDeApoioParaListagemDoPoolPorTenantEEstado()
+    {
+        using var context = CreateContext();
+        var triagem = context.Model.FindEntityType(typeof(Triagem))!;
+
+        var index = triagem.GetIndexes()
+            .Single(item => item.GetDatabaseName() == "ix_triagens_tenant_status_updated_at");
+
+        Assert.Equal(
+            [nameof(Triagem.TenantId), nameof(Triagem.Status), nameof(Triagem.UpdatedAtUtc)],
+            index.Properties.Select(property => property.Name));
     }
 
     [Fact]

@@ -104,6 +104,27 @@ public sealed class S3TriagemInboundMediaStorage(IAmazonS3 s3Client, TriagemInbo
         }
     }
 
+    public Task<Uri> CreatePresignedReadUrlAsync(
+        TriagemInboundMediaStorageKey key,
+        TimeSpan expiresIn,
+        CancellationToken cancellationToken)
+    {
+        // Assinatura local via SDK (não chama a AWS) — exige apenas que o
+        // client esteja configurado com credenciais válidas. O acesso
+        // efetivo da URL resultante depende de s3:GetObject na role (ver
+        // pendência documentada em ITriagemInboundMediaStorage).
+        var request = new GetPreSignedUrlRequest
+        {
+            BucketName = options.BucketName,
+            Key = key.Value,
+            Verb = HttpVerb.GET,
+            Expires = DateTime.UtcNow.Add(expiresIn),
+        };
+
+        var url = s3Client.GetPreSignedURL(request);
+        return Task.FromResult(new Uri(url));
+    }
+
     private static bool IsTransient(AmazonS3Exception exception) =>
         exception.StatusCode is HttpStatusCode.InternalServerError
             or HttpStatusCode.ServiceUnavailable

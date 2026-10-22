@@ -197,6 +197,9 @@ builder.Services.AddScoped<ITriagemMessageTemplateResolver>(
     serviceProvider => serviceProvider.GetRequiredService<TriagemMessageTemplateRenderer>());
 builder.Services.AddScoped<TriagemMessageTemplateService>();
 builder.Services.AddScoped<StartTriagemUseCase>();
+builder.Services.AddScoped<IListTriagemPoolUseCase, ListTriagemPoolUseCase>();
+builder.Services.AddScoped<IGetTriagemPoolDetailUseCase, GetTriagemPoolDetailUseCase>();
+builder.Services.AddScoped<IAssumeTriagemUseCase, AssumeTriagemUseCase>();
 
 // ADR-042: comando de canal persistido atomicamente com o aceite da
 // triagem, reivindicado por polling (claim) e concluído (complete) pelo
@@ -333,5 +336,6 @@ app.MapWorkOrderEndpoints();
 app.MapTriagemEndpoints();
 app.MapTriagemChannelEndpoints();
 app.MapTriagemMessageTemplateEndpoints();
+app.MapTriagemPoolEndpoints();
 
 app.Run();
