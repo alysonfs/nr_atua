@@ -15,7 +15,8 @@ import {
   type BaileysSessionDependencies,
   type BaileysSessionSocket,
 } from '../src/baileys-session.js'
-import type { SafeLogger } from '../src/contracts.js'
+import type { SafeLogger, WhatsAppSessionStateEvent } from '../src/contracts.js'
+import { MediaTooLargeError } from '../src/media-download-limit.js'
 
 const logger: SafeLogger = {
   info: () => {},
@@ -114,7 +115,7 @@ interface SessionHarness {
 }
 
 async function createHarness(
-  dependencies: Pick<BaileysSessionDependencies, 'loadAuthState' | 'wait' | 'downloadMedia'> = {},
+  dependencies: Pick<BaileysSessionDependencies, 'loadAuthState' | 'wait' | 'downloadMedia' | 'now'> = {},
   sessionLogger: SafeLogger = logger,
 ): Promise<SessionHarness> {
   const directory = await mkdtemp(join(tmpdir(), 'atua-baileys-session-'))
@@ -747,6 +748,136 @@ test('session directory permissions are restricted to the process user', async (
     await harness.waitForSocket(1)
     assert.equal((await stat(harness.directory)).mode & 0o777, 0o700)
   } finally {
+    await harness.dispose()
+  }
+})
+
+// -----------------------------------------------------------------------
+// Pareamento via QR reportado à API (ADR-049)
+// -----------------------------------------------------------------------
+
+test('reports qr_pending with the raw QR text, then connected with the paired phone number', async () => {
+  const fixedNow = new Date('2026-10-22T12:00:00.000Z')
+  const harness = await createHarness({ now: () => fixedNow })
+  const events: WhatsAppSessionStateEvent[] = []
+  const unsubscribe = harness.session.onSessionState((event) => events.push(event))
+
+  try {
+    const socket = await harness.waitForSocket(1)
+    socket.emitConnectionUpdate({ qr: 'raw-qr-text-from-baileys' })
+    socket.emitConnectionUpdate({ connection: 'open' })
+    await harness.session.waitUntilReady(harness.controller.signal)
+
+    assert.equal(events.length, 2)
+    assert.equal(events[0]?.state, 'qr_pending')
+    assert.equal(events[0]?.qr, 'raw-qr-text-from-baileys')
+    assert.equal(events[0]?.phoneNumber, null)
+    assert.equal(events[0]?.atUtc, fixedNow.toISOString())
+    assert.equal(events[1]?.state, 'connected')
+    assert.equal(events[1]?.qr, null)
+  } finally {
+    unsubscribe()
+    await harness.dispose()
+  }
+})
+
+test('never logs the raw QR text content', async () => {
+  const loggedFieldValues: unknown[] = []
+  const captureLogger: SafeLogger = {
+    info: (_event, fields) => loggedFieldValues.push(...Object.values(fields ?? {})),
+    warn: (_event, fields) => loggedFieldValues.push(...Object.values(fields ?? {})),
+    error: (_event, fields) => loggedFieldValues.push(...Object.values(fields ?? {})),
+  }
+  const harness = await createHarness({}, captureLogger)
+
+  try {
+    const socket = await harness.waitForSocket(1)
+    socket.emitConnectionUpdate({ qr: 'super-secret-raw-qr-payload' })
+
+    assert.equal(loggedFieldValues.includes('super-secret-raw-qr-payload'), false)
+  } finally {
+    await harness.dispose()
+  }
+})
+
+test('reports disconnected on a transient close and logged_out on DisconnectReason.loggedOut', async () => {
+  const harness = await createHarness({ wait: async () => {} })
+  const events: WhatsAppSessionStateEvent[] = []
+  const unsubscribe = harness.session.onSessionState((event) => events.push(event))
+
+  try {
+    const firstSocket = await harness.waitForSocket(1)
+    firstSocket.emitConnectionUpdate({ connection: 'open' })
+    await harness.session.waitUntilReady(harness.controller.signal)
+    firstSocket.emitConnectionUpdate({
+      connection: 'close',
+      lastDisconnect: { error: new Error('transient'), date: new Date() },
+    })
+
+    const secondSocket = await harness.waitForSocket(2)
+    secondSocket.emitConnectionUpdate({ connection: 'open' })
+    await harness.session.waitUntilReady(harness.controller.signal)
+    secondSocket.emitConnectionUpdate({
+      connection: 'close',
+      lastDisconnect: {
+        error: Object.assign(new Error('logged out'), {
+          output: { statusCode: DisconnectReason.loggedOut },
+        }),
+        date: new Date(),
+      },
+    })
+
+    await new Promise<void>((resolve) => setImmediate(resolve))
+
+    const states = events.map((event) => event.state)
+    assert.deepEqual(states, ['connected', 'disconnected', 'connected', 'logged_out'])
+  } finally {
+    unsubscribe()
+    await harness.dispose()
+  }
+})
+
+test('an oversized media download is discarded with a dedicated log event, never materializing the full binary', async () => {
+  const events: Array<{ event: string; fields?: Record<string, string | number | boolean> }> = []
+  const captureLogger: SafeLogger = {
+    info: (event, fields) => events.push({ event, fields }),
+    warn: (event, fields) => events.push({ event, fields }),
+    error: (event, fields) => events.push({ event, fields }),
+  }
+  const harness = await createHarness({
+    downloadMedia: async () => {
+      throw new MediaTooLargeError(16 * 1024 * 1024)
+    },
+  }, captureLogger)
+  const receivedMedia: unknown[] = []
+  const unsubscribeMedia = harness.session.onIncomingMedia((media) => receivedMedia.push(media))
+
+  try {
+    const socket = await harness.waitForSocket(1)
+    socket.emitConnectionUpdate({ connection: 'open' })
+    await harness.session.waitUntilReady(harness.controller.signal)
+
+    const audioMessage = {
+      key: {
+        remoteJid: '5511999991234@s.whatsapp.net',
+        senderPn: '5511999991234@s.whatsapp.net',
+        id: 'wamid-audio-too-large',
+        fromMe: false,
+      },
+      message: { audioMessage: { mimetype: 'audio/ogg', fileLength: 50_000_000, ptt: true } },
+      messageTimestamp: 1_792_243_200,
+    } as unknown as WAMessage
+
+    socket.emitMessagesUpsert([audioMessage])
+    await new Promise<void>((resolve) => setTimeout(resolve, 20))
+
+    assert.equal(receivedMedia.length, 0)
+    assert.ok(events.some(({ event, fields }) =>
+      event === 'whatsapp_inbound_media_too_large_discarded' &&
+      fields?.channelMessageId === 'wamid-audio-too-large' &&
+      fields?.limitBytes === 16 * 1024 * 1024))
+  } finally {
+    unsubscribeMedia()
     await harness.dispose()
   }
 })

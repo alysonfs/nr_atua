@@ -19,6 +19,43 @@ test('loadConfig accepts isolated credentials and an external session path', () 
   assert.equal(config.sendTimeoutMs, 30_000)
   assert.equal(config.printQr, false)
   assert.equal(config.sessionPath, '/tmp/atua-channel-session')
+  assert.equal(config.sessionReportServiceToken, undefined)
+  assert.equal(config.mediaQueueCapacity, 20)
+})
+
+test('loadConfig accepts an optional, distinct session-report credential', () => {
+  const config = loadConfig({
+    ...validEnvironment,
+    ChannelWorker__SessionReportServiceToken: 'session-report-test-token',
+  })
+
+  assert.equal(config.sessionReportServiceToken, 'session-report-test-token')
+})
+
+test('loadConfig rejects a session-report credential shared with another scope', () => {
+  assert.throws(
+    () => loadConfig({
+      ...validEnvironment,
+      ChannelWorker__SessionReportServiceToken: validEnvironment.ChannelWorker__ClaimServiceToken,
+    }),
+    /devem ser distintas/,
+  )
+})
+
+test('loadConfig accepts a custom media queue capacity and rejects out-of-range values', () => {
+  const config = loadConfig({
+    ...validEnvironment,
+    ChannelWorker__MediaQueueCapacity: '5',
+  })
+  assert.equal(config.mediaQueueCapacity, 5)
+
+  assert.throws(
+    () => loadConfig({
+      ...validEnvironment,
+      ChannelWorker__MediaQueueCapacity: '0',
+    }),
+    /entre 1 e 1000/,
+  )
 })
 
 test('loadConfig rejects shared credentials', () => {

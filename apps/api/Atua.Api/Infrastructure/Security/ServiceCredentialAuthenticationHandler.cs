@@ -50,6 +50,14 @@ public sealed class ServiceCredentialAuthenticationHandler(
     /// </summary>
     public const string ChannelMediaIngestScope = "channel.media.ingest";
 
+    /// <summary>
+    /// Escopo exclusivo de <c>POST /api/internal/channel/session</c>
+    /// (ADR-049) — reporta o estado de pareamento (QR/conectado/
+    /// desconectado/deslogado) da sessão Baileys do Channel. Não concede
+    /// nenhum dos demais escopos do canal.
+    /// </summary>
+    public const string ChannelSessionReportScope = "channel.session.report";
+
     protected override async Task<AuthenticateResult> HandleAuthenticateAsync()
     {
         var authorization = Request.Headers.Authorization.ToString();

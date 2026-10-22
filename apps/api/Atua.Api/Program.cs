@@ -110,6 +110,9 @@ builder.Services.AddAuthorization(options =>
     options.AddPolicy("ChannelMediaIngest", policy =>
         policy.AddAuthenticationSchemes(ServiceCredentialAuthenticationHandler.SchemeName)
             .RequireClaim("scope", ServiceCredentialAuthenticationHandler.ChannelMediaIngestScope));
+    options.AddPolicy("ChannelSessionReport", policy =>
+        policy.AddAuthenticationSchemes(ServiceCredentialAuthenticationHandler.SchemeName)
+            .RequireClaim("scope", ServiceCredentialAuthenticationHandler.ChannelSessionReportScope));
 });
 
 builder.Services.AddSingleton<IAmazonSimpleEmailServiceV2, AmazonSimpleEmailServiceV2Client>();
@@ -212,6 +215,13 @@ builder.Services.AddScoped<ITriagemChannelCommandRepository, TriagemChannelComma
 builder.Services.AddScoped<TriagemChannelCommandService>();
 builder.Services.AddScoped<ITriagemInboundMessageRepository, TriagemInboundMessageRepository>();
 builder.Services.AddScoped<IIngestTriagemChannelMessageUseCase, IngestTriagemChannelMessageUseCase>();
+
+// ADR-049: pareamento via QR — store em memória (singleton), sem migration
+// nova. API e Channel compartilham a mesma EC2, recriada do zero a cada
+// `make down`; o último estado reportado não precisa sobreviver a isso.
+builder.Services.AddSingleton<IWhatsAppSessionStateStore, InMemoryWhatsAppSessionStateStore>();
+builder.Services.AddScoped<IReportWhatsAppSessionStateUseCase, ReportWhatsAppSessionStateUseCase>();
+builder.Services.AddScoped<IGetWhatsAppSessionStateUseCase, GetWhatsAppSessionStateUseCase>();
 
 // Incremento de mídia (ADR-045/046): mesmo escopo exclusivo isolado dos
 // demais eventos de canal. Em produção, exige bucket S3 configurado — sem
@@ -335,6 +345,7 @@ app.MapRecurrentCollectionIntervalEndpoints();
 app.MapWorkOrderEndpoints();
 app.MapTriagemEndpoints();
 app.MapTriagemChannelEndpoints();
+app.MapWhatsAppSessionEndpoints();
 app.MapTriagemMessageTemplateEndpoints();
 app.MapTriagemPoolEndpoints();
 

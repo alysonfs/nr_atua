@@ -230,3 +230,84 @@ test('API errors expose status but never retain a response body', async () => {
       !error.message.includes('sensitive'),
   )
 })
+
+test('reportSessionState uses the dedicated credential and posts the raw session event', async () => {
+  let requestUrl = ''
+  let authorization = ''
+  let body: unknown
+  const client = new ChannelApiClient(
+    'http://localhost:5080',
+    'claim-only',
+    'complete-only',
+    'ingest-only',
+    'media-only',
+    async (input, init) => {
+      requestUrl = String(input)
+      authorization = new Headers(init?.headers).get('authorization') ?? ''
+      body = JSON.parse(String(init?.body))
+      return new Response(null, { status: 204 })
+    },
+    'session-report-only',
+  )
+
+  await client.reportSessionState(
+    { state: 'qr_pending', qr: 'raw-qr-text', phoneNumber: null, atUtc: '2026-10-22T12:00:00.000Z' },
+    new AbortController().signal,
+  )
+
+  assert.equal(requestUrl, 'http://localhost:5080/api/internal/channel/session')
+  assert.equal(authorization, 'Bearer session-report-only')
+  assert.deepEqual(body, {
+    state: 'qr_pending',
+    qr: 'raw-qr-text',
+    phoneNumber: null,
+    atUtc: '2026-10-22T12:00:00.000Z',
+  })
+})
+
+test('reportSessionState throws without reaching the network when no credential is configured', async () => {
+  let called = false
+  const client = new ChannelApiClient(
+    'http://localhost:5080',
+    'claim-only',
+    'complete-only',
+    'ingest-only',
+    'media-only',
+    async () => {
+      called = true
+      return new Response(null, { status: 204 })
+    },
+  )
+
+  await assert.rejects(
+    client.reportSessionState(
+      { state: 'connected', qr: null, phoneNumber: '5511999991234', atUtc: '2026-10-22T12:00:00.000Z' },
+      new AbortController().signal,
+    ),
+    /SessionReportServiceToken/,
+  )
+  assert.equal(called, false)
+})
+
+test('reportSessionState maps a non-2xx response to a typed error', async () => {
+  const client = new ChannelApiClient(
+    'http://localhost:5080',
+    'claim-only',
+    'complete-only',
+    'ingest-only',
+    'media-only',
+    async () => new Response(null, { status: 401 }),
+    'session-report-only',
+  )
+
+  await assert.rejects(
+    client.reportSessionState(
+      { state: 'logged_out', qr: null, phoneNumber: null, atUtc: '2026-10-22T12:00:00.000Z' },
+      new AbortController().signal,
+    ),
+    (error: unknown) => error instanceof ChannelApiError &&
+      error.operation === 'reportSession' &&
+      error.statusCode === 401 &&
+      error.isAuthError,
+  )
+})

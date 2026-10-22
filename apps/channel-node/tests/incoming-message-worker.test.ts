@@ -56,6 +56,7 @@ test('reports queued inbound messages and releases the listener on shutdown', as
       resolveReported?.()
     },
     async ingestMedia() {},
+    async reportSessionState() {},
     async complete() {
       return true
     },

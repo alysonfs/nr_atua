@@ -26,6 +26,29 @@ export interface ChannelApi {
     errorDescription: string | null,
     signal: AbortSignal,
   ): Promise<boolean>
+  reportSessionState(event: WhatsAppSessionStateEvent, signal: AbortSignal): Promise<void>
+}
+
+/**
+ * Estado de pareamento reportado pelo Channel à API (ADR-049) para que o
+ * QR possa ser exibido na tela de Configurações do Office (OWNER/ADMIN),
+ * já que a EC2 e seu EBS são destruídos a cada `make down`, perdendo a
+ * sessão Baileys e exigindo novo pareamento. O conteúdo de `qr` nunca deve
+ * ser logado — apenas enviado à API.
+ */
+export type WhatsAppSessionState = 'qr_pending' | 'connected' | 'disconnected' | 'logged_out'
+
+export interface WhatsAppSessionStateEvent {
+  state: WhatsAppSessionState
+  /** Texto bruto do QR (não imagem) — presente apenas quando `state === 'qr_pending'`. */
+  qr: string | null
+  /** Telefone pareado — presente apenas quando `state === 'connected'`. */
+  phoneNumber: string | null
+  atUtc: string
+}
+
+export interface WhatsAppSessionStateReceiver {
+  onSessionState(listener: (event: WhatsAppSessionStateEvent) => void): () => void
 }
 
 export interface IncomingWhatsAppMessage {

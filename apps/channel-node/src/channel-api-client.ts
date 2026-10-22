@@ -4,19 +4,21 @@ import type {
   ClaimedChannelCommand,
   IncomingWhatsAppMedia,
   IncomingWhatsAppMessage,
+  WhatsAppSessionStateEvent,
 } from './contracts.js'
 
 const claimPath = '/api/internal/triagens/canal/claim'
 const completePath = '/api/internal/triagens/canal/complete'
 const messageIngestPath = '/api/internal/triagens/canal/mensagens'
 const mediaIngestPath = '/api/internal/triagens/canal/midias'
+const sessionReportPath = '/api/internal/channel/session'
 
 export class ChannelApiError extends Error {
-  readonly operation: 'claim' | 'complete' | 'ingest' | 'ingestMedia'
+  readonly operation: 'claim' | 'complete' | 'ingest' | 'ingestMedia' | 'reportSession'
   readonly statusCode: number | null
 
   constructor(
-    operation: 'claim' | 'complete' | 'ingest' | 'ingestMedia',
+    operation: 'claim' | 'complete' | 'ingest' | 'ingestMedia' | 'reportSession',
     statusCode: number | null,
   ) {
     super(statusCode === null
@@ -33,6 +35,16 @@ export class ChannelApiError extends Error {
       this.statusCode === 429 ||
       (this.statusCode >= 500 && this.statusCode <= 599)
   }
+
+  /**
+   * Erro de credencial/configuração (R2 — ver
+   * docs/implementation/RISCOS-triagem-midia-pendentes.md): diferente de
+   * uma rejeição permanente por evento, indica que o próprio processo está
+   * mal configurado e deve ser tratado como fatal pelos consumidores.
+   */
+  get isAuthError(): boolean {
+    return this.statusCode === 401 || this.statusCode === 403
+  }
 }
 
 export class ChannelApiClient implements ChannelApi {
@@ -41,6 +53,7 @@ export class ChannelApiClient implements ChannelApi {
   private readonly completeToken: string
   private readonly messageIngestToken: string
   private readonly mediaIngestToken: string
+  private readonly sessionReportToken: string | undefined
   private readonly fetcher: typeof fetch
 
   constructor(
@@ -50,6 +63,7 @@ export class ChannelApiClient implements ChannelApi {
     messageIngestToken: string,
     mediaIngestToken: string,
     fetcher: typeof fetch = fetch,
+    sessionReportToken?: string,
   ) {
     this.baseUrl = baseUrl
     this.claimToken = claimToken
@@ -57,6 +71,7 @@ export class ChannelApiClient implements ChannelApi {
     this.messageIngestToken = messageIngestToken
     this.mediaIngestToken = mediaIngestToken
     this.fetcher = fetcher
+    this.sessionReportToken = sessionReportToken
   }
 
   async ingestMessage(message: IncomingWhatsAppMessage, signal: AbortSignal): Promise<void> {
@@ -180,6 +195,34 @@ export class ChannelApiClient implements ChannelApi {
 
     await response.body?.cancel()
     return true
+  }
+
+  async reportSessionState(event: WhatsAppSessionStateEvent, signal: AbortSignal): Promise<void> {
+    if (this.sessionReportToken === undefined) {
+      throw new Error('ChannelWorker__SessionReportServiceToken não configurado.')
+    }
+
+    let response: Response
+    try {
+      response = await this.fetcher(new URL(sessionReportPath, this.baseUrl), {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${this.sessionReportToken}`,
+          'content-type': 'application/json',
+          accept: 'application/json',
+        },
+        body: JSON.stringify(event),
+        signal,
+      })
+    } catch {
+      throw new ChannelApiError('reportSession', null)
+    }
+
+    if (response.status !== 200 && response.status !== 204) {
+      throw new ChannelApiError('reportSession', response.status)
+    }
+
+    await response.body?.cancel()
   }
 }
 

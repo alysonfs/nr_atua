@@ -75,3 +75,63 @@ POST {{Atua.Api_HostAddress}}/api/tenants/{{tenantId}}/triage-pool/{{triagemId}}
 Cookie: BrowserSession=******
 
 ###
+
+# Pareamento via QR (ADR-049) — reporte do Channel. Autorizado via
+# credencial de serviço com escopo exclusivo "channel.session.report";
+# tenant/integração vêm dos claims do token, não do corpo. Guarda apenas o
+# último estado — qualquer reporte substitui o anterior. 204 em sucesso.
+POST {{Atua.Api_HostAddress}}/api/internal/channel/session
+Content-Type: application/json
+Authorization: ******
+
+{
+  "state": "qr_pending",
+  "qr": "2@abc123,def456,...(texto bruto gerado pelo Baileys)",
+  "atUtc": "2026-10-22T12:00:00Z"
+}
+
+###
+
+# Pareamento via QR — reporte de conexão estabelecida (zera QR, guarda o
+# telefone pareado).
+POST {{Atua.Api_HostAddress}}/api/internal/channel/session
+Content-Type: application/json
+Authorization: ******
+
+{
+  "state": "connected",
+  "phoneNumber": "5511999991234",
+  "atUtc": "2026-10-22T12:00:05Z"
+}
+
+###
+
+# Pareamento via QR — reporte de logout (sessão Baileys invalidada;
+# tenant precisa ler um novo QR).
+POST {{Atua.Api_HostAddress}}/api/internal/channel/session
+Content-Type: application/json
+Authorization: ******
+
+{
+  "state": "logged_out",
+  "atUtc": "2026-10-22T12:10:00Z"
+}
+
+###
+
+# Pareamento via QR — Office consulta o último estado conhecido. Restrito
+# a membros OWNER/ADMIN do tenant (sessão de navegador). Sem estado
+# reportado ainda, devolve state="unknown". O QR só volta no corpo
+# enquanto state="qr_pending" e ainda não expirou (~60s do reporte).
+GET {{Atua.Api_HostAddress}}/api/tenants/{{tenantId}}/whatsapp-session
+Cookie: BrowserSession=******
+
+###
+
+# Pareamento via QR — variante com integrationId explícito, necessária
+# quando o tenant tem mais de uma integração WhatsApp (sem isso, a API
+# responde 400 integration_id_required).
+GET {{Atua.Api_HostAddress}}/api/tenants/{{tenantId}}/whatsapp-session?integrationId=00000000-0000-0000-0000-000000000000
+Cookie: BrowserSession=******
+
+###

@@ -20,8 +20,12 @@ import type {
   SafeLogger,
   WhatsAppMessageReceiver,
   WhatsAppMessageSender,
+  WhatsAppSessionState,
+  WhatsAppSessionStateEvent,
+  WhatsAppSessionStateReceiver,
 } from './contracts.js'
 import { PermanentChannelSendError } from './phone.js'
+import { collectBufferWithLimit, MAX_INBOUND_MEDIA_BYTES, MediaTooLargeError } from './media-download-limit.js'
 
 const qrcodeTerminal: typeof import('qrcode-terminal') =
   createRequire(import.meta.url)('qrcode-terminal')
@@ -53,12 +57,15 @@ export interface BaileysSessionDependencies {
   wait?: (milliseconds: number, signal: AbortSignal) => Promise<void>
   /** Baixa e descriptografa o binário de uma mensagem de mídia — injetável para testes com buffers sintéticos. */
   downloadMedia?: (message: WAMessage) => Promise<Buffer>
+  /** Instante atual — injetável para tornar `atUtc` determinístico nos testes. */
+  now?: () => Date
 }
 
-export class BaileysSession implements WhatsAppMessageSender, WhatsAppMessageReceiver {
+export class BaileysSession implements WhatsAppMessageSender, WhatsAppMessageReceiver, WhatsAppSessionStateReceiver {
   private readonly stateEvents = new EventEmitter()
   private readonly incomingMessageListeners = new Set<(message: IncomingWhatsAppMessage) => void>()
   private readonly incomingMediaListeners = new Set<(media: IncomingWhatsAppMedia) => void>()
+  private readonly sessionStateListeners = new Set<(event: WhatsAppSessionStateEvent) => void>()
   private readonly sessionPath: string
   private readonly printQr: boolean
   private readonly logger: SafeLogger
@@ -70,6 +77,7 @@ export class BaileysSession implements WhatsAppMessageSender, WhatsAppMessageRec
   private readonly createSocket: (auth: AuthenticationState) => BaileysSessionSocket
   private readonly wait: (milliseconds: number, signal: AbortSignal) => Promise<void>
   private readonly downloadMedia: (message: WAMessage) => Promise<Buffer>
+  private readonly now: () => Date
 
   constructor(
     sessionPath: string,
@@ -84,6 +92,25 @@ export class BaileysSession implements WhatsAppMessageSender, WhatsAppMessageRec
     this.createSocket = dependencies.createSocket ?? createBaileysSocket
     this.wait = dependencies.wait ?? delay
     this.downloadMedia = dependencies.downloadMedia ?? defaultDownloadMedia
+    this.now = dependencies.now ?? (() => new Date())
+  }
+
+  onSessionState(listener: (event: WhatsAppSessionStateEvent) => void): () => void {
+    this.sessionStateListeners.add(listener)
+    return () => this.sessionStateListeners.delete(listener)
+  }
+
+  /** Nunca loga o conteúdo de `event.qr` — apenas repassa aos listeners. */
+  private emitSessionState(state: WhatsAppSessionState, qr: string | null, phoneNumber: string | null): void {
+    const event: WhatsAppSessionStateEvent = {
+      state,
+      qr,
+      phoneNumber,
+      atUtc: this.now().toISOString(),
+    }
+    for (const listener of this.sessionStateListeners) {
+      listener(event)
+    }
   }
 
   async run(signal: AbortSignal): Promise<void> {
@@ -183,6 +210,15 @@ export class BaileysSession implements WhatsAppMessageSender, WhatsAppMessageRec
     try {
       content = await this.downloadMedia(message)
     } catch (error) {
+      if (error instanceof MediaTooLargeError) {
+        this.logger.error('whatsapp_inbound_media_too_large_discarded', {
+          channelMessageId: envelope.messageId,
+          correlationId: envelope.correlationId,
+          limitBytes: error.limitBytes,
+        })
+        return
+      }
+
       this.logger.error('whatsapp_inbound_media_download_failed', {
         channelMessageId: envelope.messageId,
         correlationId: envelope.correlationId,
@@ -385,6 +421,7 @@ export class BaileysSession implements WhatsAppMessageSender, WhatsAppMessageRec
           } else {
             this.logger.warn('whatsapp_pairing_required_qr_output_disabled')
           }
+          this.emitSessionState('qr_pending', update.qr, null)
         }
 
         if (update.connection === 'open') {
@@ -392,10 +429,13 @@ export class BaileysSession implements WhatsAppMessageSender, WhatsAppMessageRec
           onConnected()
           this.logger.info('whatsapp_session_connected')
           this.stateEvents.emit('ready')
+          this.emitSessionState('connected', null, extractPhoneFromJid(auth.state.creds.me?.id))
         } else if (update.connection === 'close') {
           this.ready = false
           this.stateEvents.emit('disconnected')
-          finish(getDisconnectStatusCode(update.lastDisconnect?.error))
+          const statusCode = getDisconnectStatusCode(update.lastDisconnect?.error)
+          this.emitSessionState(statusCode === DisconnectReason.loggedOut ? 'logged_out' : 'disconnected', null, null)
+          finish(statusCode)
         }
       }
 
@@ -720,8 +760,14 @@ function buildMediaMetadata(
   }
 }
 
+/**
+ * Baixa como stream (nunca `'buffer'`) e impõe {@link MAX_INBOUND_MEDIA_BYTES}
+ * durante o consumo (R1, resolvido em 2026-10-22) — o binário nunca é
+ * materializado por inteiro quando excede o limite.
+ */
 async function defaultDownloadMedia(message: WAMessage): Promise<Buffer> {
-  return downloadMediaMessage(message, 'buffer', {})
+  const stream = await downloadMediaMessage(message, 'stream', {})
+  return collectBufferWithLimit(stream, MAX_INBOUND_MEDIA_BYTES)
 }
 
 function getJidKind(jid: string): 'phone' | 'group' | 'lid' | 'other' {
@@ -735,6 +781,21 @@ function getJidKind(jid: string): 'phone' | 'group' | 'lid' | 'other' {
     return 'lid'
   }
   return 'other'
+}
+
+/**
+ * Extrai o telefone de um JID pareado (`creds.me.id`, ex.:
+ * `5511999999999:12@s.whatsapp.net`) — usado apenas para reportar o
+ * `phoneNumber` do evento `connected` (ADR-049). Nunca usado para texto
+ * inbound (fluxo separado em {@link parseEnvelope}).
+ */
+function extractPhoneFromJid(id: string | null | undefined): string | null {
+  if (typeof id !== 'string' || id === '') {
+    return null
+  }
+
+  const phone = /^(?<phone>[1-9]\d{7,14})(?::\d+)?@s\.whatsapp\.net$/.exec(id)?.groups?.phone
+  return phone ?? null
 }
 
 function getDisconnectStatusCode(error: unknown): number | undefined {

@@ -39,6 +39,8 @@ class FakeApi implements ChannelApi {
 
   async ingestMedia(): Promise<void> {}
 
+  async reportSessionState(): Promise<void> {}
+
   async complete(
     _command: ClaimedChannelCommand,
     outcome: ChannelOutcome,
@@ -179,6 +181,7 @@ test('the worker waits for WhatsApp readiness before claiming', async () => {
     },
     async ingestMessage() {},
     async ingestMedia() {},
+    async reportSessionState() {},
     async complete() {
       return true
     },

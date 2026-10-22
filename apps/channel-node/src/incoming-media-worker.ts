@@ -6,27 +6,57 @@ import type {
   WhatsAppMessageReceiver,
 } from './contracts.js'
 
+/** Capacidade padrão da fila inbound de mídia (R1) quando não configurada via `ChannelWorker__MediaQueueCapacity`. */
+export const DEFAULT_MEDIA_QUEUE_CAPACITY = 20
+
 /**
  * Espelha {@link IncomingMessageWorker} para o evento de mídia — fila
  * assíncrona + retentativa com backoff exponencial, mas usando
  * {@link ChannelApi.ingestMedia} e a assinatura <c>onIncomingMedia</c> do
  * receiver. Mantido como implementação própria (não compartilhada) para
  * preservar o caminho de texto intocado.
+ *
+ * R1 (docs/implementation/RISCOS-triagem-midia-pendentes.md, resolvido em
+ * 2026-10-22): a fila tem capacidade limitada — mídia excedente é
+ * descartada com log em vez de crescer sem limite.
+ *
+ * R2 (mesmo documento): uma rejeição permanente (não retentável) da API é
+ * registrada e o worker segue consumindo a fila — não propaga a exceção
+ * para fora de {@link run}, exceto quando a credencial em si é inválida
+ * (401/403), caso fatal de configuração que deve interromper o processo.
  */
 export class IncomingMediaWorker {
   private readonly api: ChannelApi
   private readonly receiver: WhatsAppMessageReceiver
   private readonly logger: SafeLogger
+  private readonly queueCapacity: number
 
-  constructor(api: ChannelApi, receiver: WhatsAppMessageReceiver, logger: SafeLogger) {
+  constructor(
+    api: ChannelApi,
+    receiver: WhatsAppMessageReceiver,
+    logger: SafeLogger,
+    queueCapacity: number = DEFAULT_MEDIA_QUEUE_CAPACITY,
+  ) {
     this.api = api
     this.receiver = receiver
     this.logger = logger
+    this.queueCapacity = queueCapacity
   }
 
   async run(signal: AbortSignal): Promise<void> {
-    const queue = new AsyncQueue<IncomingWhatsAppMedia>()
-    const unsubscribe = this.receiver.onIncomingMedia((media) => queue.enqueue(media))
+    const queue = new AsyncQueue<IncomingWhatsAppMedia>(this.queueCapacity)
+    const unsubscribe = this.receiver.onIncomingMedia((media) => {
+      const accepted = queue.enqueue(media)
+      if (!accepted) {
+        this.logger.error('channel_inbound_media_queue_full_discarded', {
+          channelMessageId: media.channelMessageId,
+          correlationId: media.correlationId,
+          mediaKind: media.mediaKind,
+          sizeBytes: media.sizeBytes,
+          queueCapacity: this.queueCapacity,
+        })
+      }
+    })
 
     try {
       while (!signal.aborted) {
@@ -66,7 +96,13 @@ export class IncomingMediaWorker {
             statusCode: error.statusCode ?? 0,
             correlationId: media.correlationId,
           })
-          throw error
+          if (error.isAuthError) {
+            // Erro de credencial/configuração — fatal, diferente da rejeição
+            // permanente por evento (R2): não há benefício em seguir
+            // consumindo a fila com uma credencial inválida.
+            throw error
+          }
+          return
         }
 
         consecutiveFailures += 1
@@ -86,14 +122,24 @@ class AsyncQueue<T> {
   private readonly items: T[] = []
   private readonly waiters = new Set<() => void>()
   private closed = false
+  private readonly capacity: number
 
-  enqueue(item: T): void {
+  constructor(capacity: number = Infinity) {
+    this.capacity = capacity
+  }
+
+  /** Retorna `false` (sem lançar) quando a fila está cheia ou fechada — o item é descartado pelo chamador. */
+  enqueue(item: T): boolean {
     if (this.closed) {
-      return
+      return false
+    }
+    if (this.items.length >= this.capacity) {
+      return false
     }
 
     this.items.push(item)
     this.waiters.values().next().value?.()
+    return true
   }
 
   async dequeue(signal: AbortSignal): Promise<T | undefined> {

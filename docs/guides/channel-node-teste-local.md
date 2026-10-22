@@ -19,6 +19,12 @@ interromper o processo durante o processamento pode exigir reentrega da mensagem
 - Migrations inbound aplicadas e integração de teste provisionada com os
   escopos `channel.command.claim`, `channel.command.complete` e
   `channel.message.ingest`.
+- Opcional: para reportar o estado de pareamento (QR) à API (ADR-049), a
+  integração de teste também pode ter o escopo `channel.session.report` e a
+  credencial correspondente exportada como
+  `ChannelWorker__SessionReportServiceToken`. Sem essa variável, o Channel
+  segue operando normalmente — apenas não reporta o estado da sessão ao
+  Office.
 - Node.js, pnpm e dependências do monorepo instalados.
 - Arquivos locais de credenciais criados pelos scripts operacionais:
   - `~/.config/atua/channel/channel.env`

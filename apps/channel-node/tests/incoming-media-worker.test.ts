@@ -63,6 +63,7 @@ test('reports queued inbound media and releases the listener on shutdown', async
       received.push(value)
       resolveReported?.()
     },
+    async reportSessionState() {},
     async complete() {
       return true
     },
@@ -109,6 +110,7 @@ test('retries a transient ingestMedia failure with backoff and eventually succee
       }
       resolveReported?.()
     },
+    async reportSessionState() {},
     async complete() {
       return true
     },
@@ -125,7 +127,65 @@ test('retries a transient ingestMedia failure with backoff and eventually succee
   assert.equal(attempts, 3)
 })
 
-test('a non-retryable ingestMedia rejection stops the retry loop without throwing out of run', async () => {
+test('a non-retryable ingestMedia rejection (R2) is logged and the worker keeps consuming the queue without throwing', async () => {
+  let listener: ((incoming: IncomingWhatsAppMedia) => void) | undefined
+  const receiver: WhatsAppMessageReceiver = {
+    onIncomingMessage() {
+      return () => {}
+    },
+    onIncomingMedia(value) {
+      listener = value
+      return () => {}
+    },
+  }
+  const attempts: IncomingWhatsAppMedia[] = []
+  const reported: IncomingWhatsAppMedia[] = []
+  let resolveSecond: (() => void) | undefined
+  const secondReported = new Promise<void>((resolve) => {
+    resolveSecond = resolve
+  })
+  const api: ChannelApi = {
+    async claim() {
+      return null
+    },
+    async ingestMessage() {},
+    async ingestMedia(value) {
+      attempts.push(value)
+      if (value.channelMessageId === media.channelMessageId) {
+        throw new ChannelApiError('ingestMedia', 409)
+      }
+      reported.push(value)
+      resolveSecond?.()
+    },
+    async reportSessionState() {},
+    async complete() {
+      return true
+    },
+  }
+  const events: Array<{ event: string; fields?: Record<string, string | number | boolean> }> = []
+  const captureLogger: SafeLogger = {
+    info: (event, fields) => events.push({ event, fields }),
+    warn: (event, fields) => events.push({ event, fields }),
+    error: (event, fields) => events.push({ event, fields }),
+  }
+  const controller = new AbortController()
+  const worker = new IncomingMediaWorker(api, receiver, captureLogger)
+  const task = worker.run(controller.signal)
+
+  listener?.(media)
+  await new Promise((resolve) => setTimeout(resolve, 20))
+  listener?.({ ...media, channelMessageId: 'media-message-2' })
+  await secondReported
+  controller.abort()
+  await task
+
+  assert.equal(attempts.length, 2)
+  assert.deepEqual(reported.map((item) => item.channelMessageId), ['media-message-2'])
+  assert.ok(events.some(({ event, fields }) =>
+    event === 'channel_inbound_media_rejected' && fields?.statusCode === 409))
+})
+
+test('an auth-error (401/403) ingestMedia rejection is fatal and propagates out of run', async () => {
   let listener: ((incoming: IncomingWhatsAppMedia) => void) | undefined
   const receiver: WhatsAppMessageReceiver = {
     onIncomingMessage() {
@@ -145,8 +205,9 @@ test('a non-retryable ingestMedia rejection stops the retry loop without throwin
     async ingestMessage() {},
     async ingestMedia() {
       attempts += 1
-      throw new ChannelApiError('ingestMedia', 409)
+      throw new ChannelApiError('ingestMedia', 401)
     },
+    async reportSessionState() {},
     async complete() {
       return true
     },
@@ -165,4 +226,63 @@ test('a non-retryable ingestMedia rejection stops the retry loop without throwin
   assert.equal(attempts, 1)
   assert.equal(errors.length, 1)
   assert.ok(errors[0] instanceof ChannelApiError)
+})
+
+test('media beyond queue capacity (R1) is discarded with a log instead of growing the queue unbounded', async () => {
+  let listener: ((incoming: IncomingWhatsAppMedia) => void) | undefined
+  const receiver: WhatsAppMessageReceiver = {
+    onIncomingMessage() {
+      return () => {}
+    },
+    onIncomingMedia(value) {
+      listener = value
+      return () => {}
+    },
+  }
+  let releaseIngest: (() => void) | undefined
+  const blocked = new Promise<void>((resolve) => {
+    releaseIngest = resolve
+  })
+  const received: IncomingWhatsAppMedia[] = []
+  const api: ChannelApi = {
+    async claim() {
+      return null
+    },
+    async ingestMessage() {},
+    async ingestMedia(value) {
+      received.push(value)
+      await blocked
+    },
+    async reportSessionState() {},
+    async complete() {
+      return true
+    },
+  }
+  const events: Array<{ event: string; fields?: Record<string, string | number | boolean> }> = []
+  const captureLogger: SafeLogger = {
+    info: (event, fields) => events.push({ event, fields }),
+    warn: (event, fields) => events.push({ event, fields }),
+    error: (event, fields) => events.push({ event, fields }),
+  }
+  const controller = new AbortController()
+  const worker = new IncomingMediaWorker(api, receiver, captureLogger, 1)
+  const task = worker.run(controller.signal)
+
+  // O primeiro item é imediatamente retirado da fila pelo worker e fica
+  // bloqueado em ingestMedia; o segundo ocupa a única vaga da fila; o
+  // terceiro deve ser descartado por capacidade.
+  listener?.({ ...media, channelMessageId: 'media-message-a' })
+  await new Promise((resolve) => setTimeout(resolve, 10))
+  listener?.({ ...media, channelMessageId: 'media-message-b' })
+  listener?.({ ...media, channelMessageId: 'media-message-c' })
+  await new Promise((resolve) => setTimeout(resolve, 10))
+
+  releaseIngest?.()
+  controller.abort()
+  await task
+
+  assert.ok(events.some(({ event, fields }) =>
+    event === 'channel_inbound_media_queue_full_discarded' &&
+    fields?.channelMessageId === 'media-message-c'))
+  assert.equal(received.some((item) => item.channelMessageId === 'media-message-c'), false)
 })
