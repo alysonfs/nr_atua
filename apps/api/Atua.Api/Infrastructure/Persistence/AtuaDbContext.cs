@@ -58,6 +58,8 @@ public sealed class AtuaDbContext(DbContextOptions<AtuaDbContext> options) : DbC
 
     public DbSet<TriagemInboundMessage> TriagemInboundMessages => Set<TriagemInboundMessage>();
 
+    public DbSet<TriagemInboundMedia> TriagemInboundMedia => Set<TriagemInboundMedia>();
+
     public DbSet<TriagemMessageTemplate> TriagemMessageTemplates => Set<TriagemMessageTemplate>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -84,6 +86,7 @@ public sealed class AtuaDbContext(DbContextOptions<AtuaDbContext> options) : DbC
         ConfigureTriagemTriggerOutbox(modelBuilder.Entity<TriagemTriggerOutbox>());
         ConfigureTriagemChannelCommand(modelBuilder.Entity<TriagemChannelCommand>());
         ConfigureTriagemInboundMessage(modelBuilder.Entity<TriagemInboundMessage>());
+        ConfigureTriagemInboundMedia(modelBuilder.Entity<TriagemInboundMedia>());
         ConfigureTriagemMessageTemplate(modelBuilder.Entity<TriagemMessageTemplate>());
     }
 
@@ -712,6 +715,43 @@ public sealed class AtuaDbContext(DbContextOptions<AtuaDbContext> options) : DbC
         builder.HasOne<Integration>().WithMany().HasForeignKey(message => message.IntegrationId)
             .OnDelete(DeleteBehavior.Restrict);
         builder.HasOne<Triagem>().WithMany().HasForeignKey(message => message.TriagemId)
+            .OnDelete(DeleteBehavior.Restrict);
+    }
+
+    private static void ConfigureTriagemInboundMedia(EntityTypeBuilder<TriagemInboundMedia> builder)
+    {
+        builder.ToTable(TriagemInboundMediaPersistenceSchema.TableName);
+        builder.HasKey(media => media.Id);
+        builder.Property(media => media.Id).ValueGeneratedNever();
+        builder.Property(media => media.ChannelMessageId).HasMaxLength(256).IsRequired();
+        builder.Property(media => media.ChannelIdempotencyKey).HasMaxLength(128).IsRequired();
+        builder.Property(media => media.SenderPhone).HasMaxLength(32).IsRequired();
+        builder.Property(media => media.ConversationKind).HasMaxLength(16).IsRequired();
+        builder.Property(media => media.MediaKind).HasConversion<string>().HasMaxLength(16).IsRequired();
+        builder.Property(media => media.ContentType).HasMaxLength(128).IsRequired();
+        builder.Property(media => media.SizeBytes).IsRequired();
+        builder.Property(media => media.Sha256).HasMaxLength(64);
+        builder.Property(media => media.Caption).HasMaxLength(4_096);
+        builder.Property(media => media.Outcome).HasConversion<string>().HasMaxLength(32).IsRequired();
+        builder.Property(media => media.CandidateTriagemIds)
+            .HasColumnType("uuid[]").IsRequired();
+        builder.Property(media => media.StorageKey).HasMaxLength(256);
+        builder.Property(media => media.ReceivedAtUtc).IsRequired();
+        builder.Property(media => media.ExpiresAtUtc).IsRequired();
+        builder.Property(media => media.CreatedAtUtc).IsRequired();
+
+        builder.HasIndex(media => new { media.TenantId, media.ChannelIdempotencyKey })
+            .IsUnique()
+            .HasDatabaseName(TriagemInboundMediaPersistenceSchema.IdempotencyUniqueIndexName);
+        builder.HasIndex(media => new { media.TenantId, media.IntegrationId, media.SenderPhone });
+        builder.HasIndex(media => media.TriagemId);
+        builder.HasIndex(media => media.ExpiresAtUtc);
+        builder.HasIndex(media => media.CandidateTriagemIds)
+            .HasMethod("gin");
+
+        builder.HasOne<Integration>().WithMany().HasForeignKey(media => media.IntegrationId)
+            .OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne<Triagem>().WithMany().HasForeignKey(media => media.TriagemId)
             .OnDelete(DeleteBehavior.Restrict);
     }
 

@@ -57,6 +57,7 @@ const computeStack = new AtuaComputeStack(app, 'AtuaComputeStack', {
   sgApi: networkStack.sgApi,
   sgCollector: networkStack.sgCollector,
   releasesBucket: dataStack.releasesBucket,
+  mediaTriagemBucket: dataStack.mediaTriagemBucket,
   rdsSecret: dataStack.rdsSecret,
   mongoSecret: dataStack.mongoSecret,
   appSecret: dataStack.appSecret,

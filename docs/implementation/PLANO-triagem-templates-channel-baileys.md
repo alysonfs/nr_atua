@@ -554,7 +554,9 @@ Ordem recomendada:
 1. [x] evento `MessageReceived` com deduplicação por tenant e chave estável;
 2. [x] transição `CONTATO_INICIADO` → `EM_COLETA` para texto individual não
    vazio do número vinculado a exatamente uma triagem;
-3. recebimento de mídias e armazenamento no S3 (evento `MediaReceived`);
+3. recebimento de mídias e armazenamento no S3 (evento `MediaReceived`),
+   incluindo áudio original e transcrição persistida segundo a lógica das
+   mensagens inbound;
 4. checklist determinístico e contadores de tentativas;
 5. integração da LLM;
 6. lembretes de 24 e 36 horas;
@@ -668,8 +670,40 @@ em execução; desligamentos podem atrasar o purge. O ambiente sob demanda não
 é uma garantia operacional para produção.
 Pedido de exclusão ou mais de cinco anos de inatividade da conta, conforme
 RS-003, pode antecipar a remoção, mas o fluxo geral de exclusão do tenant
-ainda não existe e deverá incluir os registros inbound. Retenção de anexos
-em S3 e de cópias em backups permanece pendente.
+ainda não existe e deverá incluir os registros inbound, anexos e transcrições.
+A política de anexos foi definida pelo PO em 2026-10-20 conforme o
+[ADR-045](../decisions/ADR-045-retencao-anexos-e-transcricao-audios-triagem.md):
+
+- todos os anexos têm o mesmo prazo: cinco anos desde o recebimento da mensagem
+  no inbound do posto, com elegibilidade para expurgo físico um ano depois;
+- áudios originais devem ser armazenados em S3 e transcritos; o texto segue
+  a lógica de persistência e retenção das mensagens inbound, com vínculo ao
+  áudio e ao atendimento;
+- upload, transcrição ou reprocessamento não reiniciam a retenção;
+- trata-se de decisão de produto informada pelo PO como prazo legal, não de
+  parecer jurídico; a validação jurídica e a política de backups permanecem
+  pendentes;
+- ingestão de mídia e job de expurgo estão implementados localmente; o E2E
+  com S3 permanece pendente. Transcrição e exclusão geral do tenant não
+  estão implementadas;
+- o PO definiu que a transcrição pode ocorrer em segundo plano, que Amazon
+  Transcribe deve ser avaliado primeiro e que volume de áudios é desconhecido.
+  Também definiu que transcrição pendente ou com falha não bloqueia a triagem:
+  operador mantém acesso ao áudio original e vê o texto quando estiver pronto;
+- a direção arquitetural foi aceita por `software-architect` e `aws-architect`
+  em 2026-10-20 e registrada no
+  [ADR-046](../decisions/ADR-046-pipeline-midia-transcricao-audio-triagem.md):
+  persistir o áudio original no S3 antes da transcrição batch assíncrona; o
+  texto segue a lógica das mensagens inbound e herda o recebimento original;
+- a direção aceita não valida a escolha final do fornecedor, qualidade ou
+  custos. O expurgo deve ser executado por job ativo da aplicação orientado
+  pela data do inbound; S3 Lifecycle por idade do objeto é apenas complementar;
+- não há estimativa numérica de custo. Antes da implementação da transcrição,
+  validar
+  qualidade de pt-BR em amostras representativas, formatos e duração máxima,
+  prazo máximo esperado, retentativas e volume. A amostra deve ser autorizada
+  e desidentificada. A política de backup e a validação jurídica permanecem
+  pendentes;
 
 Validação local do incremento de retenção em 2026-10-18:
 
@@ -683,8 +717,10 @@ Validação local do incremento de retenção em 2026-10-18:
 - SQL idempotente das três migrations inbound gerado localmente, com
   connection string fictícia; nenhum acesso ao RDS;
 - naquela validação local, o job de purge e as migrations ainda não haviam sido
-  executados contra PostgreSQL. As migrations foram aplicadas ao RDS de teste
-  em 2026-10-18; o job de purge continua sem validação operacional;
+  executados contra PostgreSQL. As migrations de mensagens inbound foram
+  aplicadas ao RDS de teste em 2026-10-18; a migration de mídia foi aplicada
+  em 2026-10-21. O job de purge foi testado localmente, mas ainda não foi
+  validado em serviço remoto;
 - em 2026-10-20 foram concluídos os E2E sintéticos de saída e inbound
   descritos acima.
 
@@ -694,8 +730,11 @@ Não bloqueiam o desenvolvimento local, mas impedem produção:
 
 - parecer jurídico sobre o uso do canal não oficial;
 - definição de base legal e revisão jurídica LGPD;
-- definição da retenção de anexos e backups; implementação do fluxo geral de
-  exclusão de dados do tenant conforme RS-003;
+- validação jurídica e operacionalização da política de retenção dos anexos
+  definida no ADR-045; definição da política de backups e implementação do
+  fluxo geral de exclusão de dados do tenant conforme RS-003;
+- aprovação do ADR-046, avaliação de qualidade e confirmação de limites e
+  volume/custos da transcrição antes da implementação;
 - topologia always-on do Channel;
 - persistência de sessão em produção;
 - definição de custos e responsável pelo ambiente contínuo;
@@ -711,3 +750,164 @@ Não bloqueiam o desenvolvimento local, mas impedem produção:
 - classificação automática de SubStatus;
 - exposição do ATYNO como marca ao consumidor;
 - armazenamento de tokens ou sessão no repositório.
+
+## 9. Bucket S3 isolado para testes de mídia (2026-10-20, aws-architect)
+
+Provisionado sob demanda explícita do usuário (plano AWS FREE, perfil
+`moldato`, região `sa-east-1`), exclusivamente para suportar os futuros testes de integração de
+mídia da triagem (ADR-045/ADR-046). Criado **fora** do app CDK em `infra/`
+(nenhuma stack existente foi alterada ou destruída), via AWS CLI, seguindo o
+mesmo padrão de bucket privado já usado em `AtuaDataStack`
+(`blockPublicAccess: BLOCK_ALL`, `encryption: S3_MANAGED`).
+
+Configuração:
+
+- bucket: `atua-462991286554-media-triagem-test`, região `sa-east-1`;
+- Block Public Access: todas as 4 opções ativas;
+- Object Ownership: `BucketOwnerEnforced` (ACLs desabilitadas);
+- criptografia padrão: SSE-S3 (AES256);
+- bucket policy: nega qualquer `s3:*` sem TLS (`aws:SecureTransport=false`);
+- versionamento: não habilitado (permite limpeza simples por chave);
+- sem Object Lock/retenção de 6 anos, sem replicação cross-region (dado
+  sintético de teste, não dado de produção coberto pelo ADR-045);
+- tags: `app=atua`, `environment=test`, `purpose=media-triagem-smoke-test`,
+  `owner=aws-architect`, `created-by=ari`;
+- nenhuma role/usuário/key IAM foi criada; nenhum acesso programático de
+  runtime foi concedido. A implementação local do adaptador S3 está registrada
+  na seção 10, mas o acesso real da API ao bucket ainda depende de autorização
+  operacional separada e de credencial de serviço com escopo mínimo.
+
+Smoke test executado (arquivo sintético, sem dados reais):
+
+- chave: `smoke-test/smoke-20261020T205104-6bda84.txt`;
+- PUT com `--server-side-encryption AES256`: sucesso, `ServerSideEncryption:
+  AES256` confirmado no `HeadObject`;
+- GET e comparação de hash SHA-256 local vs. baixado: `HASH_MATCH=OK`
+  (`63e5d0a9ab50645eb46baf5845138f2bde974b57d04df3501a03b9985a6b56ed`);
+- acesso anônimo (sem credenciais, via HTTPS direto): `HTTP 403` (negado,
+  conforme esperado com Block Public Access + policy);
+- `DeleteObject` da chave exata executado; `HeadObject` subsequente retornou
+  `404 Not Found`;
+- `ListObjectsV2` e `ListMultipartUploads` no bucket: ambos vazios
+  (`Contents` ausente, nenhum upload incompleto) — bucket permanece vazio e
+  existente para os próximos testes de integração.
+
+Comando de limpeza para uso futuro (apagar objetos por chave exata
+enumerada, nunca recursivo/wildcard):
+
+```bash
+aws s3api delete-object --bucket atua-462991286554-media-triagem-test \
+  --key "<chave-exata>" --profile moldato --region sa-east-1
+```
+
+Custos: sem estimativa numérica verificada. Cobrança qualitativa aplicável —
+armazenamento por GB-mês, requisições PUT/COPY/POST/LIST e GET/SELECT, e
+transferência de saída — conforme
+[aws.amazon.com/s3/pricing](https://aws.amazon.com/s3/pricing/). Não há objetos
+armazenados ao final deste teste; as requisições realizadas continuam sujeitas
+à cobrança aplicável ao projeto.
+
+Próximos passos operacionais (não autorizados nesta etapa):
+
+- avaliar Server Access Logging ou CloudTrail data events (S3) e métricas
+  do S3 (request metrics) antes do uso real;
+- configurar IAM de runtime com escopo mínimo e credencial de serviço para
+  `channel.media.ingest` somente após autorização operacional;
+- aplicar a migration no ambiente de teste e executar um E2E autorizado com
+  mídia sintética, removendo ao final apenas as chaves exatas criadas;
+- decidir a vida útil deste bucket de teste junto ao `orchestrator`/PO; a
+  exclusão do bucket em si não está autorizada.
+
+## 10. Implementação local da ingestão de mídia (2026-10-21)
+
+ADR-047 autoriza o primeiro incremento, sem transcrição e sem operações na
+AWS. A implementação local está concluída e foi aprovada pelo `qa-engineer`.
+
+- API: `POST /api/internal/triagens/canal/midias`, multipart, escopo exclusivo
+  `channel.media.ingest`; tenant e integração vêm dos claims da credencial.
+- Mídias aceitas: áudio, imagem, vídeo e PDF; limite de 16 MiB; assinatura do
+  conteúdo e SHA-256 validados pela API.
+- Associação por tenant, integração e telefone; sem triagem única, o binário
+  não é armazenado. Para uma única triagem, a mídia é aceita em qualquer
+  estado; `CONTATO_INICIADO` avança para `EM_COLETA`.
+- S3 adapter usa `PutIfAbsent` e chave
+  `tenants/{tenantId}/inbound-media/{mediaId}`; testes usam storage fake.
+- Retenção: cinco anos desde `receivedAtUtc`, com elegibilidade de expurgo
+  após mais um ano. O job de expurgo ainda não foi implementado.
+- Channel Node extrai a mídia do evento WhatsApp e a encaminha como evento
+  único, com fila e retentativas; mídia não é duplicada como mensagem textual.
+- Migration adicionada, mas não aplicada em ambiente real. Nenhuma chamada
+  AWS, alteração de IAM/credenciais/RDS ou deploy foi executada.
+- Validação: API **433/433** testes; Channel Node **45/45** testes. A suíte
+  .NET reporta avisos de auditoria para `System.Security.Cryptography.Pkcs`
+  `9.0.0` (NU1902/NU1903), não alterado nesta tarefa.
+
+Na data desta implementação, a migration e o E2E com S3 ainda estavam
+pendentes. O status atualizado está na seção 11.
+
+## 11. Expurgo de mídia e preparação do E2E (2026-10-21)
+
+### Job local de expurgo
+
+- Implementado `TriagemInboundMediaPurgeService` e
+  `TriagemInboundMediaPurgeJob`.
+- O job reaproveita o marco de retenção existente: elegibilidade quando
+  `ExpiresAtUtc + 1 ano <= agora`, onde `ExpiresAtUtc` representa cinco anos
+  desde `receivedAtUtc`.
+- Para cada item com objeto, exclui primeiro o objeto do storage e depois os
+  metadados. Falha de storage mantém os metadados para nova tentativa e não
+  interrompe os demais itens do lote; objeto ausente é idempotente.
+- Job revisado e aprovado pelo `qa-engineer`; os 5 testes focados de expurgo
+  passaram. A suíte completa da API passou anteriormente com 438/438 testes.
+- O job está habilitado no código, mas ainda não foi implantado em serviço
+  remoto. A migration aplicada abaixo cria a tabela que ele consulta.
+
+### Migration no ambiente de teste
+
+- O Product Owner confirmou `atua-postgres-mvp` como banco de teste e
+  autorizou aplicar a migration de mídia.
+- `20261021194516_AddTriagemChannelInboundMedia` foi aplicada ao banco
+  `atua` nesse RDS. Verificação somente leitura confirmou a migration no
+  histórico, a tabela `triagem_channel_media` e seus índices.
+- Nenhuma migration foi aplicada em produção.
+
+### E2E com S3 (2026-10-22): aprovado
+
+- Decisão do Product Owner: no MVP, sem role de teste dedicada. A API foi
+  executada localmente com o profile do desenvolvedor (`moldato`), aceitando
+  esse risco apenas para o teste. Nenhuma role/policy IAM foi criada ou
+  alterada.
+- Credencial `channel.media.ingest` criada com autorização para a integração
+  de teste existente, via novo
+  `infra/scripts/add-channel-media-ingest-credential.sh` (mesmas salvaguardas
+  do script de `message.ingest`); token em
+  `~/.config/atua/channel/media-ingest.env` (0600).
+- API local em `127.0.0.1:5240` com
+  `TriagemInboundMedia__BucketName=atua-462991286554-media-triagem-test`,
+  conectada ao RDS de teste; Channel local apontado para ela. Durante o
+  teste, os jobs da API local também rodaram contra o RDS compartilhado;
+  outbox/comandos usam `SKIP LOCKED` + lease.
+- OS sintética `E2E-20261022111425`: outbox `Processed`, comando `Completed`,
+  triagem `ContatoIniciado`; recebimento confirmado nos dois aparelhos.
+- O Channel caiu com `SessionFatalError` e, após reconectar, não recebia
+  eventos; foi necessário reparear a sessão (QR). Depois disso, uma foto real
+  sem dados pessoais do número de teste gerou
+  `whatsapp_inbound_media_downloaded` (212.780 bytes) e
+  `channel_inbound_media_reported`.
+- Evidências: `triagem_channel_media` com `Outcome=ColetaIniciada`,
+  `MediaKind=Image`, `ExpiresAtUtc` = recebimento + 5 anos; triagem
+  `ContatoIniciado` → `EmColeta`; objeto S3
+  `tenants/{tenantId}/inbound-media/{mediaId}` com 212.780 bytes,
+  `image/jpeg`, `SSE=AES256`.
+- Limpeza autorizada: objeto exato excluído (bucket com 0 objetos, 0 versões,
+  0 delete markers), linha de mídia excluída, `cleanup E2E-20261022111425`
+  com status final de 0 linhas e API local desligada.
+- Em validação local posterior, `TriagemChannelMediaEndpointsTests` passou
+  18/18, incluindo buffers sintéticos com assinaturas PDF, OGG e MP4 usando
+  storage fake. Isso valida o endpoint sem exercitar WhatsApp ou S3 para
+  esses formatos.
+- Pendências: o Channel deve voltar ao túnel (`127.0.0.1:18080`); a API da
+  EC2 ainda não tem o endpoint de mídia nem permissão S3 — o deploy remoto
+  exige permissão `PutObject`/`DeleteObject` na `atua-api-ec2-role` via CDK.
+  PDF/áudio/vídeo não foram exercitados em E2E. A transcrição permanece
+  bloqueada pelos gates do ADR-046.

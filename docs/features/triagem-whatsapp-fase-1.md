@@ -4,7 +4,7 @@ Status: `REQUIREMENTS_DEFINED`
 
 **Data:** 2026-09-30
 
-**Atualizado em:** 2026-10-13
+**Atualizado em:** 2026-10-20
 
 ## 1. Visão
 
@@ -29,7 +29,9 @@ O módulo inicia a conversa no WhatsApp e coleta os dados necessários. Uma LLM 
 1. **Ingestão e fila:** o Collector detecta OS "assigned" e as enfileira. Um worker consome a fila.
 2. **Canal WhatsApp:** envia o template inicial e recebe mensagens e anexos. O vínculo é pelo número cadastrado na OS.
 3. **Orquestrador de conversa (LLM):** conduz a triagem, pede o que falta, interpreta e decide quando as informações bastam.
-4. **Armazenamento de anexos:** S3, vinculado à OS.
+4. **Armazenamento de anexos:** S3, vinculado à OS, incluindo os áudios
+   originais. Áudios são transcritos, com texto salvo segundo a mesma lógica
+   das mensagens inbound.
 5. **Roteamento e pools:** números por posto associados a pools de grupos de atendimento, ou a uso geral.
 6. **Notificações:** notificação in-app em tempo real para operadores online.
 7. **Painel de suporte à triagem:** checklist, anexos, peças sugeridas e transcrição.
@@ -82,7 +84,11 @@ A fase 1 não classifica SubStatus. O risco é de confusão terminológica, e o 
 ## 7. Premissas (do PO, sujeitas à revisão de arquitetura)
 
 - Vínculo conversa↔OS pelo número de WhatsApp cadastrado na OS.
-- Anexos em S3, vinculados à OS, com retenção a definir.
+- Anexos em S3, vinculados à OS: cinco anos desde o recebimento da mensagem
+  no inbound do posto, elegíveis para expurgo físico um ano depois, com o
+  mesmo prazo para todos os tipos de anexo. Áudios são armazenados em S3 e
+  transcritos; o texto segue a lógica de mensagens inbound. Ver
+  [ADR-045](../decisions/ADR-045-retencao-anexos-e-transcricao-audios-triagem.md).
 - Novas mensagens caem em pool compartilhado, com atribuição automática a grupo.
 - Um posto pode ter vários números. Na Fase 1, as triagens seguem para um pool compartilhado por posto; associações por grupos ficam para evolução futura.
 - Notificação in-app em tempo real e atualização do contador do pool para operadores autorizados.
@@ -144,18 +150,31 @@ A fase 1 não classifica SubStatus. O risco é de confusão terminológica, e o 
     `ExpiresAtUtc`. Solicitação de exclusão ou inatividade da conta por mais
     de cinco anos, conforme RS-003, pode antecipar a remoção. Ver ADR-044.
 
+### Resolvidas em 2026-10-20
+
+4. **Retenção de anexos e áudios:** o mesmo prazo para todos os anexos:
+   cinco anos desde a chegada da mensagem ao inbound do posto, com
+   elegibilidade para expurgo físico um ano depois. O áudio original fica
+   no S3 e sua transcrição segue a lógica das mensagens inbound, sem
+   reiniciar o prazo na geração do texto. Política definida pelo PO;
+   validação jurídica e política de backups continuam pendentes. Ver
+   [ADR-045](../decisions/ADR-045-retencao-anexos-e-transcricao-audios-triagem.md).
+
 ### Pendentes
 
 1. Formato final dos campos estruturados e tipo de triagem (formulário, checklist dinâmico, roteiro livre ou híbrido).
 2. Existe catálogo de peças? É por provedor ou por tipo de produto? Onde está?
 3. Existe catálogo de sintomas e defeitos por tipo de produto?
-4. Retenção de anexos em S3: prazo, política e LGPD.
 8. LGPD: base legal, local da LLM e contrato com o fornecedor.
 9. Custo de LLM: modelo de cobrança e quem paga (ATYNO ou posto).
 13. Papéis: o gestor configura números e pools? Isso conversa com RF-021.
 17. Implementar o fluxo geral de exclusão de dados do tenant conforme RS-003,
-    incluindo mensagens inbound; definir também como a retenção de backups
-    atende a exclusões antecipadas.
+    incluindo mensagens inbound, anexos e transcrições; definir também como
+    a retenção de backups atende a exclusões antecipadas.
+18. Avaliar qualidade, volume/custo, formatos, prazo máximo e retentativas
+    da transcrição conforme a direção aceita no
+    [ADR-046](../decisions/ADR-046-pipeline-midia-transcricao-audio-triagem.md),
+    antes da implementação.
 
 ## 10. Decomposição sugerida em user stories
 
@@ -167,7 +186,8 @@ A fase 1 não classifica SubStatus. O risco é de confusão terminológica, e o 
 **Bloco B – Conversa e coleta**
 - B1: receber mensagens e anexos, vinculando à OS pelo número.
 - B2: a LLM conduz a coleta dos itens obrigatórios e opcionais.
-- B3: armazenar anexos vinculados à OS.
+- B3: armazenar anexos vinculados à OS, incluindo o áudio original em S3;
+  transcrever áudios e persistir o texto segundo a lógica das mensagens.
 - B4: estruturar a descrição (tipo, sintoma, erro, categoria).
 - B5: sugerir peças. Depende do catálogo.
 - B6: a LLM decide a suficiência e libera a OS.
@@ -438,7 +458,30 @@ Mensagens inbound completas são mantidas por cinco anos a partir de
 excluído fisicamente um ano após a expiração. Solicitação de exclusão ou
 inatividade da conta por mais de cinco anos, conforme RS-003, pode antecipar
 a remoção. O fluxo geral de exclusão do tenant deve incluir esses registros.
-Anexos e backups têm políticas separadas ainda pendentes. Ver ADR-044.
+Anexos e transcrições de áudio são cobertos pelo
+[ADR-045](../decisions/ADR-045-retencao-anexos-e-transcricao-audios-triagem.md).
+Backups permanecem pendentes. Ver ADR-044.
+
+### RF-TRIAGEM-017: Retenção uniforme de anexos
+Todos os anexos recebidos na triagem, incluindo áudios, têm retenção de
+cinco anos desde o recebimento da mensagem no inbound do posto, com
+elegibilidade para expurgo físico um ano depois. Upload, processamento ou
+conclusão da OS não reiniciam esse prazo. O fluxo de exclusão deve abranger
+os arquivos e suas referências, respeitando a precedência de RS-003.
+A política de backups e a validação jurídica permanecem pendentes. Ver
+[ADR-045](../decisions/ADR-045-retencao-anexos-e-transcricao-audios-triagem.md).
+
+### RF-TRIAGEM-018: Armazenamento e transcrição de áudios
+Áudios recebidos devem ser armazenados em S3 e transcritos. O texto deve
+ser salvo segundo a mesma lógica de persistência e retenção das mensagens
+inbound, mantendo vínculo com o áudio, a OS, a triagem e o tenant.
+A transcrição não substitui o original nem reinicia a contagem da retenção.
+Falhas de transcrição devem ser explícitas, sem resultado apresentado como
+concluído. Enquanto a transcrição estiver pendente ou falhar, a triagem pode
+continuar; o operador mantém acesso ao áudio original e vê a transcrição
+quando estiver pronta. Este requisito não altera o checklist mínimo nem a
+obrigatoriedade de assunção pelo operador humano. A proposta técnica está no
+[ADR-046](../decisions/ADR-046-pipeline-midia-transcricao-audio-triagem.md).
 
 ## 17. Critérios de aceite verificáveis
 
@@ -565,3 +608,38 @@ Anexos e backups têm políticas separadas ainda pendentes. Ver ADR-044.
 - Quando o fluxo geral de exclusão de dados do tenant for executado
 - Então ele também deve remover os registros inbound, sem aguardar os seis
   anos desde o recebimento
+
+### CA-013: Retenção dos anexos (RF-TRIAGEM-017)
+**Cenário:** Mesmo marco para todos os tipos de anexo
+- Dado uma mensagem recebida no inbound do posto com foto, vídeo, documento
+  ou áudio
+- Quando os anexos forem armazenados
+- Então cada anexo tem cinco anos de retenção a partir do recebimento dessa
+  mensagem, ficando elegível para expurgo físico um ano depois
+- E atraso no upload ou reprocessamento não altera esse marco
+
+**Cenário:** Exclusão antecipada de dados do tenant
+- Dado uma condição de exclusão prevista em RS-003
+- Quando o fluxo geral de exclusão do tenant for executado
+- Então remove também os anexos e suas referências, incluindo os áudios e
+  suas transcrições, sem aguardar o prazo padrão
+- E a exclusão dos arquivos ativos não é apresentada como prova de exclusão
+  das cópias em backups, cuja política permanece pendente
+
+### CA-014: Áudio original e transcrição (RF-TRIAGEM-018)
+**Cenário:** Transcrição concluída
+- Dado um áudio recebido e associado a uma triagem
+- Quando a transcrição for concluída
+- Então o áudio original permanece armazenado em S3 e o texto é salvo segundo
+  a lógica das mensagens inbound, associado ao original e ao mesmo atendimento
+- E ambos permanecem isolados por tenant
+- E a retenção da transcrição usa o recebimento original, não a geração do texto
+- E, enquanto o texto não estiver pronto, o operador ainda acessa o áudio
+  original sem bloquear a triagem
+
+**Cenário:** Falha de transcrição
+- Dado um áudio armazenado cuja transcrição falhou
+- Quando o resultado do processamento for registrado
+- Então a falha fica explícita, sem transcrição fictícia nem indicação de sucesso
+- E o áudio original permanece sujeito à política de retenção e exclusão
+- E a triagem não é bloqueada pela falha de transcrição

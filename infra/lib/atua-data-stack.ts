@@ -50,6 +50,7 @@ export class AtuaDataStack extends cdk.Stack {
   public readonly frontendsBucket: s3.Bucket;
   public readonly backupsBucket: s3.Bucket;
   public readonly releasesBucket: s3.Bucket;
+  public readonly mediaTriagemBucket: s3.Bucket;
 
   public readonly rdsSecret: secretsmanager.Secret;
   public readonly mongoSecret: secretsmanager.Secret;
@@ -209,6 +210,19 @@ export class AtuaDataStack extends cdk.Stack {
       encryption: s3.BucketEncryption.S3_MANAGED,
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
       versioned: true,
+    });
+
+    this.mediaTriagemBucket = new s3.Bucket(this, 'MediaTriagemBucket', {
+      bucketName:
+        (this.node.tryGetContext('mediaTriagemBucketName') as string | undefined) ??
+        `atua-${accountId}-media-triagem`,
+      removalPolicy: cdk.RemovalPolicy.RETAIN,
+      autoDeleteObjects: false,
+      encryption: s3.BucketEncryption.S3_MANAGED,
+      blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
+      objectOwnership: s3.ObjectOwnership.BUCKET_OWNER_ENFORCED,
+      enforceSSL: true,
+      versioned: false,
     });
 
     // --- Secrets Manager: placeholders, sem valores reais em código ---

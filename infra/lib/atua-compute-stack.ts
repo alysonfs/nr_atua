@@ -20,6 +20,7 @@ export interface AtuaComputeStackProps extends cdk.StackProps {
   sgApi: ec2.ISecurityGroup;
   sgCollector: ec2.ISecurityGroup;
   releasesBucket: s3.IBucket;
+  mediaTriagemBucket: s3.IBucket;
   rdsSecret: secretsmanager.ISecret;
   mongoSecret: secretsmanager.ISecret;
   appSecret: secretsmanager.ISecret;
@@ -433,6 +434,9 @@ export class AtuaComputeStack extends cdk.Stack {
       'sa-east-1': pinnedAmiId,
     });
 
+    const mediaTriagemBucket = props.mediaTriagemBucket;
+    const mediaTriagemBucketName = mediaTriagemBucket.bucketName;
+
     // ============================================================
     // API MASTER
     // ============================================================
@@ -471,6 +475,22 @@ export class AtuaComputeStack extends cdk.Stack {
         effect: iam.Effect.ALLOW,
         actions: ['s3:GetObject', 's3:ListBucket'],
         resources: [props.releasesBucket.bucketArn, `${props.releasesBucket.bucketArn}/*`],
+      }),
+    );
+
+    // S3: acesso explícito ao bucket de mídia de triagem (pedido do PO).
+    // Exatamente s3:PutObject e s3:DeleteObject, apenas em ARNs de OBJETO
+    // (`.../*`) do bucket de mídia — sem s3:GetObject, sem ListBucket, sem
+    // acesso ao ARN do bucket em si. Ação mínima necessária: a API grava
+    // (Put) e remove (Delete) mídia recebida; leitura/listagem não são
+    // requeridas pelo fluxo atual (ver Atua.Api/Program.cs e o S3 adapter,
+    // que usam somente PutObject/DeleteObject).
+    apiRole.addToPolicy(
+      new iam.PolicyStatement({
+        sid: 'MediaTriagemBucketObjectAccess',
+        effect: iam.Effect.ALLOW,
+        actions: ['s3:PutObject', 's3:DeleteObject'],
+        resources: [`${mediaTriagemBucket.bucketArn}/*`],
       }),
     );
 
@@ -623,6 +643,7 @@ export class AtuaComputeStack extends cdk.Stack {
       // tratada dentro do fluxo de envio, nao uma excecao de configuracao
       // ausente na inicializacao (ver Atua.Api/Program.cs).
       'Email__SenderAddress=noreply@atua-mvp.local',
+      `TriagemInboundMedia__BucketName=${mediaTriagemBucketName}`,
       'EOF',
       'chmod 640 /etc/atua-api.env',
       '# Apenas root e membros do grupo que executar a API lêm o arquivo.',

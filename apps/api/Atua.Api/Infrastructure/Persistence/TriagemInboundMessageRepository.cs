@@ -141,7 +141,7 @@ public sealed partial class TriagemInboundMessageRepository(AtuaDbContext dbCont
                 : null;
     }
 
-    private static string NormalizePhone(string phone) => NonDigitsRegex().Replace(phone, "");
+    internal static string NormalizePhone(string phone) => NonDigitsRegex().Replace(phone, "");
 
     // WhatsApp often identifies Brazilian mobiles without the ninth digit (55 + DDD + 8 digits),
     // so both forms must match the phone registered on the work order.

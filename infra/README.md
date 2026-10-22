@@ -43,6 +43,39 @@ AWS_PROFILE=moldato make down    # DESLIGA ao fim do dia
 
 ---
 
+### Bucket de mídia da triagem
+
+A `AtuaDataStack` provisiona `atua-<accountId>-media-triagem`. O nome pode
+ser sobrescrito pelo contexto CDK `-c mediaTriagemBucketName=...`; isso
+define o nome do bucket gerenciado, não importa um bucket existente.
+A `AtuaComputeStack` recebe esse recurso e configura
+`TriagemInboundMedia__BucketName` no bootstrap da API.
+
+O bucket bloqueia acesso público, desabilita ACLs, usa SSE-S3 e exige HTTPS.
+A role da API recebe somente `s3:PutObject` e `s3:DeleteObject` nos objetos
+desse bucket, sem alterar as permissões existentes de outros recursos.
+O bucket é retido mesmo na remoção da stack, não tem versionamento nem
+exclusão automática. A retenção e o expurgo são controlados pela aplicação,
+conforme o [ADR-047](../docs/decisions/ADR-047-ingestao-inicial-midias-triagem.md).
+
+Armazenamento e requisições têm cobrança por uso
+([preços S3](https://aws.amazon.com/s3/pricing/)), inclusive com compute
+desligado. Logs de acesso, eventos de dados CloudTrail e métricas CloudWatch
+são recomendados para auditoria; sua habilitação e custos ficam fora deste
+incremento. Dados sintéticos devem ser removidos após os testes autorizados.
+
+Em 2026-10-22, o deploy de Data e Compute foi aprovado e concluído
+(`UPDATE_COMPLETE`), criando `atua-462991286554-media-triagem` em `sa-east-1`.
+As EC2 não foram substituídas. Como o bootstrap não foi reexecutado, a
+variável acima foi aplicada pontualmente em `/etc/atua-api.env`, com
+autorização do operador, seguida de restart da API. A variável foi
+confirmada no processo ativo e `/health` retornou HTTP 200. A policy foi
+confirmada no template implantado; a leitura direta via `iam:GetRolePolicy`
+foi negada ao perfil local. Não houve publicação de novos binários nem E2E
+remoto de mídia neste deploy.
+
+---
+
 ## 1. Arquitetura (3 stacks CDK + RDS operacional)
 
 | Stack / recurso   | Ciclo de vida | Conteúdo | Custo aproximado |

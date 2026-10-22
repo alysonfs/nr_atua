@@ -819,6 +819,116 @@ namespace Atua.Api.Infrastructure.Persistence.Migrations
                     b.ToTable("triagem_channel_commands", (string)null);
                 });
 
+            modelBuilder.Entity("Atua.Api.Domain.Triagens.TriagemInboundMedia", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.PrimitiveCollection<Guid[]>("CandidateTriagemIds")
+                        .IsRequired()
+                        .HasColumnType("uuid[]");
+
+                    b.Property<string>("Caption")
+                        .HasMaxLength(4096)
+                        .HasColumnType("character varying(4096)");
+
+                    b.Property<string>("ChannelIdempotencyKey")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<string>("ChannelMessageId")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<string>("ContentType")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<string>("ConversationKind")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<Guid>("CorrelationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int?>("DurationSeconds")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTimeOffset>("ExpiresAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("FromMe")
+                        .HasColumnType("boolean");
+
+                    b.Property<Guid>("IntegrationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("IsVoiceNote")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("MediaKind")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<string>("Outcome")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<DateTimeOffset>("ReceivedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("SenderPhone")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<string>("Sha256")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<long>("SizeBytes")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("StorageKey")
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("TriagemId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CandidateTriagemIds");
+
+                    NpgsqlIndexBuilderExtensions.HasMethod(b.HasIndex("CandidateTriagemIds"), "gin");
+
+                    b.HasIndex("ExpiresAtUtc");
+
+                    b.HasIndex("IntegrationId");
+
+                    b.HasIndex("TriagemId");
+
+                    b.HasIndex("TenantId", "ChannelIdempotencyKey")
+                        .IsUnique()
+                        .HasDatabaseName("uq_triagem_channel_media_tenant_idempotency");
+
+                    b.HasIndex("TenantId", "IntegrationId", "SenderPhone");
+
+                    b.ToTable("triagem_channel_media", (string)null);
+                });
+
             modelBuilder.Entity("Atua.Api.Domain.Triagens.TriagemInboundMessage", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1516,6 +1626,20 @@ namespace Atua.Api.Infrastructure.Persistence.Migrations
                         .HasForeignKey("WorkOrderId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+                });
+
+            modelBuilder.Entity("Atua.Api.Domain.Triagens.TriagemInboundMedia", b =>
+                {
+                    b.HasOne("Atua.Api.Domain.Integrations.Integration", null)
+                        .WithMany()
+                        .HasForeignKey("IntegrationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Atua.Api.Domain.Triagens.Triagem", null)
+                        .WithMany()
+                        .HasForeignKey("TriagemId")
+                        .OnDelete(DeleteBehavior.Restrict);
                 });
 
             modelBuilder.Entity("Atua.Api.Domain.Triagens.TriagemInboundMessage", b =>

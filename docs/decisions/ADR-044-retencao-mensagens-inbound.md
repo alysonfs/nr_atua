@@ -26,7 +26,9 @@ anos de inatividade.
   `triagem_channel_messages`; esse fluxo não está implementado neste
   incremento.
 - A política cobre os registros e o texto armazenados no PostgreSQL. A
-  retenção de anexos/mídia em S3 permanece pendente.
+  retenção de anexos/mídia em S3, pendente na aprovação deste ADR, foi
+  definida posteriormente no
+  [ADR-045](ADR-045-retencao-anexos-e-transcricao-audios-triagem.md).
 
 ## Implementação e operação
 
@@ -49,8 +51,10 @@ produção.
 - O índice por `ExpiresAtUtc` permite localizar registros para purge sem
   varrer a tabela inteira.
 - O purge em lotes limita o volume de trabalho de cada operação.
-- Mensagens, anexos e backups têm políticas de retenção distintas; apenas a
+- Mensagens, anexos e backups têm escopos de retenção distintos; apenas a
   política das mensagens no banco primário está definida neste ADR.
+  O ADR-045 complementa a política para anexos e transcrições de áudio;
+  backups continuam pendentes.
 
 ## Agentes envolvidos
 
@@ -68,3 +72,6 @@ produção.
 - Complementa o ADR-043.
 - Deve respeitar o requisito RS-003.
 - Não define retenção de anexos/mídia nem de backups.
+- Complementado em 2026-10-20 pelo
+  [ADR-045](ADR-045-retencao-anexos-e-transcricao-audios-triagem.md) para
+  retenção de anexos e transcrição de áudios.

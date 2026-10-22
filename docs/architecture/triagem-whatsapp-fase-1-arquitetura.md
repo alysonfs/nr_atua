@@ -187,7 +187,9 @@ expor conteúdo de mensagens, documentos ou tokens.
   Eventos ambíguos ficam sem vínculo e aguardam resolução manual futura,
   conforme ADR-043.
 - `MediaReceived`: metadados da mídia e conteúdo encaminhado para ingestão
-  controlada pela API.
+  controlada pela API em
+  `POST /api/internal/triagens/canal/midias`, com o escopo exclusivo
+  `channel.media.ingest`, conforme ADR-047.
 - `DeliveryStatusUpdate`: confirmação, entrega, leitura ou falha de uma
   mensagem enviada.
 - `ChannelFailure`: indisponibilidade ou erro operacional do canal.
@@ -253,8 +255,28 @@ somente para suporte, QA e reprocessamento manual com credencial escopada.
   necessária à tarefa.
 - O painel obtém anexos por autorização da Master API, sem acesso público ao
   bucket.
-- Prazo de retenção, exclusão, base legal e região de processamento continuam
-  bloqueios de produção.
+- O [ADR-045](../decisions/ADR-045-retencao-anexos-e-transcricao-audios-triagem.md)
+  define a política de produto para todos os anexos: cinco anos desde a
+  chegada da mensagem ao inbound do posto, com elegibilidade para expurgo
+  físico um ano depois.
+- A proposta de pipeline está no
+  [ADR-046](../decisions/ADR-046-pipeline-midia-transcricao-audio-triagem.md):
+  persistir o original antes da transcrição, processar em segundo plano,
+  avaliar Amazon Transcribe batch em `sa-east-1` e manter o operador
+  trabalhando mesmo enquanto a transcrição está pendente ou falha. A direção
+  arquitetural foi aceita; a escolha final do fornecedor, qualidade e custo
+  não foram validados. A implementação inicial, sem transcrição, foi
+  autorizada com escopo limitado pelo
+  [ADR-047](../decisions/ADR-047-ingestao-inicial-midias-triagem.md).
+- A elegibilidade para expurgo deve usar o recebimento inbound como marco;
+  idade do objeto S3 ou lifecycle isoladamente não representam esse marco se
+  upload e recebimento ocorrerem em instantes distintos. O expurgo deve ser
+  executado por job ativo da aplicação orientado pelo marco de retenção;
+  Lifecycle pode ser complementar, não autoritativo. O job local
+  `TriagemInboundMediaPurgeJob` segue essa ordem, apagando objeto antes dos
+  metadados; ainda não foi implantado em serviço remoto.
+- A política de backups, validação jurídica, base legal e região de
+  processamento continuam bloqueios de produção.
 - Uma mídia rejeitada continua pendente. Após três tentativas inválidas do
   mesmo item, a API move a triagem para `AGUARDANDO_INTERVENCAO`.
 
@@ -279,15 +301,18 @@ somente para suporte, QA e reprocessamento manual com credencial escopada.
 
 - Operação contínua e topologia do canal permanecem `Proposed` no ADR-035.
 - Persistência em volume EBS permanece proposta no ADR-038.
-- Parecer jurídico/LGPD, contrato com fornecedor de LLM e política de
-  retenção são bloqueios.
+- Parecer jurídico/LGPD, contrato com fornecedor de LLM, operacionalização
+  da retenção/exclusão e definição da política de backups são bloqueios.
 - Sugestão de peças permanece desabilitada até existir catálogo confiável.
 
 ## 10. Decisões ainda pendentes
 
 - Revisão do template Midea e dos textos dos lembretes pelo PO.
 - Catálogo de peças e sintomas.
-- Política de retenção e tratamento LGPD.
+- Implementação da retenção/exclusão conforme ADR-044 e ADR-045, política de
+  backups e tratamento LGPD.
+- Avaliação de qualidade/custo do Transcribe e definição dos limites de mídia,
+  tempo de processamento e retentativas antes da implementação.
 - Operação always-on e responsabilidade pelo custo de produção.
 - Contrato e fornecedor da LLM.
 - Resolução manual no painel de mensagens ambíguas, conforme a decisão do PO

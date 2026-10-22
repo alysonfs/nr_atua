@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using System.Text.Json;
 using Atua.Api.Application.Triagens;
 using Atua.Api.Application.Triagens.Contracts;
 using Atua.Api.Domain.Triagens;
@@ -70,6 +71,24 @@ public static class TriagemChannelEndpoints
             .Produces<IngestTriagemChannelMessageResponse>(StatusCodes.Status200OK)
             .ProducesValidationProblem()
             .Produces(StatusCodes.Status401Unauthorized);
+
+        endpoints.MapPost("/api/internal/triagens/canal/midias", IngestMediaAsync)
+            .RequireAuthorization("ChannelMediaIngest")
+            .WithMetadata(new Microsoft.AspNetCore.Mvc.RequestSizeLimitAttribute(
+                IngestTriagemChannelMediaUseCase.MaxContentLengthBytes + 64 * 1024))
+            .WithName("IngestTriagemChannelMedia")
+            .WithSummary("Registra uma mídia (áudio, imagem, vídeo ou PDF) recebida pelo canal WhatsApp.")
+            .WithDescription(
+                "Corpo multipart/form-data com a parte 'metadata' (JSON do envelope) e a parte 'file' " +
+                "(binário). Deduplica por tenant e chave idempotente; reentrega com conteúdo diferente " +
+                "retorna 409. Rejeita tecnicamente (sem armazenar o binário) tipo/tamanho fora do " +
+                "permitido, mensagens de grupo ou da própria conta. Resolve a triagem pelo telefone do " +
+                "remetente, em qualquer status — apenas armazena o binário quando há exatamente uma " +
+                "triagem candidata, e só transiciona para EmColeta quando ela está em ContatoIniciado.")
+            .Produces<IngestTriagemChannelMediaResponse>(StatusCodes.Status200OK)
+            .ProducesValidationProblem()
+            .Produces(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status409Conflict);
     }
 
     // -----------------------------------------------------------------------
@@ -204,6 +223,125 @@ public static class TriagemChannelEndpoints
     }
 
     // -----------------------------------------------------------------------
+    // Mídia
+    // -----------------------------------------------------------------------
+
+    private static readonly JsonSerializerOptions MediaMetadataJsonOptions = new(JsonSerializerDefaults.Web);
+
+    private static async Task<Results<Ok<IngestTriagemChannelMediaResponse>, UnauthorizedHttpResult,
+        ValidationProblem, Conflict<ProblemDetails>>> IngestMediaAsync(
+        HttpRequest request,
+        ClaimsPrincipal user,
+        IIngestTriagemChannelMediaUseCase useCase,
+        CancellationToken cancellationToken)
+    {
+        var tenantId = GetGuidClaim(user, "tenant_id");
+        var integrationId = GetGuidClaim(user, "integration_id");
+        if (tenantId is null || integrationId is null)
+        {
+            return TypedResults.Unauthorized();
+        }
+
+        if (!request.HasFormContentType)
+        {
+            return TypedResults.ValidationProblem(new Dictionary<string, string[]>
+            {
+                ["request"] = ["Deve ser multipart/form-data com as partes 'metadata' e 'file'."],
+            });
+        }
+
+        IFormCollection form;
+        try
+        {
+            form = await request.ReadFormAsync(cancellationToken);
+        }
+        catch (InvalidDataException)
+        {
+            return TypedResults.ValidationProblem(new Dictionary<string, string[]>
+            {
+                ["request"] = ["Corpo multipart malformado."],
+            });
+        }
+
+        var metadataJson = form["metadata"].ToString();
+        if (string.IsNullOrWhiteSpace(metadataJson))
+        {
+            return TypedResults.ValidationProblem(new Dictionary<string, string[]>
+            {
+                ["metadata"] = ["Obrigatória — parte 'metadata' com o envelope JSON."],
+            });
+        }
+
+        IngestTriagemChannelMediaRequest? metadata;
+        try
+        {
+            metadata = JsonSerializer.Deserialize<IngestTriagemChannelMediaRequest>(
+                metadataJson, MediaMetadataJsonOptions);
+        }
+        catch (JsonException)
+        {
+            return TypedResults.ValidationProblem(new Dictionary<string, string[]>
+            {
+                ["metadata"] = ["JSON inválido na parte 'metadata'."],
+            });
+        }
+
+        if (metadata is null)
+        {
+            return TypedResults.ValidationProblem(new Dictionary<string, string[]>
+            {
+                ["metadata"] = ["Obrigatória."],
+            });
+        }
+
+        var file = form.Files["file"];
+        var errors = ValidateInboundMedia(metadata, file);
+        if (errors.Count > 0)
+        {
+            return TypedResults.ValidationProblem(errors);
+        }
+
+        var command = new TriagemInboundMediaCommand(
+            tenantId.Value,
+            integrationId.Value,
+            metadata.ChannelMessageId!,
+            metadata.ChannelIdempotencyKey!,
+            metadata.CorrelationId!.Value,
+            metadata.SenderPhone!,
+            metadata.ConversationKind!,
+            metadata.FromMe!.Value,
+            metadata.ReceivedAtUtc!.Value,
+            ParseMediaKind(metadata.MediaKind!),
+            metadata.ContentType!,
+            metadata.SizeBytes!.Value,
+            metadata.IsVoiceNote!.Value,
+            metadata.DurationSeconds,
+            metadata.Caption);
+
+        await using var fileStream = file!.OpenReadStream();
+        var useCaseResult = await useCase.ExecuteAsync(command, fileStream, cancellationToken);
+
+        if (useCaseResult.IsIdempotencyConflict)
+        {
+            return TypedResults.Conflict(new ProblemDetails
+            {
+                Title = "Channel media idempotency conflict",
+                Detail = "A chave idempotente informada já está associada a uma mídia com conteúdo " +
+                    "diferente (contentType/sizeBytes). O Channel não deve reutilizar a mesma chave para " +
+                    "mídias diferentes.",
+                Status = StatusCodes.Status409Conflict,
+            });
+        }
+
+        var result = useCaseResult.Result!;
+        return TypedResults.Ok(new IngestTriagemChannelMediaResponse(
+            result.ChannelMessageId,
+            result.Outcome.ToString(),
+            result.TriagemId,
+            result.CandidateCount));
+    }
+
+    // -----------------------------------------------------------------------
     // Helpers
     // -----------------------------------------------------------------------
 
@@ -216,6 +354,55 @@ public static class TriagemChannelEndpoints
 
     private static Guid? GetGuidClaim(ClaimsPrincipal user, string type) =>
         Guid.TryParse(user.FindFirstValue(type), out var value) ? value : null;
+
+    private static ETriagemInboundMediaKind ParseMediaKind(string value) => value switch
+    {
+        "audio" => ETriagemInboundMediaKind.Audio,
+        "image" => ETriagemInboundMediaKind.Image,
+        "video" => ETriagemInboundMediaKind.Video,
+        "document" => ETriagemInboundMediaKind.Document,
+        _ => throw new InvalidOperationException(
+            $"mediaKind '{value}' deveria ter sido rejeitado pela validação do envelope."),
+    };
+
+    private static Dictionary<string, string[]> ValidateInboundMedia(
+        IngestTriagemChannelMediaRequest request, IFormFile? file)
+    {
+        var errors = new Dictionary<string, string[]>();
+        void AddError(string field, string message) => errors[field] = [message];
+
+        if (request.ContractVersion != "1") AddError("contractVersion", "Deve ser '1'.");
+        if (string.IsNullOrWhiteSpace(request.ChannelMessageId) || request.ChannelMessageId.Length > 256)
+            AddError("channelMessageId", "Obrigatório, com no máximo 256 caracteres.");
+        if (string.IsNullOrWhiteSpace(request.ChannelIdempotencyKey) || request.ChannelIdempotencyKey.Length > 128)
+            AddError("channelIdempotencyKey", "Obrigatória, com no máximo 128 caracteres.");
+        if (request.CorrelationId is null || request.CorrelationId == Guid.Empty)
+            AddError("correlationId", "Deve ser um UUID válido.");
+        if (request.SenderPhone is null || !System.Text.RegularExpressions.Regex.IsMatch(
+                request.SenderPhone, "^[1-9][0-9]{7,14}$"))
+            AddError("senderPhone", "Deve conter de 8 a 15 dígitos internacionais.");
+        if (request.ConversationKind is not ("individual" or "group"))
+            AddError("conversationKind", "Deve ser 'individual' ou 'group'.");
+        if (request.FromMe is null) AddError("fromMe", "Obrigatório.");
+        if (request.ReceivedAtUtc is null
+            || request.ReceivedAtUtc == DateTimeOffset.MinValue
+            || request.ReceivedAtUtc.Value.Offset != TimeSpan.Zero)
+            AddError("receivedAtUtc", "Deve conter um instante UTC válido.");
+        if (request.MediaKind is not ("audio" or "image" or "video" or "document"))
+            AddError("mediaKind", "Deve ser 'audio', 'image', 'video' ou 'document'.");
+        if (string.IsNullOrWhiteSpace(request.ContentType) || request.ContentType.Length > 128)
+            AddError("contentType", "Obrigatório, com no máximo 128 caracteres.");
+        if (request.SizeBytes is null || request.SizeBytes <= 0)
+            AddError("sizeBytes", "Deve ser um inteiro positivo.");
+        if (request.Sha256 is null || !System.Text.RegularExpressions.Regex.IsMatch(request.Sha256, "^[a-f0-9]{64}$"))
+            AddError("sha256", "Deve conter 64 caracteres hexadecimais minúsculos.");
+        if (request.IsVoiceNote is null) AddError("isVoiceNote", "Obrigatório.");
+        if (request.DurationSeconds is < 0) AddError("durationSeconds", "Deve ser zero ou positivo quando informado.");
+        if (request.Caption?.Length > 4_096) AddError("caption", "Deve ter no máximo 4096 caracteres.");
+        if (file is null || file.Length == 0) AddError("file", "Obrigatório — parte 'file' com o binário da mídia.");
+
+        return errors;
+    }
 
     private static Dictionary<string, string[]> ValidateInboundMessage(
         IngestTriagemChannelMessageRequest request)
@@ -326,6 +513,42 @@ public sealed record IngestTriagemChannelMessageRequest(
 
 /// <summary>Resultado do processamento idempotente de uma mensagem recebida.</summary>
 public sealed record IngestTriagemChannelMessageResponse(
+    string ChannelMessageId,
+    string Outcome,
+    Guid? TriagemId,
+    int CandidateCount);
+
+/// <summary>
+/// Envelope JSON da parte 'metadata' do evento de mídia recebido pelo
+/// Channel (multipart/form-data, parte 'file' carrega o binário). Campos
+/// herdados do ADR-043 têm o mesmo significado do evento de texto.
+/// </summary>
+/// <param name="MediaKind">Categoria declarada — <c>"audio"</c>, <c>"image"</c>, <c>"video"</c> ou <c>"document"</c> (apenas PDF é aceito como documento).</param>
+/// <param name="ContentType">MIME type declarado do arquivo — validado contra a assinatura binária real.</param>
+/// <param name="SizeBytes">Tamanho declarado em bytes — confrontado com o tamanho real lido do stream.</param>
+/// <param name="Sha256">SHA-256 declarado pelo Channel — nunca usado como autoridade; o servidor recalcula o hash a partir do binário recebido.</param>
+/// <param name="IsVoiceNote">Indica se o áudio é uma nota de voz (PTT) do WhatsApp.</param>
+/// <param name="DurationSeconds">Duração em segundos, quando aplicável (áudio/vídeo).</param>
+/// <param name="Caption">Legenda opcional anexada à mídia pelo remetente.</param>
+public sealed record IngestTriagemChannelMediaRequest(
+    string? ContractVersion,
+    string? ChannelMessageId,
+    string? ChannelIdempotencyKey,
+    Guid? CorrelationId,
+    string? SenderPhone,
+    string? ConversationKind,
+    bool? FromMe,
+    DateTimeOffset? ReceivedAtUtc,
+    string? MediaKind,
+    string? ContentType,
+    long? SizeBytes,
+    string? Sha256,
+    bool? IsVoiceNote,
+    int? DurationSeconds,
+    string? Caption);
+
+/// <summary>Resultado do processamento idempotente de um evento de mídia recebido.</summary>
+public sealed record IngestTriagemChannelMediaResponse(
     string ChannelMessageId,
     string Outcome,
     Guid? TriagemId,

@@ -43,6 +43,13 @@ public sealed class ServiceCredentialAuthenticationHandler(
 
     public const string ChannelMessageIngestScope = "channel.message.ingest";
 
+    /// <summary>
+    /// Escopo exclusivo de <c>POST /api/internal/triagens/canal/midias</c>
+    /// — ingestão de mídia inbound da triagem. Não reutiliza o escopo de
+    /// mensagens de texto nem os demais escopos do canal.
+    /// </summary>
+    public const string ChannelMediaIngestScope = "channel.media.ingest";
+
     protected override async Task<AuthenticateResult> HandleAuthenticateAsync()
     {
         var authorization = Request.Headers.Authorization.ToString();

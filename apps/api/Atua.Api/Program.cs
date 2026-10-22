@@ -1,4 +1,5 @@
 using Amazon.KeyManagementService;
+using Amazon.S3;
 using Amazon.SimpleEmailV2;
 using System.Security.Claims;
 using System.Text;
@@ -16,6 +17,7 @@ using Atua.Api.Infrastructure.Email;
 using Atua.Api.Infrastructure.Jobs;
 using Atua.Api.Infrastructure.Persistence;
 using Atua.Api.Infrastructure.Security;
+using Atua.Api.Infrastructure.Storage;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
@@ -105,6 +107,9 @@ builder.Services.AddAuthorization(options =>
     options.AddPolicy("ChannelMessageIngest", policy =>
         policy.AddAuthenticationSchemes(ServiceCredentialAuthenticationHandler.SchemeName)
             .RequireClaim("scope", ServiceCredentialAuthenticationHandler.ChannelMessageIngestScope));
+    options.AddPolicy("ChannelMediaIngest", policy =>
+        policy.AddAuthenticationSchemes(ServiceCredentialAuthenticationHandler.SchemeName)
+            .RequireClaim("scope", ServiceCredentialAuthenticationHandler.ChannelMediaIngestScope));
 });
 
 builder.Services.AddSingleton<IAmazonSimpleEmailServiceV2, AmazonSimpleEmailServiceV2Client>();
@@ -205,6 +210,30 @@ builder.Services.AddScoped<TriagemChannelCommandService>();
 builder.Services.AddScoped<ITriagemInboundMessageRepository, TriagemInboundMessageRepository>();
 builder.Services.AddScoped<IIngestTriagemChannelMessageUseCase, IngestTriagemChannelMessageUseCase>();
 
+// Incremento de mídia (ADR-045/046): mesmo escopo exclusivo isolado dos
+// demais eventos de canal. Em produção, exige bucket S3 configurado — sem
+// isso, a aplicação não sobe (mesmo princípio já aplicado ao KmsKeyArn
+// acima: nenhuma falha silenciosa de persistência durável).
+var triagemInboundMediaBucketName = builder.Configuration[$"{TriagemInboundMediaStorageOptions.SectionName}:BucketName"];
+if (!string.IsNullOrWhiteSpace(triagemInboundMediaBucketName))
+{
+    builder.Services.AddSingleton<IAmazonS3, AmazonS3Client>();
+    builder.Services.AddSingleton(new TriagemInboundMediaStorageOptions { BucketName = triagemInboundMediaBucketName });
+    builder.Services.AddSingleton<ITriagemInboundMediaStorage, S3TriagemInboundMediaStorage>();
+}
+else
+{
+    builder.Services.AddSingleton<ITriagemInboundMediaStorage, FakeTriagemInboundMediaStorage>();
+}
+builder.Services.AddScoped<ITriagemInboundMediaRepository, TriagemInboundMediaRepository>();
+builder.Services.AddScoped<IIngestTriagemChannelMediaUseCase, IngestTriagemChannelMediaUseCase>();
+
+// Expurgo de mídia inbound pendente (ADR-046/047): job local que apaga o
+// objeto em S3 antes dos metadados, nunca o inverso — ver
+// TriagemInboundMediaPurgeService.
+builder.Services.AddScoped<TriagemInboundMediaPurgeService>();
+builder.Services.AddHostedService<TriagemInboundMediaPurgeJob>();
+
 // ADR-041: drenagem da outbox do gatilho de triagem gravada pelo Collector.
 builder.Services.AddOptions<TriagemOutboxOptions>()
     .Bind(builder.Configuration.GetSection(TriagemOutboxOptions.SectionName))
@@ -259,6 +288,26 @@ if (string.IsNullOrWhiteSpace(kmsKeyArn))
         "(AesGcmCredentialCipher, AlgorithmVersion=1). " +
         "Isso é aceitável em desenvolvimento, mas NUNCA deve ocorrer em produção. " +
         "Configure Integrations__CredentialCipher__KmsKeyArn para ativar o KMS.");
+}
+
+// Verificação de segurança análoga para o bucket S3 de mídia inbound da
+// triagem (ADR-046): sem bucket configurado, o binário é mantido apenas em
+// memória e se perde a cada reinício — inaceitável em produção.
+if (string.IsNullOrWhiteSpace(triagemInboundMediaBucketName))
+{
+    if (app.Environment.IsProduction())
+    {
+        throw new InvalidOperationException(
+            $"{TriagemInboundMediaStorageOptions.SectionName}:BucketName não está configurado. " +
+            "Em produção, um bucket S3 é obrigatório para armazenar mídia inbound da triagem de forma " +
+            "durável. Configure a variável de ambiente correspondente antes de iniciar a aplicação.");
+    }
+
+    startupLogger.LogWarning(
+        "ARMAZENAMENTO DE MÍDIA EM MEMÓRIA: nenhum bucket S3 configurado — mídia inbound da triagem " +
+        "será mantida apenas em memória (FakeTriagemInboundMediaStorage) e perdida a cada reinício. " +
+        "Isso é aceitável em desenvolvimento, mas NUNCA deve ocorrer em produção. " +
+        $"Configure {TriagemInboundMediaStorageOptions.SectionName}:BucketName para ativar o S3.");
 }
 
 // Configure the HTTP request pipeline.
