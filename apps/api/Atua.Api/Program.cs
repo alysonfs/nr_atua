@@ -8,6 +8,8 @@ using Atua.Api.Application.Billing;
 using Atua.Api.Application.Identity;
 using Atua.Api.Application.Integrations;
 using Atua.Api.Application.Integrations.CollectorControl;
+using Atua.Api.Application.LlmUsage;
+using Atua.Api.Application.LlmUsage.Contracts;
 using Atua.Api.Application.Tenants;
 using Atua.Api.Application.Triagens;
 using Atua.Api.Application.Triagens.Contracts;
@@ -286,6 +288,15 @@ else
 builder.Services.AddSingleton<ITriagemLlmResponseVerifier, TriagemLlmResponseVerifier>();
 builder.Services.AddScoped<ITriagemLlmUsageRepository, TriagemLlmUsageRepository>();
 
+// Relatório de consumo/custo de LLM por tenant para o Office (ADR-048,
+// pendência "Relatório de consumo por tenant no Office"). Preço por modelo
+// configurável em "TriagemLlm:Pricing"; modelo sem preço custa 0.
+var llmPricingEntries = builder.Configuration.GetSection(TriagemLlmPricingCatalog.SectionName)
+    .Get<List<TriagemLlmModelPricing>>();
+builder.Services.AddSingleton(new TriagemLlmPricingCatalog(llmPricingEntries));
+builder.Services.AddScoped<ITriagemLlmUsageAggregateQuery, TriagemLlmUsageAggregateQueryHandler>();
+builder.Services.AddScoped<IGetLlmUsageSummaryUseCase, GetLlmUsageSummaryUseCase>();
+
 // Plano M2: loop conversacional da LLM dentro da Master API, sem worker
 // novo — atrás da feature flag/allowlist de TriagemLlmConversationOptions
 // (mesma seção "TriagemLlm", restrita a tenant/telefone de teste;
@@ -388,5 +399,6 @@ app.MapTriagemChannelEndpoints();
 app.MapWhatsAppSessionEndpoints();
 app.MapTriagemMessageTemplateEndpoints();
 app.MapTriagemPoolEndpoints();
+app.MapLlmUsageEndpoints();
 
 app.Run();
