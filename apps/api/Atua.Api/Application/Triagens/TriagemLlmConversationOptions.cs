@@ -41,6 +41,25 @@ public sealed class TriagemLlmConversationOptions
     public int MaxLlmCallsPerTriagem { get; init; } = 20;
 
     /// <summary>
+    /// Novas tentativas (além da primeira) quando o fornecedor devolve
+    /// <see cref="Domain.Triagens.ETriagemLlmOutcome.ProviderUnavailable"/>
+    /// (decisão do PO, 2026-10-23). Padrão 2 — total de até 3 chamadas por
+    /// turno antes de mover a triagem para <c>AguardandoIntervencao</c>.
+    /// Cada tentativa (inclusive as que falham) é registrada em
+    /// <see cref="Contracts.ITriagemLlmUsageRepository"/> e conta para
+    /// <see cref="MaxLlmCallsPerTriagem"/>.
+    /// </summary>
+    public int MaxProviderRetries { get; init; } = 2;
+
+    /// <summary>
+    /// Base (em milissegundos) do backoff exponencial entre tentativas:
+    /// a N-ésima tentativa (1-based) espera <c>RetryBackoffBaseMs * 2^(N-1)</c>
+    /// antes da tentativa seguinte. Padrão 1000ms produz 1s antes da 2ª
+    /// tentativa e 2s antes da 3ª (decisão do PO, 2026-10-23).
+    /// </summary>
+    public int RetryBackoffBaseMs { get; init; } = 1000;
+
+    /// <summary>
     /// Verifica se a triagem informada está dentro do escopo restrito do
     /// loop conversacional (plano M2 — "restrito a número de teste").
     /// Compara telefones só pelos dígitos (mesma normalização de

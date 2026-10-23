@@ -36,6 +36,7 @@ public sealed class TriagemLlmConversationService(
     ITriagemLlmClient llmClient,
     ITriagemLlmUsageRepository usageRepository,
     ITriagemLlmResponseVerifier responseVerifier,
+    ITriagemLlmRetryDelay retryDelay,
     IOptions<TriagemLlmConversationOptions> options,
     TimeProvider timeProvider,
     ILogger<TriagemLlmConversationService> logger)
@@ -107,22 +108,18 @@ public sealed class TriagemLlmConversationService(
         var context = await contextRepository.LoadAsync(tenantId, triagemId, triagem.WorkOrderId, cancellationToken);
         var request = BuildRequest(tenantId, triagemId, triagem, context);
 
-        var result = await llmClient.ConduzirAsync(request, cancellationToken);
-
-        await usageRepository.RecordAsync(BuildUsageRecord(tenantId, triagemId, result, now), cancellationToken);
+        var result = await ConduzirComRetryAsync(tenantId, triagemId, request, now, cancellationToken);
 
         switch (result.Outcome)
         {
             case ETriagemLlmOutcome.ProviderUnavailable:
-                // `triagem-llm-conducao.md` §4: falha persistente do
-                // fornecedor → AguardandoIntervencao. Retentativa com
-                // backoff é pendência explícita (não implementada nesta
-                // fase — ver relato ao orchestrator): uma única tentativa
-                // síncrona já é suficiente para não deixar o consumidor sem
-                // resposta por tempo indefinido (o pool assume a partir daqui).
+                // `triagem-llm-conducao.md` §4 + decisão do PO (2026-10-23):
+                // esgotadas as tentativas com backoff (ver
+                // ConduzirComRetryAsync), falha persistente do fornecedor →
+                // AguardandoIntervencao.
                 logger.LogWarning(
-                    "[TRIAGEM-LLM] Fornecedor indisponível. TriagemId={TriagemId} Motivo={Motivo}",
-                    triagemId, result.ErrorReason);
+                    "[TRIAGEM-LLM] Fornecedor indisponível após todas as tentativas. TriagemId={TriagemId} " +
+                    "Motivo={Motivo}", triagemId, result.ErrorReason);
                 triagem.MarcarAguardandoIntervencao(now);
                 await commandRepository.SaveChangesAsync(cancellationToken);
                 return;
@@ -147,6 +144,45 @@ public sealed class TriagemLlmConversationService(
             default:
                 throw new InvalidOperationException($"Outcome não tratado: {result.Outcome}.");
         }
+    }
+
+    /// <summary>
+    /// Chama <see cref="ITriagemLlmClient.ConduzirAsync"/> com até
+    /// <see cref="TriagemLlmConversationOptions.MaxProviderRetries"/> novas
+    /// tentativas quando o fornecedor devolve
+    /// <see cref="ETriagemLlmOutcome.ProviderUnavailable"/>, com backoff
+    /// exponencial entre tentativas (decisão do PO, 2026-10-23). Cada
+    /// tentativa — inclusive as que falham — é registrada em
+    /// <see cref="ITriagemLlmUsageRepository"/>, contando para o orçamento
+    /// de chamadas por triagem. Só o último resultado é devolvido ao
+    /// chamador; os demais outcomes (<c>InvalidOutput</c>/<c>Success</c>)
+    /// nunca disparam retry — só <c>ProviderUnavailable</c> é transitório.
+    /// </summary>
+    private async Task<TriagemLlmResult> ConduzirComRetryAsync(Guid tenantId, Guid triagemId,
+        TriagemLlmRequest request, DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        var maxAttempts = 1 + Math.Max(0, options.Value.MaxProviderRetries);
+        TriagemLlmResult result;
+
+        for (var attempt = 1; attempt <= maxAttempts; attempt++)
+        {
+            result = await llmClient.ConduzirAsync(request, cancellationToken);
+            await usageRepository.RecordAsync(BuildUsageRecord(tenantId, triagemId, result, now), cancellationToken);
+
+            if (result.Outcome != ETriagemLlmOutcome.ProviderUnavailable || attempt == maxAttempts)
+            {
+                return result;
+            }
+
+            var backoff = TimeSpan.FromMilliseconds(options.Value.RetryBackoffBaseMs * Math.Pow(2, attempt - 1));
+            logger.LogWarning(
+                "[TRIAGEM-LLM] Fornecedor indisponível, nova tentativa agendada. TriagemId={TriagemId} " +
+                "Tentativa={Tentativa} TotalTentativas={TotalTentativas} BackoffMs={BackoffMs} Motivo={Motivo}",
+                triagemId, attempt, maxAttempts, backoff.TotalMilliseconds, result.ErrorReason);
+            await retryDelay.WaitAsync(backoff, cancellationToken);
+        }
+
+        throw new InvalidOperationException("ConduzirComRetryAsync: laço de retry terminou sem resultado.");
     }
 
     private async Task HandleSuccessAsync(Guid tenantId, Guid triagemId, string idempotencyKey, Triagem triagem,

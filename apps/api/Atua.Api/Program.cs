@@ -294,6 +294,7 @@ builder.Services.AddScoped<ITriagemLlmUsageRepository, TriagemLlmUsageRepository
 builder.Services.AddOptions<TriagemLlmConversationOptions>()
     .Bind(builder.Configuration.GetSection(TriagemLlmConversationOptions.SectionName));
 builder.Services.AddScoped<ITriagemLlmConversationContextRepository, TriagemLlmConversationContextRepository>();
+builder.Services.AddSingleton<ITriagemLlmRetryDelay, TaskDelayTriagemLlmRetryDelay>();
 builder.Services.AddScoped<TriagemLlmConversationService>();
 
 // CORS: as origens de produção são injetadas pelo user-data da EC2 via
