@@ -1,6 +1,6 @@
 ---
 name: atua-testar-triagem
-description: 'Use quando o usuario pedir "testar triagem", "teste de triagem", "E2E da triagem", "triagem sintetica" ou "testar o pool". Executa o E2E repetivel da triagem via WhatsApp com e2e-triagem-synthetic.sh contra o ambiente remoto (Channel na EC2 da API): envio inicial, resposta do consumidor, pool do operador no Office e limpeza somente da OS sintetica autorizada.'
+description: 'Use quando o usuario pedir "testar triagem", "teste de triagem", "E2E da triagem", "triagem sintetica" ou "testar o pool". Executa o E2E repetivel da triagem via WhatsApp com e2e-triagem-synthetic.sh contra o ambiente remoto (Channel na EC2 da API): envio inicial, resposta do consumidor, acompanhamento gerencial antes e depois do pool no Office e limpeza somente da OS sintetica autorizada.'
 ---
 
 # Testar triagem via WhatsApp
@@ -19,9 +19,13 @@ Nao copie nem reimplemente o script e nao rode SQL avulso no lugar dele.
      triagem `ContatoIniciado`.
   2. **Resposta (opcional):** o numero de teste responde com texto e/ou midia
      -> mensagem/midia vinculadas -> triagem `EmColeta`. Midia vai para o S3.
-  3. **Pool (opcional):** sem a LLM, nada leva a triagem a `LiberadaAoPool`;
+  3. **Acompanhamento gerencial:** antes da liberacao, valide no Office o
+     estado da triagem, comando, conversa e anexo em consulta.
+  4. **Pool (opcional):** sem a LLM, nada leva a triagem a `LiberadaAoPool`;
      use `release-to-pool` (somente OS `E2E-`) e valide no Office.
   Nao cobre consulta ao iService nem a conducao pela LLM.
+- O Office e ambiente de gestao: nao deve oferecer `Assumir` nem enviar
+  mensagens. Atendimento operacional sera no projeto Channel multi-tenant.
 - Destinatario de teste autorizado: `+5584994241248`.
   WhatsApp do Posto: `+5584994077677`.
 - Preserve as travas da API e do Channel. Nunca libere backlog de OS reais,
@@ -98,11 +102,21 @@ Nao copie nem reimplemente o script e nao rode SQL avulso no lugar dele.
 
 4. `Completed` e ACK do servidor nao comprovam entrega. Use `ask_user` para
    confirmar que chegou exatamente uma mensagem em `+5584994241248` e que ela
-   aparece no aparelho do Posto. So declare o envio aprovado apos isso.
+   aparece legivel no aparelho do Posto. "Aguardando mensagem" nao e entrega
+   legivel. So declare o envio aprovado apos isso; se o usuario optar por
+   continuar apenas o inbound/pool, registre essa limitacao separadamente.
 
 5. **Resposta (se o usuario quiser testar o pool):** peca, via `ask_user`, que
    o numero de teste responda com um texto e uma foto. Acompanhe com `status`
-   ate `mensagens_recebidas >= 1` e triagem `EmColeta`.
+   ate `mensagens_recebidas >= 1`, triagem `EmColeta` e
+   `midias_armazenadas >= 1` com tipo `Image`. O status distingue quantidade,
+   tipos e resultados das midias; nao inferir foto pelo contador de textos.
+
+   Antes de liberar, peca ao usuario para verificar a tela gerencial de
+   triagens no Office (`/triage-pool`, aba "Em triagem", somente leitura):
+   a OS deve aparecer ainda em `EmColeta`, com detalhe,
+   comando, texto e foto em consulta. Se houver falha, preserve o teste e
+   registre; nao avance para o pool como forma de esconder o problema.
 
 6. **Pool:** avance somente esta OS:
 
@@ -120,7 +134,7 @@ Nao copie nem reimplemente o script e nao rode SQL avulso no lugar dele.
      a pagina mostra na hora);
    - no detalhe, a conversa (transcricao) aparece em ordem;
    - no detalhe, o anexo (foto) abre — URL pre-assinada do S3;
-   - "Assumir" funciona e a triagem sai do pool;
+   - nao ha botao "Assumir" nem campo para enviar mensagem no Office;
    - autoriza remover a OS sintetica.
 
    Registre como pendente cada item nao confirmado; nao conclua pelo banco.
@@ -133,6 +147,13 @@ Nao copie nem reimplemente o script e nao rode SQL avulso no lugar dele.
   `atua-ec2-exec`. Procure `whatsapp_message_server_ack`,
   `channel_inbound_message_reported`, `channel_inbound_media_reported`,
   rejeicoes e desconexoes. Nao exponha telefone/JID, conteudo nem QR.
+- Para "Aguardando mensagem", procure os eventos sanitizados
+  `whatsapp_retry_requested`, `whatsapp_retry_message_available`,
+  `whatsapp_retry_message_unavailable`, `whatsapp_retry_send_failed` e
+  `whatsapp_retry_limit_reached`. Original disponivel para o SDK nao comprova
+  retransmissao entregue. O cache e somente em memoria, por no maximo 1 hora
+  e 256 mensagens; reiniciar o processo o perde. Nao apague o pareamento nem
+  reinicie como tentativa de corrigir entrega sem autorizacao explicita.
 - `401` do Channel para a API: credencial de servico ausente ou revogada; use a
   skill `atua-seed-collector-credentials` apenas para verificar. Nao gere ou
   rotacione secrets sem autorizacao.

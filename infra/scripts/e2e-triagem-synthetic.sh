@@ -127,7 +127,11 @@ SELECT w."WorkOrderProviderId" AS os,
        c."AttemptCount" AS tentativas,
        c."LastErrorCode" AS erro_comando,
        COALESCE(messages.total, 0) AS mensagens_recebidas,
-       messages.resultados AS resultado_mensagens
+       messages.resultados AS resultado_mensagens,
+       COALESCE(media.total, 0) AS midias_recebidas,
+       COALESCE(media.armazenadas, 0) AS midias_armazenadas,
+       media.tipos AS tipos_midias,
+       media.resultados AS resultado_midias
 FROM work_orders w
 LEFT JOIN triagem_trigger_outbox o ON o."WorkOrderId" = w."Id"
 LEFT JOIN triagens t ON t."WorkOrderId" = w."Id"
@@ -138,6 +142,15 @@ LEFT JOIN LATERAL (
   WHERE message."TriagemId" = t."Id"
      OR t."Id" = ANY(message."CandidateTriagemIds")
 ) AS messages ON true
+LEFT JOIN LATERAL (
+  SELECT count(*) AS total,
+         count(*) FILTER (WHERE item."Outcome" = 'Armazenada') AS armazenadas,
+         string_agg(DISTINCT item."MediaKind", ',') AS tipos,
+         string_agg(DISTINCT item."Outcome", ',') AS resultados
+  FROM triagem_channel_media AS item
+  WHERE item."TriagemId" = t."Id"
+     OR t."Id" = ANY(item."CandidateTriagemIds")
+) AS media ON true
 WHERE w."TenantId" = '$TENANT_ID'
   AND w."WorkOrderProviderId" $filter
 ORDER BY w."CreatedAt";

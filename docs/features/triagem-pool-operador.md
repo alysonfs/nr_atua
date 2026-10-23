@@ -9,11 +9,24 @@
 Permitir que operadores do posto vejam as triagens que precisam de decisão
 humana, consultem o que foi coletado e assumam o atendimento com exclusividade.
 
+> **Atualização (PO, 2026-10-23) — Office é ambiente de gestão.** O Office
+> passa a ser somente leitura para triagens: **não** exibe o botão
+> "Assumir" nem qualquer ação/conversa com o consumidor. Gestores
+> acompanham as triagens **antes** de irem ao pool (aba "Em triagem":
+> `CONTATO_INICIADO`, `EM_COLETA`, `INFORMACOES_SUFICIENTES`) e as do pool
+> (aba "Pool"), com o mesmo detalhe (OS, checklist, anexos e conversa). O
+> atendimento operacional (assumir e responder o consumidor) ficará no
+> futuro projeto **Channel multi-tenant**. O endpoint `POST .../assume`
+> permanece na API, sem consumidor no Office.
+
 ## 2. Escopo da fase 1
 
 ### C1 — Lista do pool
 
-- Mostra apenas triagens do tenant do usuário nos estados:
+- Aba "Em triagem" (pré-pool, somente leitura): triagens do tenant em
+  `CONTATO_INICIADO`, `EM_COLETA` e `INFORMACOES_SUFICIENTES`, com filtro
+  restrito a esses estados; a coluna de tempo indica o tempo no estado atual.
+- Aba "Pool": mostra apenas triagens do tenant do usuário nos estados:
   `LIBERADA_AO_POOL`, `EXPIRADA`, `FALHA_DE_CONTATO` e
   `AGUARDANDO_INTERVENCAO`.
 - Colunas mínimas: número da OS, consumidor, produto/modelo (se houver),
@@ -35,6 +48,10 @@ humana, consultem o que foi coletado e assumam o atendimento com exclusividade.
 - Motivo do estado (ex.: expirada em 48h, falha de contato, 3 desvios).
 
 ### C3 — Assumir
+
+> Fora do Office desde 2026-10-23 (ver atualização na seção 1): a regra de
+> domínio e o endpoint permanecem; a interface operacional irá para o
+> Channel multi-tenant.
 
 - Botão "Assumir" em triagens do pool.
 - Exclusividade: o primeiro operador vence (concorrência otimista); quem
@@ -100,9 +117,14 @@ sugestão de peças, condução pela LLM, devolver ao pool e arquivamento.
 Rotas autenticadas por sessão do Office (`BrowserSession`), isolamento por
 tenant obrigatório (`/api/tenants/{tenantId}/triage-pool...`):
 
-- `GET /api/tenants/{tenantId}/triage-pool?status={estado}` — C1, lista do
-  pool. `status` opcional, aceita apenas um dos quatro estados do pool.
-- `GET /api/tenants/{tenantId}/triage-pool/{triagemId}` — C2, detalhe
+- `GET /api/tenants/{tenantId}/triage-pool?status={estado}&scope={escopo}` —
+  C1, lista. `scope` opcional: `pool` (padrão, `Triagem.PoolStatuses`),
+  `in-progress` (pré-pool, `Triagem.InProgressStatuses`) ou `all` (ambos);
+  valor desconhecido → 400 `invalid_scope`. `status` opcional, aceito
+  apenas se pertencer ao escopo (senão 400 `invalid_status_filter`).
+- `GET /api/tenants/{tenantId}/triage-pool/{triagemId}` — C2, detalhe de
+  triagem do tenant em estado do pool, pré-pool ou assumida (as demais,
+  como `AGUARDANDO_ENVIO`, retornam 404)
   (checklist, anexos com URL pré-assinada temporária, conversa cronológica,
   motivo do estado).
 - `POST /api/tenants/{tenantId}/triage-pool/{triagemId}/assume` — C3,
@@ -146,7 +168,8 @@ com sessão de navegador, layout/navegação, tabelas com `@tanstack/react-table
 + `DataTable`, i18n via `react-i18next`):
 
 - `GET /triage-pool` — **C1**, `TriagePoolPage` + `TriagePoolTable`
-  (`useTriagePoolList`): colunas mínimas (OS, consumidor, produto/modelo,
+  (`useTriagePoolList`): abas "Em triagem" e "Pool" (escopo persistido na
+  URL como `?scope=in-progress`; padrão `pool`), colunas mínimas (OS, consumidor, produto/modelo,
   estado, checklist "x/total", tempo no pool relativo, indicador de nova
   atividade), filtro por estado persistido na URL
   (`TriagePoolStatusFilter`) e polling de 30 s. Contador do pool na
@@ -159,12 +182,9 @@ com sessão de navegador, layout/navegação, tabelas com `@tanstack/react-table
   de carregamento tratada com mensagem amigável via `onError`) e `ConversationSection`
   (ordem cronológica). 404 (`notFound`) exibe "Triagem não encontrada ou
   sem acesso".
-- `POST /triage-pool/{triagemId}/assume` — **C3**, `AssumeButton` +
-  `useAssumeTriagem`: confirmação antes de assumir; em 409
-  (`triagem_already_assumed`) exibe "Já assumida por {userId} em {data}"
-  (sem resolução de nome — o Office ainda não expõe uma lista de membros do
-  tenant ao frontend; pendência registrada abaixo). Sucesso recarrega o
-  detalhe (`refetch`).
+- **C3 removido do Office (2026-10-23):** `AssumeButton` e
+  `useAssumeTriagem` foram excluídos; o detalhe é somente leitura e exibe
+  apenas, quando houver, quem assumiu e quando.
 
 Dependência compartilhada estendida (alteração aditiva, não quebra
 consumidores existentes): `ApiError` (`shared/lib/apiClient.ts`) passou a
@@ -176,7 +196,7 @@ Pendências conhecidas:
 
 - **Resolução de nome do operador que assumiu:** o Office não tem hoje uma
   forma de obter membros do tenant por `userId`; a UI exibe o `userId` cru
-  no aviso de conflito e na assunção já efetivada. Se o produto quiser
+  na assunção já efetivada. Se o produto quiser
   nome, é necessário um endpoint de membros do tenant (fora deste
   incremento).
 - **Testes de anexo real:** `s3:GetObject` foi concedido e validado na EC2
@@ -190,6 +210,6 @@ Pendências conhecidas:
   traduzidas.
 
 Testes: `apps/office/src/app/triage-pool/__tests__` (hooks de lista,
-contador, detalhe e assumir; componente de tabela com filtro/estados;
-páginas de lista e detalhe, incluindo o fluxo de 409). Suíte completa do
+contador e detalhe; componente de tabela com filtro/estados; páginas de
+lista — abas/escopo — e detalhe, somente leitura e sem ações de atendimento). Suíte completa do
 Office (`pnpm --filter office test`) permanece verde.

@@ -948,3 +948,93 @@ pendentes. O status atualizado está na seção 11.
   validado na EC2 (put/get/URL pré-assinada 200/delete). A skill
   `atua-testar-triagem` foi atualizada para o fluxo remoto. Repetir o E2E
   para confirmar lista, transcrição e anexo no detalhe.
+
+### Repetição do E2E do pool (2026-10-23): bloqueada na entrega
+
+- OS sintética `E2E-20261023110726`, injetada uma única vez após a correção
+  de leitura dos anexos. Pré-verificação: API saudável, Channel ativo e
+  conectado, nenhuma OS sintética existente.
+- Resultado técnico: outbox `Processed`, comando `Completed`, triagem
+  `ContatoIniciado`, zero retentativas e zero mensagens recebidas.
+- Logs às `11:07:49–11:07:50 UTC`: resolução do destinatário com
+  `canonicalJidChanged=true`, ACK do servidor e conclusão do comando com
+  `Success`. Nenhum erro ou desconexão observado na janela consultada.
+  ACK não comprova entrega ao aparelho.
+- O PO confirmou duas vezes que a mensagem deste teste não aparece nem no
+  número de teste nem no aparelho do Posto. O texto e a foto mencionados
+  pelo PO pertencem ao teste anterior, não a esta execução.
+- **Estado: BLOCKED na entrega WhatsApp.** Lista do pool, conversa, anexo
+  e assunção não foram validados nesta execução. Não houve liberação ao
+  pool, reinjeção, reinício de processo ou limpeza. OS preservada para
+  diagnóstico; não reenviar sem nova autorização.
+
+### Reinício do E2E do pool (2026-10-23): mensagem indisponível nos aparelhos
+
+- Após autorização explícita do PO para recomeçar e remover os testes
+  anteriores, o script executou `cleanup E2E-20261023110726`. A consulta
+  global de status retornou zero linhas; esse teste não tinha mídia vinculada.
+- Uma única nova injeção criou a OS `E2E-20261023113541`: outbox `Processed`,
+  comando `Completed`, triagem `ContatoIniciado`, zero retentativas, nenhum
+  código de erro e zero mensagens recebidas na consulta após o envio.
+- O PO viu "Aguardando mensagem. Essa ação pode levar alguns instantes" no
+  destinatário. Após conferir os celulares principais conectados, confirmou
+  que tanto o celular de teste quanto o do posto continuam mostrando
+  "Aguardando mensagem". Ainda não enviou texto ou foto nesta execução.
+- **Estado: BLOCKED na disponibilização do conteúdo pelo WhatsApp.** O ACK
+  não comprova mensagem legível. A presença de WhatsApp Web aberto foi
+  relatada, mas não foi demonstrada como causa. Limpar registros do ATUA não
+  desfaz ACK nem corrige o estado criptográfico do WhatsApp.
+- OS preservada; sem liberação ao pool, novo reenvio, reinício do Channel,
+  exclusão de sessão ou novo pareamento. Lista, conversa, anexo e assunção
+  continuam pendentes de validação nesta execução.
+
+### Continuação do E2E do pool (2026-10-23): recebimento e pool aprovados
+
+- A OS `E2E-20261023113541` permaneceu preservada após o relato de
+  "Aguardando mensagem". O Channel estava ativo; a consulta filtrada não
+  encontrou assinaturas de log para os padrões pesquisados de falha de
+  descriptografia/prekey. Os eventos inbound observados inicialmente não
+  estavam vinculados à OS (status ainda em `ContatoIniciado`, zero mensagens).
+- Sem novo envio outbound, o PO enviou diretamente do número de teste ao
+  WhatsApp do posto um texto identificável `E2E 113541`. O script confirmou
+  uma mensagem vinculada e a triagem passou a `EmColeta`.
+- O PO enviou uma foto na mesma conversa. Consulta agregada somente por tipo
+  e resultado confirmou `Image | Armazenada | 1`.
+- A OS foi avançada com o subcomando restrito `release-to-pool
+  E2E-20261023113541`; o script confirmou `LiberadaAoPool`. O PO confirmou no
+  Office: item visível na lista, texto no detalhe, foto aberta e ação
+  `Assumir` bem-sucedida.
+- Limpeza explicitamente autorizada: o script removeu 7 registros e 1 objeto
+  de mídia do S3. Consulta final do ID retornou zero linhas.
+- **Resultado:** fluxo inbound (texto e mídia), associação com OS, visualização
+  no pool e assunção validados. O envio inicial continua com a observação de
+  "Aguardando mensagem" nos aparelhos e não foi considerado entrega visual
+  aprovada; a causa ainda não foi determinada. Não houve reinjeção nem
+  reinício do Channel nesta continuação.
+
+### Investigação outbound e recuperação de retry (2026-10-23)
+
+- O adapter anterior não fornecia `getMessage` ao Baileys 6.7.24. A
+  implementação instalada usa o default `async () => undefined`; no handler
+  de receipt retry, o SDK só retransmite se recuperar o payload original.
+  Lacuna comprovada no código e compatível com "Aguardando mensagem", sem
+  afirmar causa definitiva dos episódios já observados.
+- O PO escolheu cache somente em memória, com retenção máxima de 1 hora e
+  limite de quantidade. Implementado limite de 256 mensagens por sessão,
+  expiração ativa, recuperação do payload original e verificação de
+  destinatário/aliases PN e LID. Reconexões preservam o cache no mesmo
+  processo; reinício e logout o perdem. Nenhum arquivo de conteúdo foi criado.
+- Diagnósticos sanitizados do SDK e do cache registram pedidos de retry,
+  original disponível/ausente, falha e limite, sem expor mensagens, JIDs,
+  telefones ou chaves. Disponibilidade do original não comprova entrega.
+- Validação local: Channel `check`, 69/69 testes e `build` aprovados.
+  Cobertura inclui callback no adapter de produção, payload original,
+  pedido durante envio, expiração exata, limite de 256, reconexão,
+  isolamento de sessão/destinatário e logs sem dados privados.
+- Publicação e novo teste real de entrega pendentes; nenhum reenvio,
+  reinício, novo pareamento ou mudança remota ocorreu nesta investigação.
+- O PO autorizou publicar API, Channel e Office após a validação local e
+  um único envio sintético depois da publicação. A skill de E2E foi alinhada
+  ao Office gerencial (validar pré-pool e ausência de `Assumir`/envio).
+  O status do script agora expõe quantidades, tipos e resultados de mídia,
+  além do contador de textos; sintaxe e consulta somente leitura aprovadas.
