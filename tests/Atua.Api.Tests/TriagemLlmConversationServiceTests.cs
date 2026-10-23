@@ -26,6 +26,7 @@ public class TriagemLlmConversationServiceTests
         FakeTriagemChannelCommandRepository CommandRepository,
         FakeTriagemLlmUsageRepository UsageRepository,
         FakeTriagemLlmClient LlmClient,
+        FakeTriagemLlmRetryDelay RetryDelay,
         Guid TenantId,
         Guid IntegrationId,
         Guid TriagemId,
@@ -56,6 +57,7 @@ public class TriagemLlmConversationServiceTests
         var usageRepository = new FakeTriagemLlmUsageRepository();
         var llmClient = new FakeTriagemLlmClient();
         var contextRepository = new FakeTriagemLlmConversationContextRepository();
+        var retryDelay = new FakeTriagemLlmRetryDelay();
         var effectiveOptions = optionsFactory?.Invoke(tenantId) ?? new TriagemLlmConversationOptions
         {
             ConversationEnabled = true,
@@ -70,12 +72,13 @@ public class TriagemLlmConversationServiceTests
             llmClient,
             usageRepository,
             new TriagemLlmResponseVerifier(),
+            retryDelay,
             Options.Create(effectiveOptions),
             new FakeTimeProvider(Now),
             NullLogger<TriagemLlmConversationService>.Instance);
 
-        return new Fixture(service, triagemRepository, commandRepository, usageRepository, llmClient, tenantId,
-            integrationId, triagemId, workOrderId);
+        return new Fixture(service, triagemRepository, commandRepository, usageRepository, llmClient, retryDelay,
+            tenantId, integrationId, triagemId, workOrderId);
     }
 
     /// <summary>Marca os dois itens que o contrato M1 não permite marcar automaticamente via LLM (pendência documentada).</summary>
@@ -143,9 +146,13 @@ public class TriagemLlmConversationServiceTests
     }
 
     [Fact]
-    public async Task ConductAsync_ProvedorIndisponivel_MoveParaAguardandoIntervencaoSemEnviarMensagem()
+    public async Task ConductAsync_ProvedorIndisponivelEmTodasAsTentativas_MoveParaAguardandoIntervencaoAposBackoff()
     {
+        // Decisão do PO (2026-10-23): até 2 novas tentativas (3 chamadas no
+        // total) com backoff exponencial (1s, 2s) antes de desistir.
         var fixture = CreateFixture();
+        fixture.LlmClient.EnqueueResult(TriagemLlmResult.Unavailable("timeout"));
+        fixture.LlmClient.EnqueueResult(TriagemLlmResult.Unavailable("timeout"));
         fixture.LlmClient.EnqueueResult(TriagemLlmResult.Unavailable("timeout"));
 
         await fixture.Service.ConductAsync(fixture.TenantId, fixture.TriagemId, Guid.NewGuid(),
@@ -154,8 +161,44 @@ public class TriagemLlmConversationServiceTests
         var triagem = await fixture.TriagemRepository.FindByIdAsync(fixture.TriagemId, CancellationToken.None);
         Assert.Equal(ETriagemStatus.AguardandoIntervencao, triagem!.Status);
         Assert.Empty(fixture.CommandRepository.Commands);
-        Assert.Single(fixture.UsageRepository.Records);
+
+        // 3 tentativas, cada uma registrada em uso (inclusive as que falham).
+        Assert.Equal(3, fixture.UsageRepository.Records.Count);
+        Assert.All(fixture.UsageRepository.Records,
+            record => Assert.Equal(ETriagemLlmOutcome.ProviderUnavailable, record.Outcome));
+
+        // Backoff exponencial entre as 3 tentativas: 1s antes da 2ª, 2s antes da 3ª.
+        Assert.Equal([TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(2)], fixture.RetryDelay.RequestedDelays);
+    }
+
+    [Fact]
+    public async Task ConductAsync_ProvedorIndisponivelNaPrimeiraTentativa_SucessoNaSegundaTentativaContinuaFluxo()
+    {
+        // Decisão do PO (2026-10-23): sucesso em qualquer tentativa dentro
+        // do limite interrompe o retry e segue o fluxo normal.
+        var fixture = CreateFixture();
+        fixture.LlmClient.EnqueueResult(TriagemLlmResult.Unavailable("timeout"));
+        fixture.LlmClient.EnqueueResult(TriagemLlmResult.Success(
+            new TriagemLlmSuccessPayload(
+                "Pode me contar com suas palavras o que está acontecendo com o aparelho?",
+                new TriagemLlmCamposEstruturados(null, null, null, null), [],
+                new TriagemLlmSinalDesvio(Detectado: false, Motivo: null)),
+            new TriagemLlmUsageInfo("modelo-teste", 10, 5, TimeSpan.FromMilliseconds(100))));
+
+        await fixture.Service.ConductAsync(fixture.TenantId, fixture.TriagemId, Guid.NewGuid(),
+            "+5584994241248", CancellationToken.None);
+
+        var triagem = await fixture.TriagemRepository.FindByIdAsync(fixture.TriagemId, CancellationToken.None);
+        Assert.Equal(ETriagemStatus.EmColeta, triagem!.Status);
+
+        // 2 tentativas registradas (1 falha + 1 sucesso), um único comando enviado.
+        Assert.Equal(2, fixture.UsageRepository.Records.Count);
         Assert.Equal(ETriagemLlmOutcome.ProviderUnavailable, fixture.UsageRepository.Records[0].Outcome);
+        Assert.Equal(ETriagemLlmOutcome.Success, fixture.UsageRepository.Records[1].Outcome);
+        Assert.Single(fixture.CommandRepository.Commands);
+
+        // Backoff de 1s solicitado só antes da 2ª tentativa (que teve sucesso, sem 3ª tentativa).
+        Assert.Equal([TimeSpan.FromSeconds(1)], fixture.RetryDelay.RequestedDelays);
     }
 
     [Fact]

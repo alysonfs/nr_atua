@@ -444,6 +444,7 @@ public class TriagemChannelMediaEndpointsTests
         builder.Services.AddScoped<ITriagemLlmUsageRepository, TriagemLlmUsageRepository>();
         builder.Services.AddSingleton<ITriagemLlmConversationContextRepository,
             FakeTriagemLlmConversationContextRepository>();
+        builder.Services.AddSingleton<ITriagemLlmRetryDelay, FakeTriagemLlmRetryDelay>();
         builder.Services.AddSingleton(
             Microsoft.Extensions.Options.Options.Create(new TriagemLlmConversationOptions()));
         builder.Services.AddSingleton(
