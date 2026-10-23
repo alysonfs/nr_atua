@@ -136,6 +136,7 @@ const ptBR = {
     dashboard: 'Dashboard',
     serviceOrders: 'Ordens de Serviço',
     triagePool: 'Pool de Triagem',
+    aiUsage: 'Inteligência Artificial',
     account: 'Conta',
     accountMenuAria: 'Abrir menu da conta',
     openMenu: 'Abrir menu',
@@ -148,6 +149,7 @@ const ptBR = {
       workOrderDetail: 'Detalhes da OS',
       triagePool: 'Pool de Triagem',
       triagePoolDetail: 'Detalhes da Triagem',
+      aiUsage: 'Inteligência Artificial',
     },
   },
   dashboard: {
@@ -707,6 +709,63 @@ const ptBR = {
     warningAction: 'Configure suas integrações agora ou faça upgrade para continuar usando o Atyno.',
     closeAlert: 'Fechar aviso',
   },
+  aiUsage: {
+    title: 'Inteligência Artificial',
+    subtitle: 'Consumo e custo estimado de uso de IA (LLM) por tenant, no período selecionado.',
+    costDisclaimer:
+      'Custo estimado com base no preço público por token; a fatura AWS é a referência oficial.',
+    loading: 'Carregando o consumo de IA...',
+    loadError: 'Não foi possível carregar o consumo de IA. Tente novamente mais tarde.',
+    empty: 'Nenhum dado de consumo de IA para o período selecionado.',
+    period: {
+      label: 'Período',
+      options: {
+        '7d': 'Últimos 7 dias',
+        '30d': 'Últimos 30 dias',
+        '90d': 'Últimos 90 dias',
+        currentMonth: 'Mês atual',
+      },
+    },
+    totals: {
+      estimatedCost: 'Custo estimado',
+      calls: 'Chamadas',
+      inputTokens: 'Tokens de entrada',
+      outputTokens: 'Tokens de saída',
+      avgLatencyMs: 'Latência média',
+      avgLatencyValue: '{{value}} ms',
+      failedCalls: 'Falhas',
+    },
+    daily: {
+      title: 'Série diária',
+      calls: 'Chamadas',
+      estimatedCost: 'Custo estimado',
+      empty: 'Sem dados diários para o período selecionado.',
+    },
+    tenants: {
+      title: 'Consumo por tenant',
+      empty: 'Nenhum tenant com consumo no período selecionado.',
+      columns: {
+        tenant: 'Tenant',
+        estimatedCost: 'Custo estimado',
+        calls: 'Chamadas',
+        inputTokens: 'Tokens de entrada',
+        outputTokens: 'Tokens de saída',
+        avgLatencyMs: 'Latência média (ms)',
+        failedCalls: 'Falhas',
+      },
+    },
+    models: {
+      title: 'Consumo por modelo',
+      empty: 'Nenhum modelo com consumo no período selecionado.',
+      columns: {
+        model: 'Modelo',
+        estimatedCost: 'Custo estimado',
+        calls: 'Chamadas',
+        inputTokens: 'Tokens de entrada',
+        outputTokens: 'Tokens de saída',
+      },
+    },
+  },
 } as const
 
 const enUS = {
@@ -788,9 +847,9 @@ const enUS = {
     office: 'Office', subtitle: 'Operations and integrations', clientName: 'Client Name',
     alerts: 'Notifications', settings: 'Settings', signOut: 'Sign out',
     signOutAria: 'Sign out of account', sideMenu: 'Side menu', mainNavigation: 'Main navigation',
-    menu: 'Menu', dashboard: 'Dashboard', serviceOrders: 'Service Orders', triagePool: 'Triage Pool', account: 'Account', accountMenuAria: 'Open account menu',
+    menu: 'Menu', dashboard: 'Dashboard', serviceOrders: 'Service Orders', triagePool: 'Triage Pool', aiUsage: 'Artificial Intelligence', account: 'Account', accountMenuAria: 'Open account menu',
     openMenu: 'Open menu', closeMenu: 'Close menu',
-    breadcrumbs: { ariaLabel: 'Breadcrumb navigation', home: 'Dashboard', serviceOrders: 'Service Orders', settings: 'Settings', workOrderDetail: 'Work Order Details', triagePool: 'Triage Pool', triagePoolDetail: 'Triage Details' },
+    breadcrumbs: { ariaLabel: 'Breadcrumb navigation', home: 'Dashboard', serviceOrders: 'Service Orders', settings: 'Settings', workOrderDetail: 'Work Order Details', triagePool: 'Triage Pool', triagePoolDetail: 'Triage Details', aiUsage: 'Artificial Intelligence' },
   },
   dashboard: {
     ...ptBR.dashboard,
@@ -1192,6 +1251,63 @@ const enUS = {
     warningAction: 'Configure your integrations now or upgrade to keep using Atyno.',
     closeAlert: 'Close alert',
   },
+  aiUsage: {
+    title: 'Artificial Intelligence',
+    subtitle: 'AI (LLM) usage and estimated cost per tenant, for the selected period.',
+    costDisclaimer:
+      'Estimated cost based on the public per-token price; the AWS invoice is the official reference.',
+    loading: 'Loading AI usage...',
+    loadError: 'Could not load AI usage. Please try again later.',
+    empty: 'No AI usage data for the selected period.',
+    period: {
+      label: 'Period',
+      options: {
+        '7d': 'Last 7 days',
+        '30d': 'Last 30 days',
+        '90d': 'Last 90 days',
+        currentMonth: 'Current month',
+      },
+    },
+    totals: {
+      estimatedCost: 'Estimated cost',
+      calls: 'Calls',
+      inputTokens: 'Input tokens',
+      outputTokens: 'Output tokens',
+      avgLatencyMs: 'Average latency',
+      avgLatencyValue: '{{value}} ms',
+      failedCalls: 'Failures',
+    },
+    daily: {
+      title: 'Daily series',
+      calls: 'Calls',
+      estimatedCost: 'Estimated cost',
+      empty: 'No daily data for the selected period.',
+    },
+    tenants: {
+      title: 'Usage by tenant',
+      empty: 'No tenant usage for the selected period.',
+      columns: {
+        tenant: 'Tenant',
+        estimatedCost: 'Estimated cost',
+        calls: 'Calls',
+        inputTokens: 'Input tokens',
+        outputTokens: 'Output tokens',
+        avgLatencyMs: 'Average latency (ms)',
+        failedCalls: 'Failures',
+      },
+    },
+    models: {
+      title: 'Usage by model',
+      empty: 'No model usage for the selected period.',
+      columns: {
+        model: 'Model',
+        estimatedCost: 'Estimated cost',
+        calls: 'Calls',
+        inputTokens: 'Input tokens',
+        outputTokens: 'Output tokens',
+      },
+    },
+  },
 } as const
 
 const esAR = {
@@ -1272,9 +1388,9 @@ const esAR = {
     office: 'Office', subtitle: 'Operaciones e integraciones', clientName: 'Nombre del Cliente',
     alerts: 'Notificaciones', settings: 'Configuración', signOut: 'Salir',
     signOutAria: 'Cerrar sesión', sideMenu: 'Menú lateral', mainNavigation: 'Navegación principal',
-    menu: 'Menú', dashboard: 'Panel', serviceOrders: 'Órdenes de Servicio', triagePool: 'Pool de Triaje', account: 'Cuenta', accountMenuAria: 'Abrir menú de la cuenta',
+    menu: 'Menú', dashboard: 'Panel', serviceOrders: 'Órdenes de Servicio', triagePool: 'Pool de Triaje', aiUsage: 'Inteligencia Artificial', account: 'Cuenta', accountMenuAria: 'Abrir menú de la cuenta',
     openMenu: 'Abrir menú', closeMenu: 'Cerrar menú',
-    breadcrumbs: { ariaLabel: 'Ruta de navegación', home: 'Panel', serviceOrders: 'Órdenes de Servicio', settings: 'Configuración', workOrderDetail: 'Detalles de la OS', triagePool: 'Pool de Triaje', triagePoolDetail: 'Detalles del Triaje' },
+    breadcrumbs: { ariaLabel: 'Ruta de navegación', home: 'Panel', serviceOrders: 'Órdenes de Servicio', settings: 'Configuración', workOrderDetail: 'Detalles de la OS', triagePool: 'Pool de Triaje', triagePoolDetail: 'Detalles del Triaje', aiUsage: 'Inteligencia Artificial' },
   },
   dashboard: {
     ...enUS.dashboard,
@@ -1676,6 +1792,63 @@ const esAR = {
     urgentAction: 'Actualizá ahora para mantener tus integraciones activas y tus datos seguros.',
     warningAction: 'Configurá tus integraciones ahora o actualizá el plan para seguir usando Atyno.',
     closeAlert: 'Cerrar aviso',
+  },
+  aiUsage: {
+    title: 'Inteligencia Artificial',
+    subtitle: 'Consumo y costo estimado de uso de IA (LLM) por tenant, en el período seleccionado.',
+    costDisclaimer:
+      'Costo estimado en base al precio público por token; la factura de AWS es la referencia oficial.',
+    loading: 'Cargando el consumo de IA...',
+    loadError: 'No se pudo cargar el consumo de IA. Intentá nuevamente más tarde.',
+    empty: 'No hay datos de consumo de IA para el período seleccionado.',
+    period: {
+      label: 'Período',
+      options: {
+        '7d': 'Últimos 7 días',
+        '30d': 'Últimos 30 días',
+        '90d': 'Últimos 90 días',
+        currentMonth: 'Mes actual',
+      },
+    },
+    totals: {
+      estimatedCost: 'Costo estimado',
+      calls: 'Llamadas',
+      inputTokens: 'Tokens de entrada',
+      outputTokens: 'Tokens de salida',
+      avgLatencyMs: 'Latencia promedio',
+      avgLatencyValue: '{{value}} ms',
+      failedCalls: 'Fallas',
+    },
+    daily: {
+      title: 'Serie diaria',
+      calls: 'Llamadas',
+      estimatedCost: 'Costo estimado',
+      empty: 'Sin datos diarios para el período seleccionado.',
+    },
+    tenants: {
+      title: 'Consumo por tenant',
+      empty: 'Ningún tenant con consumo en el período seleccionado.',
+      columns: {
+        tenant: 'Tenant',
+        estimatedCost: 'Costo estimado',
+        calls: 'Llamadas',
+        inputTokens: 'Tokens de entrada',
+        outputTokens: 'Tokens de salida',
+        avgLatencyMs: 'Latencia promedio (ms)',
+        failedCalls: 'Fallas',
+      },
+    },
+    models: {
+      title: 'Consumo por modelo',
+      empty: 'Ningún modelo con consumo en el período seleccionado.',
+      columns: {
+        model: 'Modelo',
+        estimatedCost: 'Costo estimado',
+        calls: 'Llamadas',
+        inputTokens: 'Tokens de entrada',
+        outputTokens: 'Tokens de salida',
+      },
+    },
   },
 } as const
 

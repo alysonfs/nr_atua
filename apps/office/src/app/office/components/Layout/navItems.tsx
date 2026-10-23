@@ -1,4 +1,4 @@
-import { Dashboard, FileText, Inbox, Setting } from '@icon-park/react'
+import { Brain, Dashboard, FileText, Inbox, Setting } from '@icon-park/react'
 import type { TFunction } from 'i18next'
 import type { SidebarItemConfig } from './SidebarItem'
 
@@ -17,6 +17,11 @@ export function getNavItems(t: TFunction, triagePoolCount?: number): SidebarItem
       to: '/triage-pool',
       icon: <Inbox theme="outline" size={18} />,
       badge: triagePoolCount,
+    },
+    {
+      label: t('layout.aiUsage'),
+      to: '/ai-usage',
+      icon: <Brain theme="outline" size={18} />,
     },
     { label: t('layout.settings'), to: '/settings', icon: <Setting theme="outline" size={18} /> },
   ]

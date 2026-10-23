@@ -14,6 +14,7 @@ import { WorkOrderDetailPage } from './app/dashboard/pages/WorkOrderDetailPage'
 import { SettingsPage } from './app/office/pages/SettingsPage'
 import { TriagePoolPage } from './app/triage-pool/pages/TriagePoolPage'
 import { TriagePoolDetailPage } from './app/triage-pool/pages/TriagePoolDetailPage'
+import { AiUsagePage } from './app/ai-usage/pages/AiUsagePage'
 
 export function AppRouter() {
   return (
@@ -36,6 +37,7 @@ export function AppRouter() {
               <Route path="/work-orders/:workOrderId" element={<WorkOrderDetailPage />} />
               <Route path="/triage-pool" element={<TriagePoolPage />} />
               <Route path="/triage-pool/:triagemId" element={<TriagePoolDetailPage />} />
+              <Route path="/ai-usage" element={<AiUsagePage />} />
               <Route path="/settings" element={<SettingsPage />} />
             </Route>
           </Route>
