@@ -185,9 +185,192 @@ public class TriagemPoolUseCasesTests
         Assert.True(item.HasNewActivity);
     }
 
+    [Fact]
+    public async Task List_EscopoInProgress_RetornaApenasEstadosPrePool()
+    {
+        var databaseName = Guid.NewGuid().ToString();
+        var userId = Guid.CreateVersion7();
+        Guid tenantId;
+
+        await using (var context = CreateContext(databaseName))
+        {
+            tenantId = await SeedTenantWithMembershipAsync(context, userId);
+            var integrationId = await SeedIntegrationAsync(context, tenantId);
+            var workOrderId = await SeedWorkOrderAsync(context, tenantId, integrationId, "Cliente", "P", "M");
+
+            AddTriagem(context, CriarTriagemNoEstado(tenantId, integrationId, workOrderId, ETriagemStatus.AguardandoEnvio));
+            AddTriagem(context, CriarTriagemNoEstado(tenantId, integrationId, workOrderId, ETriagemStatus.ContatoIniciado));
+            AddTriagem(context, CriarTriagemNoEstado(tenantId, integrationId, workOrderId, ETriagemStatus.EmColeta));
+            AddTriagem(context, CriarTriagemNoEstado(tenantId, integrationId, workOrderId,
+                ETriagemStatus.InformacoesSuficientes));
+            AddTriagem(context, CriarTriagemNoEstado(tenantId, integrationId, workOrderId, ETriagemStatus.LiberadaAoPool));
+            await context.SaveChangesAsync();
+        }
+
+        await using var assertContext = CreateContext(databaseName);
+        var useCase = new ListTriagemPoolUseCase(assertContext);
+
+        var result = await useCase.ExecuteAsync(
+            new TriagemPoolListQuery(tenantId, userId, StatusFilter: null, ETriagemPoolListScope.InProgress),
+            CancellationToken.None);
+
+        Assert.Equal(ETriagemPoolListOutcome.Success, result.Outcome);
+        Assert.Equal(3, result.TotalCount);
+        Assert.Equal(
+            Triagem.InProgressStatuses.OrderBy(status => status),
+            result.Items.Select(item => item.Status).OrderBy(status => status));
+    }
+
+    [Fact]
+    public async Task List_EscopoAll_RetornaPrePoolEPool()
+    {
+        var databaseName = Guid.NewGuid().ToString();
+        var userId = Guid.CreateVersion7();
+        Guid tenantId;
+
+        await using (var context = CreateContext(databaseName))
+        {
+            tenantId = await SeedTenantWithMembershipAsync(context, userId);
+            var integrationId = await SeedIntegrationAsync(context, tenantId);
+            var workOrderId = await SeedWorkOrderAsync(context, tenantId, integrationId, "Cliente", "P", "M");
+
+            AddTriagem(context, CriarTriagemNoEstado(tenantId, integrationId, workOrderId, ETriagemStatus.AguardandoEnvio));
+            AddTriagem(context, CriarTriagemNoEstado(tenantId, integrationId, workOrderId, ETriagemStatus.EmColeta));
+            AddTriagem(context, CriarTriagemNoEstado(tenantId, integrationId, workOrderId, ETriagemStatus.Expirada));
+            await context.SaveChangesAsync();
+        }
+
+        await using var assertContext = CreateContext(databaseName);
+        var useCase = new ListTriagemPoolUseCase(assertContext);
+
+        var result = await useCase.ExecuteAsync(
+            new TriagemPoolListQuery(tenantId, userId, StatusFilter: null, ETriagemPoolListScope.All),
+            CancellationToken.None);
+
+        Assert.Equal(ETriagemPoolListOutcome.Success, result.Outcome);
+        Assert.Equal(2, result.TotalCount);
+        Assert.Contains(result.Items, item => item.Status == ETriagemStatus.EmColeta);
+        Assert.Contains(result.Items, item => item.Status == ETriagemStatus.Expirada);
+    }
+
+    [Theory]
+    [InlineData(ETriagemPoolListScope.InProgress, ETriagemStatus.LiberadaAoPool)]
+    [InlineData(ETriagemPoolListScope.InProgress, ETriagemStatus.AguardandoEnvio)]
+    [InlineData(ETriagemPoolListScope.Pool, ETriagemStatus.InformacoesSuficientes)]
+    [InlineData(ETriagemPoolListScope.All, ETriagemStatus.AssumidaPorOperador)]
+    public async Task List_FiltroForaDoEscopo_RetornaInvalidStatusFilter(ETriagemPoolListScope scope,
+        ETriagemStatus statusFilter)
+    {
+        var databaseName = Guid.NewGuid().ToString();
+        var userId = Guid.CreateVersion7();
+        Guid tenantId;
+
+        await using (var context = CreateContext(databaseName))
+        {
+            tenantId = await SeedTenantWithMembershipAsync(context, userId);
+            await context.SaveChangesAsync();
+        }
+
+        await using var assertContext = CreateContext(databaseName);
+        var useCase = new ListTriagemPoolUseCase(assertContext);
+
+        var result = await useCase.ExecuteAsync(
+            new TriagemPoolListQuery(tenantId, userId, statusFilter, scope), CancellationToken.None);
+
+        Assert.Equal(ETriagemPoolListOutcome.InvalidStatusFilter, result.Outcome);
+    }
+
+    [Fact]
+    public async Task List_EscopoInProgressComFiltroValido_RetornaApenasOEstadoPedido()
+    {
+        var databaseName = Guid.NewGuid().ToString();
+        var userId = Guid.CreateVersion7();
+        Guid tenantId;
+
+        await using (var context = CreateContext(databaseName))
+        {
+            tenantId = await SeedTenantWithMembershipAsync(context, userId);
+            var integrationId = await SeedIntegrationAsync(context, tenantId);
+            var workOrderId = await SeedWorkOrderAsync(context, tenantId, integrationId, "Cliente", "P", "M");
+
+            AddTriagem(context, CriarTriagemNoEstado(tenantId, integrationId, workOrderId, ETriagemStatus.ContatoIniciado));
+            AddTriagem(context, CriarTriagemNoEstado(tenantId, integrationId, workOrderId, ETriagemStatus.EmColeta));
+            await context.SaveChangesAsync();
+        }
+
+        await using var assertContext = CreateContext(databaseName);
+        var useCase = new ListTriagemPoolUseCase(assertContext);
+
+        var result = await useCase.ExecuteAsync(
+            new TriagemPoolListQuery(tenantId, userId, ETriagemStatus.EmColeta, ETriagemPoolListScope.InProgress),
+            CancellationToken.None);
+
+        Assert.Equal(ETriagemPoolListOutcome.Success, result.Outcome);
+        var item = Assert.Single(result.Items);
+        Assert.Equal(ETriagemStatus.EmColeta, item.Status);
+    }
+
     // -------------------------------------------------------------------
     // C2 — Detalhe
     // -------------------------------------------------------------------
+
+    [Theory]
+    [InlineData(ETriagemStatus.ContatoIniciado)]
+    [InlineData(ETriagemStatus.EmColeta)]
+    [InlineData(ETriagemStatus.InformacoesSuficientes)]
+    public async Task Detail_TriagemPrePool_RetornaSuccessSomenteLeitura(ETriagemStatus estado)
+    {
+        var databaseName = Guid.NewGuid().ToString();
+        var userId = Guid.CreateVersion7();
+        Guid tenantId;
+        Guid triagemId;
+
+        await using (var context = CreateContext(databaseName))
+        {
+            tenantId = await SeedTenantWithMembershipAsync(context, userId);
+            var integrationId = await SeedIntegrationAsync(context, tenantId);
+            var workOrderId = await SeedWorkOrderAsync(context, tenantId, integrationId, "Cliente", "P", "M");
+            var triagem = CriarTriagemNoEstado(tenantId, integrationId, workOrderId, estado);
+            triagemId = triagem.Id;
+            AddTriagem(context, triagem);
+            await context.SaveChangesAsync();
+        }
+
+        await using var assertContext = CreateContext(databaseName);
+        var useCase = CreateDetailUseCase(assertContext);
+
+        var result = await useCase.ExecuteAsync(tenantId, triagemId, userId, CancellationToken.None);
+
+        Assert.Equal(ETriagemPoolDetailOutcome.Success, result.Outcome);
+        Assert.Equal("Cliente", result.Detail!.WorkOrder.CustomerName);
+    }
+
+    [Fact]
+    public async Task Detail_AguardandoEnvio_RetornaNotFound()
+    {
+        var databaseName = Guid.NewGuid().ToString();
+        var userId = Guid.CreateVersion7();
+        Guid tenantId;
+        Guid triagemId;
+
+        await using (var context = CreateContext(databaseName))
+        {
+            tenantId = await SeedTenantWithMembershipAsync(context, userId);
+            var integrationId = await SeedIntegrationAsync(context, tenantId);
+            var workOrderId = await SeedWorkOrderAsync(context, tenantId, integrationId, "Cliente", "P", "M");
+            var triagem = CriarTriagemNoEstado(tenantId, integrationId, workOrderId, ETriagemStatus.AguardandoEnvio);
+            triagemId = triagem.Id;
+            AddTriagem(context, triagem);
+            await context.SaveChangesAsync();
+        }
+
+        await using var assertContext = CreateContext(databaseName);
+        var useCase = CreateDetailUseCase(assertContext);
+
+        var result = await useCase.ExecuteAsync(tenantId, triagemId, userId, CancellationToken.None);
+
+        Assert.Equal(ETriagemPoolDetailOutcome.NotFound, result.Outcome);
+    }
 
     [Fact]
     public async Task Detail_OutroTenant_RetornaNotFound()
