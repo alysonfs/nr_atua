@@ -99,4 +99,39 @@ describe('Office localization', () => {
       expect(ptBR.layout.triagePool).toBeTruthy()
     })
   })
+
+  describe('aiUsage key parity across locales', () => {
+    function collectKeys(value: unknown, prefix = ''): string[] {
+      if (typeof value !== 'object' || value === null) return [prefix]
+      return Object.entries(value as Record<string, unknown>).flatMap(([key, nested]) =>
+        collectKeys(nested, prefix ? `${prefix}.${key}` : key),
+      )
+    }
+
+    it('exposes the same aiUsage keys in pt-BR, en-US and es-AR', () => {
+      const ptBR = i18n.getResourceBundle('pt-BR', 'translation')
+      const enUS = i18n.getResourceBundle('en-US', 'translation')
+      const esAR = i18n.getResourceBundle('es-AR', 'translation')
+
+      const ptKeys = collectKeys(ptBR.aiUsage).sort()
+      const enKeys = collectKeys(enUS.aiUsage).sort()
+      const esKeys = collectKeys(esAR.aiUsage).sort()
+
+      expect(enKeys).toEqual(ptKeys)
+      expect(esKeys).toEqual(ptKeys)
+    })
+
+    it('exposes the layout navigation/breadcrumb keys for the AI usage page in all locales', () => {
+      const ptBR = i18n.getResourceBundle('pt-BR', 'translation')
+      const enUS = i18n.getResourceBundle('en-US', 'translation')
+      const esAR = i18n.getResourceBundle('es-AR', 'translation')
+
+      expect(ptBR.layout.aiUsage).toBeTruthy()
+      expect(enUS.layout.aiUsage).toBe('Artificial Intelligence')
+      expect(esAR.layout.aiUsage).toBe('Inteligencia Artificial')
+      expect(ptBR.layout.breadcrumbs.aiUsage).toBeTruthy()
+      expect(enUS.layout.breadcrumbs.aiUsage).toBeTruthy()
+      expect(esAR.layout.breadcrumbs.aiUsage).toBeTruthy()
+    })
+  })
 })
