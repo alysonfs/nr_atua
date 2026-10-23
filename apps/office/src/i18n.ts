@@ -347,7 +347,20 @@ const ptBR = {
   triagePool: {
     title: 'Pool de Triagem',
     subtitle:
-      'Triagens que precisam de decisão humana: expiradas, com falha de contato, aguardando intervenção ou liberadas ao pool.',
+      'Acompanhe as triagens em andamento com o consumidor e as que já precisam de decisão humana: expiradas, com falha de contato, aguardando intervenção ou liberadas ao pool.',
+    readOnlyNotice:
+      'Visão de gestão, somente leitura: o Office não conversa com o consumidor nem assume triagens.',
+    scope: {
+      label: 'Escopo das triagens',
+      inProgress: 'Em triagem',
+      pool: 'Pool',
+    },
+    inProgress: {
+      listTitle: 'Triagens em andamento ({{count}})',
+      loading: 'Carregando as triagens em andamento...',
+      loadError: 'Não foi possível carregar as triagens em andamento. Tente novamente mais tarde.',
+      empty: 'Nenhuma triagem em andamento para este filtro.',
+    },
     listTitle: 'Triagens no pool ({{count}})',
     loading: 'Carregando o pool de triagem...',
     loadError: 'Não foi possível carregar o pool de triagem. Tente novamente mais tarde.',
@@ -363,6 +376,7 @@ const ptBR = {
       status: 'Estado',
       checklist: 'Checklist',
       timeInPool: 'Tempo no pool',
+      timeInState: 'Tempo no estado atual',
       newActivity: 'Nova atividade',
       newActivityAria: 'Nova mensagem do consumidor',
     },
@@ -372,6 +386,8 @@ const ptBR = {
     notFoundMessage: 'Triagem não encontrada ou sem acesso.',
     loadError: 'Não foi possível carregar os detalhes da triagem. Tente novamente mais tarde.',
     stateReason: 'Motivo do estado',
+    readOnlyNotice:
+      'Visualização somente leitura. O atendimento ao consumidor não é feito pelo Office.',
     assumedBy: 'Assumida por {{user}} em {{date}}.',
     workOrder: {
       title: 'OS e consumidor',
@@ -406,16 +422,6 @@ const ptBR = {
       title: 'Conversa',
       empty: 'Nenhuma mensagem registrada.',
       attachmentOnly: '(mensagem com anexo, sem texto)',
-    },
-    assume: {
-      button: 'Assumir',
-      confirmMessage: 'Tem certeza que deseja assumir esta triagem? Essa ação não pode ser desfeita.',
-      confirm: 'Confirmar',
-      confirming: 'Assumindo...',
-      cancel: 'Cancelar',
-      alreadyAssumed: 'Já assumida por {{user}} em {{date}}.',
-      alreadyAssumedUnknown: 'Esta triagem já foi assumida por outro operador.',
-      error: 'Não foi possível assumir esta triagem agora. Tente novamente mais tarde.',
     },
   },
   settings: {

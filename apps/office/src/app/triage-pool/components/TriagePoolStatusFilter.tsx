@@ -1,14 +1,16 @@
 import { useTranslation } from 'react-i18next'
-import { TRIAGE_POOL_STATUS_FILTERS, translateTriagemPoolStatus } from '../lib/triageStatus'
-import type { TriagemPoolStatus } from '../../../shared/types/triagePool'
+import { statusFiltersForScope, translateTriagemPoolStatus } from '../lib/triageStatus'
+import type { TriagemListScope, TriagemListStatus } from '../../../shared/types/triagePool'
 
 interface TriagePoolStatusFilterProps {
-  value: TriagemPoolStatus | undefined
-  onChange: (value: TriagemPoolStatus | undefined) => void
+  value: TriagemListStatus | undefined
+  onChange: (value: TriagemListStatus | undefined) => void
+  /** Escopo ativo: define as opções de estado disponíveis. Padrão: `pool`. */
+  scope?: TriagemListScope
 }
 
-/** Filtro por um único estado do pool (C1, critério de aceite 4). "Todos" remove o filtro. */
-export function TriagePoolStatusFilter({ value, onChange }: TriagePoolStatusFilterProps) {
+/** Filtro por um único estado do escopo ativo (C1, critério de aceite 4). "Todos" remove o filtro. */
+export function TriagePoolStatusFilter({ value, onChange, scope = 'pool' }: TriagePoolStatusFilterProps) {
   const { t } = useTranslation()
 
   return (
@@ -17,10 +19,10 @@ export function TriagePoolStatusFilter({ value, onChange }: TriagePoolStatusFilt
       <select
         className="rounded-md border border-slate-300 px-2 py-1 text-sm"
         value={value ?? ''}
-        onChange={(event) => onChange(event.target.value ? (event.target.value as TriagemPoolStatus) : undefined)}
+        onChange={(event) => onChange(event.target.value ? (event.target.value as TriagemListStatus) : undefined)}
       >
         <option value="">{t('triagePool.filter.all')}</option>
-        {TRIAGE_POOL_STATUS_FILTERS.map((status) => (
+        {statusFiltersForScope(scope).map((status) => (
           <option key={status} value={status}>
             {translateTriagemPoolStatus(status)}
           </option>

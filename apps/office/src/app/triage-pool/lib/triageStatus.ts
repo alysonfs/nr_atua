@@ -1,7 +1,12 @@
 import type { StatusTone } from '../../dashboard/lib/providerStatus'
-import type { TriagemPoolStatus } from '../../../shared/types/triagePool'
+import type {
+  TriagemInProgressStatus,
+  TriagemListScope,
+  TriagemListStatus,
+  TriagemPoolStatus,
+} from '../../../shared/types/triagePool'
 
-/** Rótulo PT-BR amigável para os estados do pool (C1/C2) e os dois estados fora do pool (detalhe/404 só). */
+/** Rótulo PT-BR amigável para os estados do pool, os estados "em triagem" (pré-pool) e os demais. */
 const STATUS_LABELS: Record<string, string> = {
   LiberadaAoPool: 'Liberada ao pool',
   Expirada: 'Expirada',
@@ -19,7 +24,9 @@ const STATUS_TONES: Record<string, StatusTone> = {
   Expirada: 'danger',
   FalhaDeContato: 'warning',
   AguardandoIntervencao: 'warning',
+  ContatoIniciado: 'neutral',
   EmColeta: 'neutral',
+  InformacoesSuficientes: 'info',
   AssumidaPorOperador: 'success',
 }
 
@@ -38,6 +45,17 @@ export const TRIAGE_POOL_STATUS_FILTERS: TriagemPoolStatus[] = [
   'FalhaDeContato',
   'AguardandoIntervencao',
 ]
+
+/** Opções de filtro dos estados "em triagem" (pré-pool), visíveis no Office só para leitura. */
+export const TRIAGE_IN_PROGRESS_STATUS_FILTERS: TriagemInProgressStatus[] = [
+  'ContatoIniciado',
+  'EmColeta',
+  'InformacoesSuficientes',
+]
+
+export function statusFiltersForScope(scope: TriagemListScope): TriagemListStatus[] {
+  return scope === 'in-progress' ? TRIAGE_IN_PROGRESS_STATUS_FILTERS : TRIAGE_POOL_STATUS_FILTERS
+}
 
 const CHECKLIST_ITEM_LABELS: Record<string, string> = {
   DescricaoDefeito: 'Descrição do defeito',

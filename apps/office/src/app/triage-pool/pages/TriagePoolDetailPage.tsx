@@ -6,7 +6,6 @@ import { useTriagePoolDetail } from '../hooks/useTriagePoolDetail'
 import { ChecklistSection } from '../components/ChecklistSection'
 import { AttachmentsSection } from '../components/AttachmentsSection'
 import { ConversationSection } from '../components/ConversationSection'
-import { AssumeButton } from '../components/AssumeButton'
 import { Badge } from '../../../shared/components/ui/Badge'
 import { translateTriagemPoolStatus, triagemPoolStatusTone } from '../lib/triageStatus'
 
@@ -30,17 +29,18 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 }
 
 /**
- * Página `/triage-pool/:triagemId` (C2 + C3): detalhe de uma triagem do
- * pool — dados da OS/consumidor, motivo do estado, checklist, anexos,
- * conversa cronológica — e o botão "Assumir" (exclusividade por
- * concorrência otimista).
+ * Página `/triage-pool/:triagemId` (C2): detalhe somente leitura de uma
+ * triagem — do pool ou ainda em triagem (pré-pool) — com dados da
+ * OS/consumidor, motivo do estado, checklist, anexos e conversa
+ * cronológica. O Office é ambiente de gestão: não assume a triagem nem
+ * conversa com o consumidor.
  */
 export function TriagePoolDetailPage() {
   const { t, i18n } = useTranslation()
   const locale = i18n.resolvedLanguage ?? 'pt-BR'
   const { triagemId } = useParams<{ triagemId: string }>()
   const { defaultTenantId, isLoading: isTenantLoading, isError: isTenantError } = useMyTenants()
-  const { detail, isLoading, isError, notFound, refetch } = useTriagePoolDetail(
+  const { detail, isLoading, isError, notFound } = useTriagePoolDetail(
     defaultTenantId,
     triagemId ?? null,
   )
@@ -78,8 +78,6 @@ export function TriagePoolDetailPage() {
     )
   }
 
-  const canAssume = detail.status !== 'AssumidaPorOperador'
-
   return (
     <div className="mx-auto w-full max-w-5xl space-y-5 px-4 py-6 sm:px-6 lg:px-8">
       <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-200 pb-5">
@@ -91,11 +89,9 @@ export function TriagePoolDetailPage() {
             <Badge tone={triagemPoolStatusTone(detail.status)}>{translateTriagemPoolStatus(detail.status)}</Badge>
           </div>
         </div>
-
-        {canAssume && (
-          <AssumeButton tenantId={defaultTenantId} triagemId={detail.triagemId} onAssumed={refetch} />
-        )}
       </div>
+
+      <p className="text-xs text-slate-500">{t('triagePoolDetail.readOnlyNotice')}</p>
 
       {detail.stateReason && (
         <p className="rounded-md border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">

@@ -13,13 +13,25 @@ export type TriagemPoolStatus =
   | 'FalhaDeContato'
   | 'AguardandoIntervencao'
 
+/** Estados "em triagem" (pré-pool): a LLM ainda conduz a coleta. Somente leitura no Office. */
+export type TriagemInProgressStatus = 'ContatoIniciado' | 'EmColeta' | 'InformacoesSuficientes'
+
+/** Qualquer estado listável no Office (pool ou em triagem). */
+export type TriagemListStatus = TriagemPoolStatus | TriagemInProgressStatus
+
+/**
+ * Escopo da listagem (query param `scope` da API): `pool` (padrão) ou
+ * `in-progress` (pré-pool).
+ */
+export type TriagemListScope = 'pool' | 'in-progress'
+
 export interface TriagemPoolListItem {
   triagemId: string
   workOrderProviderNo: string | null
   customerName: string | null
   productModel: string | null
   productBrand: string | null
-  status: TriagemPoolStatus
+  status: TriagemListStatus
   checklistItemsCompleted: number
   checklistItemsTotal: number
   enteredPoolAtUtc: string
@@ -87,7 +99,7 @@ export interface TriagemPoolWorkOrderView {
 
 export interface TriagemPoolDetail {
   triagemId: string
-  status: TriagemPoolStatus | 'EmColeta' | 'AssumidaPorOperador' | string
+  status: TriagemListStatus | 'AssumidaPorOperador' | string
   stateReason: string
   enteredPoolAtUtc: string
   assumidaPorUserId: string | null
@@ -96,19 +108,4 @@ export interface TriagemPoolDetail {
   checklist: TriagemPoolChecklistItemView[]
   attachments: TriagemPoolAttachment[]
   conversation: TriagemPoolConversationEntry[]
-}
-
-export interface AssumeTriagemResponse {
-  triagemId: string
-  status: string
-  assumidaPorUserId: string
-  assumidaEmUtc: string
-}
-
-/** 409: outro operador já assumiu a triagem (concorrência otimista, C3). */
-export interface AssumeTriagemConflict {
-  error: 'triagem_already_assumed'
-  status: string | null
-  assumedByUserId: string | null
-  assumedAtUtc: string | null
 }

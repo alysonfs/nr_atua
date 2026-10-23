@@ -3,34 +3,47 @@ import { useSearchParams } from 'react-router-dom'
 import { useMyTenants } from '../../office/hooks/useTenants'
 import { TriagePoolTable } from '../components/TriagePoolTable'
 import { TriagePoolStatusFilter } from '../components/TriagePoolStatusFilter'
-import { TRIAGE_POOL_STATUS_FILTERS } from '../lib/triageStatus'
-import type { TriagemPoolStatus } from '../../../shared/types/triagePool'
+import { cn } from '../../../shared/lib/cn'
+import { statusFiltersForScope } from '../lib/triageStatus'
+import type { TriagemListScope, TriagemListStatus } from '../../../shared/types/triagePool'
 
-const VALID_STATUS_FILTERS = new Set<string>(TRIAGE_POOL_STATUS_FILTERS)
+const SCOPES: TriagemListScope[] = ['in-progress', 'pool']
 
-function isValidStatusFilter(value: string | null): value is TriagemPoolStatus {
-  return Boolean(value && VALID_STATUS_FILTERS.has(value))
+function parseScope(value: string | null): TriagemListScope {
+  return value === 'in-progress' ? 'in-progress' : 'pool'
+}
+
+function isValidStatusFilter(scope: TriagemListScope, value: string | null): value is TriagemListStatus {
+  return Boolean(value && (statusFiltersForScope(scope) as string[]).includes(value))
 }
 
 /**
- * Página `/triage-pool` (C1): lista do pool compartilhado de triagem do
- * tenant ativo, com filtro por estado (persistido na URL, para
- * compartilhamento/navegação "voltar") e polling de 30 s.
+ * Página `/triage-pool` (C1): visão de gestão, somente leitura, das triagens
+ * do tenant ativo. Duas abas — "Em triagem" (pré-pool, a LLM ainda conduz a
+ * coleta) e "Pool" (decisão humana) —, com filtro por estado do escopo
+ * ativo (persistidos na URL, para compartilhamento/navegação "voltar") e
+ * polling de 30 s. O Office não conversa com o consumidor nem assume
+ * triagens: o atendimento operacional fica fora do Office.
  */
 export function TriagePoolPage() {
   const { t } = useTranslation()
   const { defaultTenantId, isLoading, isError } = useMyTenants()
   const [searchParams, setSearchParams] = useSearchParams()
 
+  const scope = parseScope(searchParams.get('scope'))
   const statusParam = searchParams.get('status')
-  const statusFilter = isValidStatusFilter(statusParam) ? statusParam : undefined
+  const statusFilter = isValidStatusFilter(scope, statusParam) ? statusParam : undefined
 
-  const handleStatusChange = (value: TriagemPoolStatus | undefined) => {
-    if (value) {
-      setSearchParams({ status: value })
-    } else {
-      setSearchParams({})
-    }
+  const updateParams = (nextScope: TriagemListScope, status: TriagemListStatus | undefined) => {
+    const params: Record<string, string> = {}
+    if (nextScope !== 'pool') params.scope = nextScope
+    if (status) params.status = status
+    setSearchParams(params)
+  }
+
+  const handleStatusChange = (value: TriagemListStatus | undefined) => updateParams(scope, value)
+  const handleScopeChange = (value: TriagemListScope) => {
+    if (value !== scope) updateParams(value, undefined)
   }
 
   return (
@@ -57,11 +70,35 @@ export function TriagePoolPage() {
 
       {!isLoading && !isError && (
         <>
-          <div className="col-span-12 flex justify-end">
-            <TriagePoolStatusFilter value={statusFilter} onChange={handleStatusChange} />
+          <div className="col-span-12 flex flex-wrap items-center justify-between gap-3">
+            <div
+              role="tablist"
+              aria-label={t('triagePool.scope.label')}
+              className="flex gap-2 border-b border-slate-200"
+            >
+              {SCOPES.map((option) => (
+                <button
+                  key={option}
+                  type="button"
+                  role="tab"
+                  aria-selected={scope === option}
+                  className={cn(
+                    'border-b-2 px-3 py-2 text-sm font-medium transition-colors',
+                    scope === option
+                      ? 'border-slate-900 text-slate-950'
+                      : 'border-transparent text-slate-500 hover:text-slate-700',
+                  )}
+                  onClick={() => handleScopeChange(option)}
+                >
+                  {t(`triagePool.scope.${option === 'in-progress' ? 'inProgress' : 'pool'}`)}
+                </button>
+              ))}
+            </div>
+            <TriagePoolStatusFilter value={statusFilter} onChange={handleStatusChange} scope={scope} />
           </div>
+          <p className="col-span-12 text-xs text-slate-500">{t('triagePool.readOnlyNotice')}</p>
           <div className="col-span-12">
-            <TriagePoolTable tenantId={defaultTenantId} statusFilter={statusFilter} />
+            <TriagePoolTable tenantId={defaultTenantId} statusFilter={statusFilter} scope={scope} />
           </div>
         </>
       )}

@@ -1,6 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import { apiClient } from '../../../shared/lib/apiClient'
-import type { TriagemPoolListItem, TriagemPoolListResponse, TriagemPoolStatus } from '../../../shared/types/triagePool'
+import type {
+  TriagemListScope,
+  TriagemListStatus,
+  TriagemPoolListItem,
+  TriagemPoolListResponse,
+} from '../../../shared/types/triagePool'
 
 /** Intervalo de polling do pool (decisão do PO, seção 5 do épico): 30 s. */
 export const TRIAGE_POOL_POLL_INTERVAL_MS = 30_000
@@ -10,12 +15,19 @@ export const TRIAGE_POOL_POLL_INTERVAL_MS = 30_000
  * atualização por polling a cada 30 s (push em tempo real é incremento
  * futuro — ver épico, seção 2).
  *
- * GET /api/tenants/{tenantId}/triage-pool?status={estado}
+ * GET /api/tenants/{tenantId}/triage-pool?status={estado}&scope={escopo}
+ *
+ * `scope` = `pool` (padrão, omitido na URL) ou `in-progress` (triagens
+ * ainda em coleta, pré-pool — somente leitura no Office).
  *
  * `tenantId` deve vir do tenant ativo do usuário (useMyTenants().defaultTenantId).
  * Enquanto `tenantId` for `null`, nenhuma requisição é disparada.
  */
-export function useTriagePoolList(tenantId: string | null, statusFilter?: TriagemPoolStatus) {
+export function useTriagePoolList(
+  tenantId: string | null,
+  statusFilter?: TriagemListStatus,
+  scope: TriagemListScope = 'pool',
+) {
   const [items, setItems] = useState<TriagemPoolListItem[]>([])
   const [totalCount, setTotalCount] = useState(0)
   const [isLoading, setIsLoading] = useState(true)
@@ -25,7 +37,7 @@ export function useTriagePoolList(tenantId: string | null, statusFilter?: Triage
 
   useEffect(() => {
     isFirstLoadRef.current = true
-  }, [tenantId, statusFilter])
+  }, [tenantId, statusFilter, scope])
 
   useEffect(() => {
     let isCancelled = false
@@ -46,7 +58,11 @@ export function useTriagePoolList(tenantId: string | null, statusFilter?: Triage
       setIsError(false)
 
       try {
-        const query = statusFilter ? `?status=${encodeURIComponent(statusFilter)}` : ''
+        const params = new URLSearchParams()
+        if (statusFilter) params.set('status', statusFilter)
+        if (scope !== 'pool') params.set('scope', scope)
+        const queryString = params.toString()
+        const query = queryString ? `?${queryString}` : ''
         const response = await apiClient.get<TriagemPoolListResponse>(
           `/api/tenants/${tenantId}/triage-pool${query}`,
         )
@@ -73,7 +89,7 @@ export function useTriagePoolList(tenantId: string | null, statusFilter?: Triage
       isCancelled = true
       clearInterval(intervalId)
     }
-  }, [tenantId, statusFilter, reloadToken])
+  }, [tenantId, statusFilter, scope, reloadToken])
 
   const refetch = () => setReloadToken((token) => token + 1)
 

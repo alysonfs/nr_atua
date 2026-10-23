@@ -2,7 +2,7 @@ import type { ColumnDef } from '@tanstack/react-table'
 import type { TFunction } from 'i18next'
 import { Link } from 'react-router-dom'
 import { Remind } from '@icon-park/react'
-import type { TriagemPoolListItem } from '../../../../shared/types/triagePool'
+import type { TriagemListScope, TriagemPoolListItem } from '../../../../shared/types/triagePool'
 import { translateTriagemPoolStatus, triagemPoolStatusTone } from '../../lib/triageStatus'
 import { formatRelativeTime } from '../../lib/formatRelativeTime'
 import { Badge } from '../../../../shared/components/ui/Badge'
@@ -17,6 +17,7 @@ export function createTriagePoolColumns(
   t: TFunction,
   locale: string,
   nowMs: number,
+  scope: TriagemListScope = 'pool',
 ): ColumnDef<TriagemPoolListItem>[] {
   return [
     {
@@ -63,7 +64,8 @@ export function createTriagePoolColumns(
     },
     {
       accessorKey: 'enteredPoolAtUtc',
-      header: t('triagePool.columns.timeInPool'),
+      // Fora do pool, a API devolve aqui o momento da última transição de estado.
+      header: t(scope === 'in-progress' ? 'triagePool.columns.timeInState' : 'triagePool.columns.timeInPool'),
       cell: (info) => formatRelativeTime(info.getValue<string>(), locale, nowMs),
     },
     {
