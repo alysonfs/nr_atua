@@ -71,4 +71,14 @@ public class TriagemLlmSystemPromptBuilderTests
 
         Assert.Contains($"`{TriagemLlmSystemPromptBuilder.ToolName}`", prompt);
     }
+
+    [Fact]
+    public void ProibeAfirmarQueViuAnexoERepetirPerguntas()
+    {
+        var prompt = TriagemLlmSystemPromptBuilder.Build(BuildRequest());
+
+        Assert.Contains("você NÃO vê o conteúdo dos anexos", prompt);
+        Assert.Contains("Nunca repita uma pergunta que o cliente já respondeu", prompt);
+        Assert.Contains("Não investigue o defeito", prompt);
+    }
 }
