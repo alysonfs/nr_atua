@@ -73,6 +73,20 @@ desenvolvimento e testes. O caminho automático será migrado para um port de
 persistência de comandos. A remoção ou transferência definitiva do stub para
 os testes ocorrerá quando o processo separado do canal estiver operacional.
 
+### Complemento operacional — recuperação no SDK (2026-10-23)
+
+O resultado `Success` do Channel Node corresponde ao ACK do servidor
+WhatsApp; não prova entrega legível nem leitura no aparelho. Os estados do
+comando e a máquina de estados da triagem permanecem os mesmos.
+
+Para os pedidos de retry de um aparelho, o callback `getMessage` do Baileys
+precisa recuperar o payload original. O PO escolheu explicitamente cache
+somente em memória, limitado a 1 hora e 256 mensagens por sessão, em vez de
+persistência local. Isso permite recuperação durante o processo, mas perde
+os originais ao reiniciar; comandos já concluídos não são reabertos nem
+reenviados automaticamente por esse cache. Os detalhes e limites constam em
+[Channel Node multi-tenant](../architecture/channel-node-multi-tenant.md#recuperação-de-mensagens-outbound).
+
 ## Motivos
 
 - O canal só realiza conexões de saída e não precisa expor servidor local.
