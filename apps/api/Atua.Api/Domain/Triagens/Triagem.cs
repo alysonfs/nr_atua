@@ -204,6 +204,18 @@ public sealed class Triagem
     ];
 
     /// <summary>
+    /// Estados "em triagem" (pré-pool): a LLM ainda conduz a coleta com o
+    /// consumidor. Visíveis no Office apenas em modo leitura (gestão) — o
+    /// Office não conversa com o consumidor nem assume a triagem.
+    /// </summary>
+    public static readonly IReadOnlyCollection<ETriagemStatus> InProgressStatuses =
+    [
+        ETriagemStatus.ContatoIniciado,
+        ETriagemStatus.EmColeta,
+        ETriagemStatus.InformacoesSuficientes,
+    ];
+
+    /// <summary>
     /// Um operador do posto assume a triagem com exclusividade (épico, "C3 —
     /// Assumir"). Permitida a partir de qualquer um dos <see cref="PoolStatuses"/>
     /// — não apenas <see cref="ETriagemStatus.LiberadaAoPool"/>, já que

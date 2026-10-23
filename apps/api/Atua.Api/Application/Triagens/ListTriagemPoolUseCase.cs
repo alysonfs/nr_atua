@@ -20,13 +20,14 @@ public sealed class ListTriagemPoolUseCase(AtuaDbContext dbContext) : IListTriag
             cancellationToken);
         if (!isMember) return TriagemPoolListResult.Failure(ETriagemPoolListOutcome.Forbidden);
 
-        if (query.StatusFilter is not null && !Triagem.PoolStatuses.Contains(query.StatusFilter.Value))
+        var scopeStatuses = GetScopeStatuses(query.Scope);
+        if (query.StatusFilter is not null && !scopeStatuses.Contains(query.StatusFilter.Value))
         {
             return TriagemPoolListResult.Failure(ETriagemPoolListOutcome.InvalidStatusFilter);
         }
 
         var statuses = query.StatusFilter is null
-            ? Triagem.PoolStatuses
+            ? scopeStatuses
             : [query.StatusFilter.Value];
 
         var rows = await dbContext.Triagens.AsNoTracking()
@@ -80,6 +81,13 @@ public sealed class ListTriagemPoolUseCase(AtuaDbContext dbContext) : IListTriag
 
         return new TriagemPoolListResult(ETriagemPoolListOutcome.Success, items.Length, items);
     }
+
+    private static IReadOnlyCollection<ETriagemStatus> GetScopeStatuses(ETriagemPoolListScope scope) => scope switch
+    {
+        ETriagemPoolListScope.InProgress => Triagem.InProgressStatuses,
+        ETriagemPoolListScope.All => [.. Triagem.InProgressStatuses, .. Triagem.PoolStatuses],
+        _ => Triagem.PoolStatuses,
+    };
 
     /// <summary>
     /// Último momento de atividade do consumidor (mensagem de texto ou

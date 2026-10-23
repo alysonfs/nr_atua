@@ -33,9 +33,12 @@ public sealed class GetTriagemPoolDetailUseCase(
             .SingleOrDefaultAsync(item => item.Id == triagemId && item.TenantId == tenantId, cancellationToken);
         if (triagem is null) return TriagemPoolDetailResult.Failure(ETriagemPoolDetailOutcome.NotFound);
 
-        var isPoolOrAssumed = Triagem.PoolStatuses.Contains(triagem.Status)
+        // Office é gestão (somente leitura): além do pool e das assumidas,
+        // expõe também as triagens ainda em coleta (pré-pool).
+        var isVisible = Triagem.PoolStatuses.Contains(triagem.Status)
+            || Triagem.InProgressStatuses.Contains(triagem.Status)
             || triagem.Status == ETriagemStatus.AssumidaPorOperador;
-        if (!isPoolOrAssumed) return TriagemPoolDetailResult.Failure(ETriagemPoolDetailOutcome.NotFound);
+        if (!isVisible) return TriagemPoolDetailResult.Failure(ETriagemPoolDetailOutcome.NotFound);
 
         // Triagem assumida: só quem assumiu ou gestores (critério de aceite 8).
         if (triagem.Status == ETriagemStatus.AssumidaPorOperador

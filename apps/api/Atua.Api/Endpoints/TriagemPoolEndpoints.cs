@@ -26,11 +26,14 @@ public static class TriagemPoolEndpoints
             .RequireAuthorization("BrowserSession");
     }
 
-    private static async Task<IResult> ListAsync(Guid tenantId, string? status, ClaimsPrincipal user,
-        IListTriagemPoolUseCase useCase, CancellationToken cancellationToken)
+    private static async Task<IResult> ListAsync(Guid tenantId, string? status, string? scope,
+        ClaimsPrincipal user, IListTriagemPoolUseCase useCase, CancellationToken cancellationToken)
     {
         var userId = GetUserId(user);
         if (userId is null) return Results.Unauthorized();
+
+        var parsedScope = ParseScope(scope);
+        if (parsedScope is null) return Results.BadRequest(new { error = "invalid_scope" });
 
         ETriagemStatus? statusFilter = null;
         if (!string.IsNullOrWhiteSpace(status))
@@ -44,7 +47,7 @@ public static class TriagemPoolEndpoints
         }
 
         var result = await useCase.ExecuteAsync(
-            new TriagemPoolListQuery(tenantId, userId.Value, statusFilter), cancellationToken);
+            new TriagemPoolListQuery(tenantId, userId.Value, statusFilter, parsedScope.Value), cancellationToken);
 
         return result.Outcome switch
         {
@@ -100,6 +103,22 @@ public static class TriagemPoolEndpoints
             _ => Results.Problem(statusCode: StatusCodes.Status500InternalServerError),
         };
     }
+
+    /// <summary>
+    /// Converte o query param <c>scope</c> (<c>pool</c> | <c>in-progress</c> |
+    /// <c>all</c>). Ausente/vazio equivale a <c>pool</c>; valor desconhecido
+    /// retorna <c>null</c>.
+    /// </summary>
+    private static ETriagemPoolListScope? ParseScope(string? scope) =>
+        string.IsNullOrWhiteSpace(scope)
+            ? ETriagemPoolListScope.Pool
+            : scope.Trim().ToLowerInvariant() switch
+            {
+                "pool" => ETriagemPoolListScope.Pool,
+                "in-progress" => ETriagemPoolListScope.InProgress,
+                "all" => ETriagemPoolListScope.All,
+                _ => null,
+            };
 
     private static Guid? GetUserId(ClaimsPrincipal user) =>
         Guid.TryParse(user.FindFirstValue("sub"), out var value) ? value : null;

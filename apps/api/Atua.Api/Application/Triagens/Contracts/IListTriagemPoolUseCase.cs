@@ -3,10 +3,13 @@ using Atua.Api.Domain.Triagens;
 namespace Atua.Api.Application.Triagens.Contracts;
 
 /// <summary>
-/// Lista as triagens do pool compartilhado de operadores de um tenant
-/// (épico de pool de triagem, "C1 — Lista do pool"). Mostra somente os
-/// estados de <see cref="Triagem.PoolStatuses"/> — nunca <c>EmColeta</c> nem
-/// <c>AssumidaPorOperador</c> (critério de aceite 3).
+/// Lista as triagens de um tenant para o Office (ambiente de gestão, somente
+/// leitura — épico de pool de triagem, "C1 — Lista do pool"). Por padrão
+/// (<see cref="ETriagemPoolListScope.Pool"/>) mostra somente os estados de
+/// <see cref="Triagem.PoolStatuses"/>; com
+/// <see cref="ETriagemPoolListScope.InProgress"/> mostra as triagens ainda em
+/// coleta (<see cref="Triagem.InProgressStatuses"/>). Nunca lista
+/// <c>AguardandoEnvio</c> nem <c>AssumidaPorOperador</c>.
 /// </summary>
 public interface IListTriagemPoolUseCase
 {
@@ -16,10 +19,15 @@ public interface IListTriagemPoolUseCase
 /// <param name="TenantId">Tenant do usuário autenticado — isolamento multi-tenant obrigatório.</param>
 /// <param name="RequestingUserId">Usuário autenticado (claim <c>sub</c>) — usado apenas para validar o membership no tenant.</param>
 /// <param name="StatusFilter">
-/// Filtro opcional por um único estado do pool (critério de aceite 4). Quando
-/// <c>null</c>, retorna os quatro estados do pool.
+/// Filtro opcional por um único estado do escopo (critério de aceite 4). Quando
+/// <c>null</c>, retorna todos os estados do escopo.
 /// </param>
-public sealed record TriagemPoolListQuery(Guid TenantId, Guid RequestingUserId, ETriagemStatus? StatusFilter);
+/// <param name="Scope">Escopo da listagem; padrão <see cref="ETriagemPoolListScope.Pool"/>.</param>
+public sealed record TriagemPoolListQuery(
+    Guid TenantId,
+    Guid RequestingUserId,
+    ETriagemStatus? StatusFilter,
+    ETriagemPoolListScope Scope = ETriagemPoolListScope.Pool);
 
 public enum ETriagemPoolListOutcome
 {
@@ -29,8 +37,8 @@ public enum ETriagemPoolListOutcome
     Forbidden,
 
     /// <summary>
-    /// <see cref="TriagemPoolListQuery.StatusFilter"/> informado não é um dos
-    /// quatro estados do pool (<see cref="Triagem.PoolStatuses"/>).
+    /// <see cref="TriagemPoolListQuery.StatusFilter"/> informado não pertence
+    /// aos estados do <see cref="TriagemPoolListQuery.Scope"/> solicitado.
     /// </summary>
     InvalidStatusFilter,
 }
