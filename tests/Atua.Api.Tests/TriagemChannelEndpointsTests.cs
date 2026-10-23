@@ -6,6 +6,7 @@ using Atua.Api.Application.Triagens;
 using Atua.Api.Application.Triagens.Contracts;
 using Atua.Api.Domain.Triagens;
 using Atua.Api.Endpoints;
+using Atua.Api.Infrastructure.Llm;
 using Atua.Api.Infrastructure.Persistence;
 using Atua.Api.Infrastructure.Security;
 using Microsoft.AspNetCore.Authentication;
@@ -605,6 +606,17 @@ public class TriagemChannelEndpointsTests
         builder.Services.AddScoped<TriagemChannelCommandService>();
         builder.Services.AddScoped<ITriagemInboundMessageRepository, TriagemInboundMessageRepository>();
         builder.Services.AddScoped<IIngestTriagemChannelMessageUseCase, IngestTriagemChannelMessageUseCase>();
+
+        // Plano M2 — loop conversacional da LLM: registrado, mas inerte
+        // nestes testes (ConversationEnabled=false por padrão / allowlists
+        // vazias), já que exercitam apenas o transporte do canal.
+        builder.Services.AddScoped<TriagemLlmConversationService>();
+        builder.Services.AddSingleton<ITriagemLlmClient, FakeTriagemLlmClient>();
+        builder.Services.AddSingleton<ITriagemLlmResponseVerifier, TriagemLlmResponseVerifier>();
+        builder.Services.AddScoped<ITriagemLlmUsageRepository, TriagemLlmUsageRepository>();
+        builder.Services.AddSingleton<ITriagemLlmConversationContextRepository,
+            FakeTriagemLlmConversationContextRepository>();
+        builder.Services.AddSingleton(Options.Create(new TriagemLlmConversationOptions()));
         builder.Services.AddSingleton(Options.Create(new TriagemChannelOptions { LeaseSeconds = 60 }));
         builder.Services.AddAuthentication("Test")
             .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>("Test", _ => { });

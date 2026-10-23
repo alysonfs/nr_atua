@@ -64,6 +64,27 @@ internal sealed class FakeTriagemChannelCommandRepository : ITriagemChannelComma
         }
     }
 
+    public Task<bool> ExistsByIdempotencyKeyAsync(string idempotencyKey, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        lock (_lock)
+        {
+            return Task.FromResult(_commands.Any(command => command.IdempotencyKey == idempotencyKey));
+        }
+    }
+
+    public IReadOnlyList<TriagemChannelCommand> Commands
+    {
+        get
+        {
+            lock (_lock)
+            {
+                return _commands.ToList();
+            }
+        }
+    }
+
     public int SaveChangesCallCount { get; private set; }
 
     public Task SaveChangesAsync(CancellationToken cancellationToken)

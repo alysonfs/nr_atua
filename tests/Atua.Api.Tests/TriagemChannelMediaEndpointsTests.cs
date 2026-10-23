@@ -8,6 +8,7 @@ using Atua.Api.Application.Triagens;
 using Atua.Api.Application.Triagens.Contracts;
 using Atua.Api.Domain.Triagens;
 using Atua.Api.Endpoints;
+using Atua.Api.Infrastructure.Llm;
 using Atua.Api.Infrastructure.Persistence;
 using Atua.Api.Infrastructure.Security;
 using Atua.Api.Infrastructure.Storage;
@@ -437,6 +438,14 @@ public class TriagemChannelMediaEndpointsTests
         builder.Services.AddScoped<TriagemChannelCommandService>();
         builder.Services.AddScoped<ITriagemInboundMessageRepository, TriagemInboundMessageRepository>();
         builder.Services.AddScoped<IIngestTriagemChannelMessageUseCase, IngestTriagemChannelMessageUseCase>();
+        builder.Services.AddScoped<TriagemLlmConversationService>();
+        builder.Services.AddSingleton<ITriagemLlmClient, FakeTriagemLlmClient>();
+        builder.Services.AddSingleton<ITriagemLlmResponseVerifier, TriagemLlmResponseVerifier>();
+        builder.Services.AddScoped<ITriagemLlmUsageRepository, TriagemLlmUsageRepository>();
+        builder.Services.AddSingleton<ITriagemLlmConversationContextRepository,
+            FakeTriagemLlmConversationContextRepository>();
+        builder.Services.AddSingleton(
+            Microsoft.Extensions.Options.Options.Create(new TriagemLlmConversationOptions()));
         builder.Services.AddSingleton(
             Microsoft.Extensions.Options.Options.Create(new TriagemChannelOptions { LeaseSeconds = 60 }));
         builder.Services.AddAuthentication("Test")

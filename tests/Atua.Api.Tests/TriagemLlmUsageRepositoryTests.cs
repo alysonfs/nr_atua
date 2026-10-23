@@ -90,6 +90,39 @@ public class TriagemLlmUsageRepositoryTests
         Assert.Equal(2, verificationContext.TriagemLlmUsages.Count());
     }
 
+    [Fact]
+    public async Task CountCallsAsync_ContaTodasAsChamadasDaTriagemIndependenteDoOutcome()
+    {
+        var databaseName = Guid.NewGuid().ToString();
+        await using var context = CreateContext(databaseName);
+        var seed = await SeedAsync(context);
+        var repository = new TriagemLlmUsageRepository(context);
+
+        await repository.RecordAsync(new TriagemLlmUsageRecord(
+            seed.TenantId, seed.TriagemId, "modelo-1", 10, 5, 100, ETriagemLlmOutcome.Success, Now), CancellationToken.None);
+        await repository.RecordAsync(new TriagemLlmUsageRecord(
+            seed.TenantId, seed.TriagemId, "", 0, 0, 0, ETriagemLlmOutcome.ProviderUnavailable, Now.AddMinutes(1)), CancellationToken.None);
+
+        await using var verificationContext = CreateContext(databaseName);
+        var verificationRepository = new TriagemLlmUsageRepository(verificationContext);
+        var count = await verificationRepository.CountCallsAsync(seed.TriagemId, CancellationToken.None);
+
+        Assert.Equal(2, count);
+    }
+
+    [Fact]
+    public async Task CountCallsAsync_RetornaZeroQuandoTriagemNuncaChamouALlm()
+    {
+        var databaseName = Guid.NewGuid().ToString();
+        await using var context = CreateContext(databaseName);
+        var seed = await SeedAsync(context);
+        var repository = new TriagemLlmUsageRepository(context);
+
+        var count = await repository.CountCallsAsync(seed.TriagemId, CancellationToken.None);
+
+        Assert.Equal(0, count);
+    }
+
     private sealed record Seed(Guid TenantId, Guid TriagemId);
 
     private static async Task<Seed> SeedAsync(AtuaDbContext context)

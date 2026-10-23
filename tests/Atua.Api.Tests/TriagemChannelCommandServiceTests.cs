@@ -162,6 +162,44 @@ public class TriagemChannelCommandServiceTests
     }
 
     [Fact]
+    public async Task CompleteAsync_Success_ComandoDeRespostaLlm_NaoReaplicaTransicaoDeContatoIniciado()
+    {
+        // Plano M2: a resposta da LLM é enviada via a mesma fila de
+        // comandos de canal, mas o complete nunca deve reaplicar
+        // MarcarContatoIniciado — a transição já foi decidida pelo domínio
+        // Triagem no momento em que TriagemLlmConversationService montou a
+        // resposta (ver ETriagemChannelCommandKind.RespostaLlm).
+        var (service, commandRepository, triagemRepository) = CreateService();
+        var tenantId = Guid.NewGuid();
+        var integrationId = Guid.NewGuid();
+        var triagemId = Guid.NewGuid();
+        var workOrderId = Guid.NewGuid();
+        var key = new TriagemIdempotencyKey(tenantId, integrationId, $"OS-{Guid.NewGuid()}");
+        var candidate = new Triagem(triagemId, tenantId, integrationId, workOrderId, Now);
+        candidate.MarcarContatoIniciado(Now);
+        candidate.IniciarColeta(Now);
+        await triagemRepository.GetOrAddAsync(key, candidate, CancellationToken.None);
+
+        var respostaLlmCommand = new TriagemChannelCommand(Guid.NewGuid(), tenantId, integrationId, triagemId,
+            workOrderId, "triagem-llm-response", 1, "Pode me enviar uma foto do defeito?",
+            $"triagem-llm-response:{tenantId}:{Guid.NewGuid()}", Guid.NewGuid(), Now,
+            recipientPhone: TriagemTestSafeguard.FixedRecipientPhone, kind: ETriagemChannelCommandKind.RespostaLlm);
+        commandRepository.Add(respostaLlmCommand);
+        await service.ClaimAsync(tenantId, integrationId, CancellationToken.None);
+
+        var result = await service.CompleteAsync(respostaLlmCommand.Id, tenantId, integrationId,
+            respostaLlmCommand.ClaimedAtUtc!.Value, ETriagemChannelSendOutcome.Success, errorCode: null,
+            errorDescription: null, CancellationToken.None);
+
+        Assert.NotNull(result);
+        Assert.Equal(ETriagemChannelCompleteOutcome.Applied, result!.Outcome);
+        Assert.Equal(ETriagemChannelCommandStatus.Completed, result.Status);
+
+        var triagem = await triagemRepository.FindByIdAsync(triagemId, CancellationToken.None);
+        Assert.Equal(ETriagemStatus.EmColeta, triagem!.Status);
+    }
+
+    [Fact]
     public async Task CompleteAsync_Success_ReentregaIdempotenteNaoReaplicaEfeito()
     {
         var (service, commandRepository, triagemRepository) = CreateService();
