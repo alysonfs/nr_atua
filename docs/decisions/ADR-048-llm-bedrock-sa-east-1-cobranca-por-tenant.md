@@ -49,6 +49,40 @@ contrato com o fornecedor e o custo.
   [triagem-llm-identidade-tom.md](../features/triagem-llm-identidade-tom.md).
 - Estimar o custo por triagem e definir o orçamento mensal por tenant.
 
+## Adendo 2026-10-23: modelo escolhido e inferência global
+
+Verificação feita em `sa-east-1` com leituras somente, mais uma chamada mínima
+à Converse API.
+
+Resultados:
+
+- O plano da conta é FREE, ativo, e a chamada ao Bedrock funcionou.
+- O Claude Haiku 4.5 (`anthropic.claude-haiku-4-5-20251001-v1:0`) está
+  disponível e autorizado, mas **apenas** pelo perfil de inferência
+  `global.anthropic.claude-haiku-4-5-20251001-v1:0`. Não há modo sob demanda
+  na região.
+- O Claude 3 Haiku foi bloqueado por ser modelo legado. O Amazon Nova não
+  existe em `sa-east-1`.
+- Modelos sob demanda que rodam só na região e aceitam imagem: Qwen3-VL 235B,
+  Mistral Large 3, Ministral 3, Gemma 3 e Kimi K2.5.
+
+**Decisão do PO:** usar `global.anthropic.claude-haiku-4-5-20251001-v1:0`,
+aceitando que a inferência seja processada fora do Brasil. A chamada continua
+saindo de `sa-east-1`, mas o perfil global pode encaminhar a inferência para
+qualquer região comercial da AWS.
+
+Isso substitui, apenas para a escolha do modelo, a verificação acima que
+proibia a inferência entre regiões. Consequências:
+
+- O parecer LGPD precisa registrar a transferência internacional e a base
+  legal, e a minimização de dados do
+  [triagem-llm-conducao.md](../features/triagem-llm-conducao.md) passa a ser
+  obrigatória.
+- O modelo é configurável (`TriagemLlm:ModelId`). Trocar por um modelo que
+  roda só em `sa-east-1` não exige mudança de código.
+- A permissão IAM deve cobrir o perfil de inferência e os modelos de destino
+  dele.
+
 ## Pendências futuras
 
 - Modelo de cobrança para o tenant: repasse direto, franquia ou faixa.
