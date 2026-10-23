@@ -62,6 +62,8 @@ public sealed class AtuaDbContext(DbContextOptions<AtuaDbContext> options) : DbC
 
     public DbSet<TriagemMessageTemplate> TriagemMessageTemplates => Set<TriagemMessageTemplate>();
 
+    public DbSet<TriagemLlmUsage> TriagemLlmUsages => Set<TriagemLlmUsage>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         ConfigureUser(modelBuilder.Entity<User>());
@@ -88,7 +90,9 @@ public sealed class AtuaDbContext(DbContextOptions<AtuaDbContext> options) : DbC
         ConfigureTriagemInboundMessage(modelBuilder.Entity<TriagemInboundMessage>());
         ConfigureTriagemInboundMedia(modelBuilder.Entity<TriagemInboundMedia>());
         ConfigureTriagemMessageTemplate(modelBuilder.Entity<TriagemMessageTemplate>());
+        ConfigureTriagemLlmUsage(modelBuilder.Entity<TriagemLlmUsage>());
     }
+
 
     private static void ConfigureAuthSession(EntityTypeBuilder<AuthSession> builder)
     {
@@ -761,6 +765,27 @@ public sealed class AtuaDbContext(DbContextOptions<AtuaDbContext> options) : DbC
         builder.HasOne<Integration>().WithMany().HasForeignKey(media => media.IntegrationId)
             .OnDelete(DeleteBehavior.Restrict);
         builder.HasOne<Triagem>().WithMany().HasForeignKey(media => media.TriagemId)
+            .OnDelete(DeleteBehavior.Restrict);
+    }
+
+    private static void ConfigureTriagemLlmUsage(EntityTypeBuilder<TriagemLlmUsage> builder)
+    {
+        builder.ToTable(TriagemLlmUsagePersistenceSchema.TableName);
+        builder.HasKey(usage => usage.Id);
+        builder.Property(usage => usage.Id).ValueGeneratedNever();
+        builder.Property(usage => usage.ModelId).HasMaxLength(256).IsRequired();
+        builder.Property(usage => usage.InputTokens).IsRequired();
+        builder.Property(usage => usage.OutputTokens).IsRequired();
+        builder.Property(usage => usage.LatencyMs).IsRequired();
+        builder.Property(usage => usage.Outcome).HasConversion<string>().HasMaxLength(32).IsRequired();
+        builder.Property(usage => usage.CreatedAtUtc).IsRequired();
+
+        builder.HasIndex(usage => new { usage.TenantId, usage.CreatedAtUtc });
+        builder.HasIndex(usage => usage.TriagemId);
+
+        builder.HasOne<Tenant>().WithMany().HasForeignKey(usage => usage.TenantId)
+            .OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne<Triagem>().WithMany().HasForeignKey(usage => usage.TriagemId)
             .OnDelete(DeleteBehavior.Restrict);
     }
 

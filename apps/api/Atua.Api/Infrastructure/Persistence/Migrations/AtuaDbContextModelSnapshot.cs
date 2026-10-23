@@ -1026,6 +1026,48 @@ namespace Atua.Api.Infrastructure.Persistence.Migrations
                     b.ToTable("triagem_channel_messages", (string)null);
                 });
 
+            modelBuilder.Entity("Atua.Api.Domain.Triagens.TriagemLlmUsage", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("InputTokens")
+                        .HasColumnType("integer");
+
+                    b.Property<long>("LatencyMs")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("ModelId")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<string>("Outcome")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<int>("OutputTokens")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("TriagemId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TriagemId");
+
+                    b.HasIndex("TenantId", "CreatedAtUtc");
+
+                    b.ToTable("triagem_llm_usage", (string)null);
+                });
+
             modelBuilder.Entity("Atua.Api.Domain.Triagens.TriagemMessageTemplate", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1663,6 +1705,21 @@ namespace Atua.Api.Infrastructure.Persistence.Migrations
                         .WithMany()
                         .HasForeignKey("TriagemId")
                         .OnDelete(DeleteBehavior.Restrict);
+                });
+
+            modelBuilder.Entity("Atua.Api.Domain.Triagens.TriagemLlmUsage", b =>
+                {
+                    b.HasOne("Atua.Api.Domain.Tenants.Tenant", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Atua.Api.Domain.Triagens.Triagem", null)
+                        .WithMany()
+                        .HasForeignKey("TriagemId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("Atua.Api.Domain.Triagens.TriagemMessageTemplate", b =>

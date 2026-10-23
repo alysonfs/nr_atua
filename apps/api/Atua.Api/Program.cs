@@ -1,3 +1,4 @@
+using Amazon.BedrockRuntime;
 using Amazon.KeyManagementService;
 using Amazon.S3;
 using Amazon.SimpleEmailV2;
@@ -15,6 +16,7 @@ using Atua.Api.Application.WorkOrders.Contracts;
 using Atua.Api.Endpoints;
 using Atua.Api.Infrastructure.Email;
 using Atua.Api.Infrastructure.Jobs;
+using Atua.Api.Infrastructure.Llm;
 using Atua.Api.Infrastructure.Persistence;
 using Atua.Api.Infrastructure.Security;
 using Atua.Api.Infrastructure.Storage;
@@ -256,6 +258,33 @@ builder.Services.AddSingleton<IValidateOptions<TriagemOutboxOptions>, TriagemOut
 builder.Services.AddScoped<ITriagemOutboxRepository, TriagemOutboxRepository>();
 builder.Services.AddScoped<TriagemOutboxDrainService>();
 builder.Services.AddHostedService<TriagemOutboxDrainWorker>();
+
+// ADR-048: LLM da triagem no Amazon Bedrock (sa-east-1), atrás de
+// ITriagemLlmClient — trocar de modelo/fornecedor é só configuração e
+// adaptador (M1 do plano, docs/implementation/PLANO-triagem-llm-jev.md).
+// Enabled=false (padrão) usa o fake: nenhuma chamada à AWS é feita em
+// desenvolvimento nem nos testes.
+builder.Services.AddOptions<TriagemLlmOptions>()
+    .Bind(builder.Configuration.GetSection(TriagemLlmOptions.SectionName))
+    .ValidateDataAnnotations()
+    .ValidateOnStart();
+builder.Services.AddSingleton<IValidateOptions<TriagemLlmOptions>, TriagemLlmOptionsValidator>();
+var triagemLlmEnabled = builder.Configuration.GetValue($"{TriagemLlmOptions.SectionName}:Enabled", false);
+if (triagemLlmEnabled)
+{
+    builder.Services.AddSingleton<IAmazonBedrockRuntime>(sp =>
+    {
+        var region = builder.Configuration[$"{TriagemLlmOptions.SectionName}:Region"] ?? "sa-east-1";
+        return new AmazonBedrockRuntimeClient(Amazon.RegionEndpoint.GetBySystemName(region));
+    });
+    builder.Services.AddScoped<ITriagemLlmClient, BedrockTriagemLlmClient>();
+}
+else
+{
+    builder.Services.AddSingleton<ITriagemLlmClient, FakeTriagemLlmClient>();
+}
+builder.Services.AddSingleton<ITriagemLlmResponseVerifier, TriagemLlmResponseVerifier>();
+builder.Services.AddScoped<ITriagemLlmUsageRepository, TriagemLlmUsageRepository>();
 
 // CORS: as origens de produção são injetadas pelo user-data da EC2 via
 // Cors__AllowedOrigins__*. O fallback aberto abaixo existe apenas para
