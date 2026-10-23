@@ -61,4 +61,42 @@ describe('Office localization', () => {
     expect(translateProviderStatus('assigned', i18n.t)).toBe('Designado')
     expect(translateProviderStatus('Provider Custom Status', i18n.t)).toBe('Provider Custom Status')
   })
+
+  describe('triagePool/triagePoolDetail key parity across locales', () => {
+    function collectKeys(value: unknown, prefix = ''): string[] {
+      if (typeof value !== 'object' || value === null) return [prefix]
+      return Object.entries(value as Record<string, unknown>).flatMap(([key, nested]) =>
+        collectKeys(nested, prefix ? `${prefix}.${key}` : key),
+      )
+    }
+
+    it('exposes the same triagePool/triagePoolDetail keys in pt-BR, en-US and es-AR', () => {
+      const ptBR = i18n.getResourceBundle('pt-BR', 'translation')
+      const enUS = i18n.getResourceBundle('en-US', 'translation')
+      const esAR = i18n.getResourceBundle('es-AR', 'translation')
+
+      for (const section of ['triagePool', 'triagePoolDetail'] as const) {
+        const ptKeys = collectKeys(ptBR[section]).sort()
+        const enKeys = collectKeys(enUS[section]).sort()
+        const esKeys = collectKeys(esAR[section]).sort()
+
+        expect(enKeys).toEqual(ptKeys)
+        expect(esKeys).toEqual(ptKeys)
+      }
+    })
+
+    it('exposes the same layout navigation/breadcrumb keys for the triage pool in all locales', () => {
+      const ptBR = i18n.getResourceBundle('pt-BR', 'translation')
+      const enUS = i18n.getResourceBundle('en-US', 'translation')
+      const esAR = i18n.getResourceBundle('es-AR', 'translation')
+
+      expect(enUS.layout.triagePool).toBeTruthy()
+      expect(esAR.layout.triagePool).toBeTruthy()
+      expect(enUS.layout.breadcrumbs.triagePool).toBeTruthy()
+      expect(enUS.layout.breadcrumbs.triagePoolDetail).toBeTruthy()
+      expect(esAR.layout.breadcrumbs.triagePool).toBeTruthy()
+      expect(esAR.layout.breadcrumbs.triagePoolDetail).toBeTruthy()
+      expect(ptBR.layout.triagePool).toBeTruthy()
+    })
+  })
 })

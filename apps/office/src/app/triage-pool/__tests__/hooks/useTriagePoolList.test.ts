@@ -86,6 +86,16 @@ describe('useTriagePoolList', () => {
     expect(getMock).toHaveBeenCalledWith(`/api/tenants/${TENANT_ID}/triage-pool?status=EmColeta&scope=in-progress`)
   })
 
+  it('applies the all scope (pool + in-progress) as a query parameter', async () => {
+    getMock.mockResolvedValueOnce({ totalCount: 0, items: [] })
+
+    const { result } = renderHook(() => useTriagePoolList(TENANT_ID, undefined, 'all'))
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false))
+
+    expect(getMock).toHaveBeenCalledWith(`/api/tenants/${TENANT_ID}/triage-pool?scope=all`)
+  })
+
   it('returns the items and totalCount from the API response on success', async () => {
     getMock.mockResolvedValueOnce({ totalCount: 1, items: [mockedItem] })
 
