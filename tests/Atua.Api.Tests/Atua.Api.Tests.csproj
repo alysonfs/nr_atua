@@ -25,4 +25,8 @@
     <ProjectReference Include="..\..\apps\api\Atua.Api\Atua.Api.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Include="TestData\**\*.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

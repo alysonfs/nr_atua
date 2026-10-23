@@ -1,0 +1,283 @@
+{
+  "_descricao": "Dataset sintético de 10 conversas de triagem (sem dados reais) usado para testar o parser do esquema (ferramentaInput válido/inválido/faltando campos) e o verificador determinístico da resposta ao consumidor. Ver docs/features/triagem-llm-conducao.md §2 e §5.3 do PLANO-triagem-llm-jev.md.",
+  "casos": [
+    {
+      "caseId": "golden-01-descricao-clara",
+      "cenario": "Consumidor descreve o defeito com clareza no primeiro turno.",
+      "produto": "Ar-condicionado Split Inverter 9000 BTUs",
+      "marca": "Midea",
+      "checklist": [
+        { "item": "DescricaoDefeito", "atendido": false },
+        { "item": "NotaFiscal", "atendido": false },
+        { "item": "Etiqueta", "atendido": false },
+        { "item": "MidiaDefeito", "atendido": false },
+        { "item": "Endereco", "atendido": false },
+        { "item": "PontoReferencia", "atendido": false },
+        { "item": "Localizacao", "atendido": false }
+      ],
+      "historico": [
+        { "role": "Assistente", "texto": "Olá! 👋 Sou a assistente virtual da Posto Natal Refrigeração. Pode me contar o que está acontecendo com o aparelho?" },
+        { "role": "Consumidor", "texto": "o ar não tá gelando, só venta" }
+      ],
+      "anexos": [],
+      "schemaValido": true,
+      "ferramentaInput": {
+        "respostaAoConsumidor": "Entendi, obrigado! Pode me enviar uma foto legível da nota fiscal do produto?",
+        "camposEstruturados": {
+          "sintoma": { "valor": "não gela, só ventila", "confianca": 0.9 }
+        },
+        "itensAtendidos": [
+          { "item": "DescricaoDefeito", "evidencia": "consumidor: 'o ar não tá gelando, só venta'" }
+        ],
+        "sinalDesvio": { "detectado": false, "motivo": null }
+      }
+    },
+    {
+      "caseId": "golden-02-ambiguidade",
+      "cenario": "Consumidor usa termo ambíguo ('não funciona'); a IA pede esclarecimento em vez de presumir.",
+      "produto": "Geladeira Frost Free",
+      "marca": "Brastemp",
+      "checklist": [
+        { "item": "DescricaoDefeito", "atendido": false },
+        { "item": "NotaFiscal", "atendido": false },
+        { "item": "Etiqueta", "atendido": false },
+        { "item": "MidiaDefeito", "atendido": false },
+        { "item": "Endereco", "atendido": false },
+        { "item": "PontoReferencia", "atendido": false },
+        { "item": "Localizacao", "atendido": false }
+      ],
+      "historico": [
+        { "role": "Consumidor", "texto": "minha geladeira não funciona" }
+      ],
+      "anexos": [],
+      "schemaValido": true,
+      "ferramentaInput": {
+        "respostaAoConsumidor": "Pode me contar um pouco mais? Ela não liga, não gela, ou está fazendo algum barulho diferente?",
+        "camposEstruturados": {},
+        "itensAtendidos": [],
+        "sinalDesvio": { "detectado": false, "motivo": null }
+      }
+    },
+    {
+      "caseId": "golden-03-midia-ilegivel",
+      "cenario": "Foto da etiqueta enviada, mas ilegível — a IA pede reenvio.",
+      "produto": "Lava e seca Front Load",
+      "marca": "LG",
+      "checklist": [
+        { "item": "DescricaoDefeito", "atendido": true },
+        { "item": "NotaFiscal", "atendido": false },
+        { "item": "Etiqueta", "atendido": false },
+        { "item": "MidiaDefeito", "atendido": true },
+        { "item": "Endereco", "atendido": false },
+        { "item": "PontoReferencia", "atendido": false },
+        { "item": "Localizacao", "atendido": false }
+      ],
+      "historico": [
+        { "role": "Consumidor", "texto": "segue a etiqueta" }
+      ],
+      "anexos": [
+        { "mediaId": "33333333-3333-3333-3333-333333333333", "kind": "Image", "checklistItemCandidato": "Etiqueta" }
+      ],
+      "schemaValido": true,
+      "ferramentaInput": {
+        "respostaAoConsumidor": "A foto chegou, mas não consegui ler o modelo e o número de série. Pode tentar enviar novamente, com mais luz e de perto?",
+        "camposEstruturados": {},
+        "itensAtendidos": [],
+        "sinalDesvio": { "detectado": false, "motivo": null }
+      }
+    },
+    {
+      "caseId": "golden-04-midia-legivel",
+      "cenario": "Foto da etiqueta legível — item marcado como atendido, com modelo identificado.",
+      "produto": "Lava e seca Front Load",
+      "marca": "LG",
+      "checklist": [
+        { "item": "DescricaoDefeito", "atendido": true },
+        { "item": "NotaFiscal", "atendido": false },
+        { "item": "Etiqueta", "atendido": false },
+        { "item": "MidiaDefeito", "atendido": true },
+        { "item": "Endereco", "atendido": false },
+        { "item": "PontoReferencia", "atendido": false },
+        { "item": "Localizacao", "atendido": false }
+      ],
+      "historico": [
+        { "role": "Consumidor", "texto": "agora foi, segue de novo" }
+      ],
+      "anexos": [
+        { "mediaId": "44444444-4444-4444-4444-444444444444", "kind": "Image", "checklistItemCandidato": "Etiqueta" }
+      ],
+      "schemaValido": true,
+      "ferramentaInput": {
+        "respostaAoConsumidor": "Perfeito, consegui ler a etiqueta! Agora pode me enviar uma foto da nota fiscal?",
+        "camposEstruturados": {
+          "categoria": { "valor": "Lava e seca", "confianca": 0.95 }
+        },
+        "itensAtendidos": [
+          { "item": "Etiqueta", "evidencia": "foto de etiqueta legível (mídia 44444444-4444-4444-4444-444444444444)" }
+        ],
+        "sinalDesvio": { "detectado": false, "motivo": null }
+      }
+    },
+    {
+      "caseId": "golden-05-desvio-orcamento",
+      "cenario": "Consumidor pergunta o preço do serviço — fora do escopo da triagem.",
+      "produto": "Ar-condicionado Split",
+      "marca": "Samsung",
+      "checklist": [
+        { "item": "DescricaoDefeito", "atendido": true },
+        { "item": "NotaFiscal", "atendido": false },
+        { "item": "Etiqueta", "atendido": false },
+        { "item": "MidiaDefeito", "atendido": false },
+        { "item": "Endereco", "atendido": false },
+        { "item": "PontoReferencia", "atendido": false },
+        { "item": "Localizacao", "atendido": false }
+      ],
+      "historico": [
+        { "role": "Consumidor", "texto": "quanto vai custar o conserto?" }
+      ],
+      "anexos": [],
+      "schemaValido": true,
+      "ferramentaInput": {
+        "respostaAoConsumidor": "Essa informação quem vai te passar é a nossa equipe. Posso continuar com a triagem enquanto isso: pode me enviar a foto da nota fiscal?",
+        "camposEstruturados": {},
+        "itensAtendidos": [],
+        "sinalDesvio": { "detectado": true, "motivo": "consumidor pediu valor/orçamento do serviço, fora do escopo da triagem" }
+      }
+    },
+    {
+      "caseId": "golden-06-pedido-humano",
+      "cenario": "Consumidor pede para falar com uma pessoa.",
+      "produto": "Adega climatizada",
+      "marca": "Electrolux",
+      "checklist": [
+        { "item": "DescricaoDefeito", "atendido": false },
+        { "item": "NotaFiscal", "atendido": false },
+        { "item": "Etiqueta", "atendido": false },
+        { "item": "MidiaDefeito", "atendido": false },
+        { "item": "Endereco", "atendido": false },
+        { "item": "PontoReferencia", "atendido": false },
+        { "item": "Localizacao", "atendido": false }
+      ],
+      "historico": [
+        { "role": "Consumidor", "texto": "quero falar com uma pessoa de verdade" }
+      ],
+      "anexos": [],
+      "schemaValido": true,
+      "ferramentaInput": {
+        "respostaAoConsumidor": "Claro, já vou encaminhar seu atendimento para um de nossos atendentes.",
+        "camposEstruturados": {},
+        "itensAtendidos": [],
+        "sinalDesvio": { "detectado": true, "motivo": "consumidor pediu atendimento humano explicitamente" }
+      }
+    },
+    {
+      "caseId": "golden-07-checklist-quase-completo",
+      "cenario": "Falta apenas localização para concluir o checklist obrigatório.",
+      "produto": "Freezer horizontal",
+      "marca": "Consul",
+      "checklist": [
+        { "item": "DescricaoDefeito", "atendido": true },
+        { "item": "NotaFiscal", "atendido": true },
+        { "item": "Etiqueta", "atendido": true },
+        { "item": "MidiaDefeito", "atendido": true },
+        { "item": "Endereco", "atendido": true },
+        { "item": "PontoReferencia", "atendido": true },
+        { "item": "Localizacao", "atendido": false }
+      ],
+      "historico": [
+        { "role": "Consumidor", "texto": "já mandei tudo, falta mais alguma coisa?" }
+      ],
+      "anexos": [],
+      "schemaValido": true,
+      "ferramentaInput": {
+        "respostaAoConsumidor": "Já recebemos quase tudo! Só falta compartilhar a localização do endereço pelo WhatsApp, pode ser?",
+        "camposEstruturados": {},
+        "itensAtendidos": [],
+        "sinalDesvio": { "detectado": false, "motivo": null }
+      }
+    },
+    {
+      "caseId": "golden-08-schema-invalido-campo-ausente",
+      "cenario": "Saída da ferramenta sem o campo obrigatório 'respostaAoConsumidor'.",
+      "produto": "Lavadora Top Load",
+      "marca": "Electrolux",
+      "checklist": [
+        { "item": "DescricaoDefeito", "atendido": false },
+        { "item": "NotaFiscal", "atendido": false },
+        { "item": "Etiqueta", "atendido": false },
+        { "item": "MidiaDefeito", "atendido": false },
+        { "item": "Endereco", "atendido": false },
+        { "item": "PontoReferencia", "atendido": false },
+        { "item": "Localizacao", "atendido": false }
+      ],
+      "historico": [
+        { "role": "Consumidor", "texto": "não bate roupa direito" }
+      ],
+      "anexos": [],
+      "schemaValido": false,
+      "motivoInvalidoEsperado": "campo 'respostaAoConsumidor' ausente ou não é texto",
+      "ferramentaInput": {
+        "camposEstruturados": {},
+        "itensAtendidos": [],
+        "sinalDesvio": { "detectado": false, "motivo": null }
+      }
+    },
+    {
+      "caseId": "golden-09-schema-invalido-confianca-fora-do-intervalo",
+      "cenario": "Confiança do campo estruturado fora de [0,1].",
+      "produto": "Cervejeira expositora",
+      "marca": "Metalfrio",
+      "checklist": [
+        { "item": "DescricaoDefeito", "atendido": false },
+        { "item": "NotaFiscal", "atendido": false },
+        { "item": "Etiqueta", "atendido": false },
+        { "item": "MidiaDefeito", "atendido": false },
+        { "item": "Endereco", "atendido": false },
+        { "item": "PontoReferencia", "atendido": false },
+        { "item": "Localizacao", "atendido": false }
+      ],
+      "historico": [
+        { "role": "Consumidor", "texto": "não gela as bebidas" }
+      ],
+      "anexos": [],
+      "schemaValido": false,
+      "motivoInvalidoEsperado": "campo 'sintoma.confianca' fora do intervalo [0,1]",
+      "ferramentaInput": {
+        "respostaAoConsumidor": "Entendi, pode me enviar uma foto da etiqueta do equipamento?",
+        "camposEstruturados": {
+          "sintoma": { "valor": "não resfria as bebidas", "confianca": 1.5 }
+        },
+        "itensAtendidos": [],
+        "sinalDesvio": { "detectado": false, "motivo": null }
+      }
+    },
+    {
+      "caseId": "golden-10-resposta-com-promessa-proibida",
+      "cenario": "Saída tecnicamente válida no esquema, mas o texto promete agendamento e preço — deve ser bloqueada pelo verificador antes do envio.",
+      "produto": "Ar-condicionado Multi Split",
+      "marca": "Midea",
+      "checklist": [
+        { "item": "DescricaoDefeito", "atendido": true },
+        { "item": "NotaFiscal", "atendido": true },
+        { "item": "Etiqueta", "atendido": true },
+        { "item": "MidiaDefeito", "atendido": true },
+        { "item": "Endereco", "atendido": true },
+        { "item": "PontoReferencia", "atendido": true },
+        { "item": "Localizacao", "atendido": true }
+      ],
+      "historico": [
+        { "role": "Consumidor", "texto": "e aí, quando o técnico vem?" }
+      ],
+      "anexos": [],
+      "schemaValido": true,
+      "respostaDeveSerBloqueada": true,
+      "motivoBloqueioEsperado": "promessa de agendamento",
+      "ferramentaInput": {
+        "respostaAoConsumidor": "Vou agendar a visita para amanhã às 10h e o técnico vai cobrar R$150 na hora.",
+        "camposEstruturados": {},
+        "itensAtendidos": [],
+        "sinalDesvio": { "detectado": false, "motivo": null }
+      }
+    }
+  ]
+}
