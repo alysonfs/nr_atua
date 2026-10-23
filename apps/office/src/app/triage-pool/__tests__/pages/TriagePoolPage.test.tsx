@@ -4,10 +4,12 @@
  * Cobre:
  * - Título/subtítulo da página.
  * - Troca de filtro de estado reflete na query string e na requisição.
+ * - Aba "Em triagem" consulta o escopo pré-pool, com filtros próprios.
+ * - Nenhuma ação de atendimento (ex.: "Assumir") — Office é gestão.
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor, fireEvent } from '@testing-library/react'
+import { render, screen, waitFor, fireEvent, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { TriagePoolPage } from '../../pages/TriagePoolPage'
 import { useMyTenants } from '../../../office/hooks/useTenants'
@@ -78,5 +80,52 @@ describe('TriagePoolPage', () => {
     await waitFor(() =>
       expect(getMock).toHaveBeenLastCalledWith('/api/tenants/tenant-1/triage-pool?status=FalhaDeContato'),
     )
+  })
+
+  it('switches to the in-progress scope and offers only pre-pool status filters', async () => {
+    getMock.mockResolvedValue({ totalCount: 0, items: [] })
+
+    render(
+      <MemoryRouter>
+        <TriagePoolPage />
+      </MemoryRouter>,
+    )
+
+    await waitFor(() => expect(getMock).toHaveBeenCalledWith('/api/tenants/tenant-1/triage-pool'))
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Em triagem' }))
+
+    await waitFor(() =>
+      expect(getMock).toHaveBeenLastCalledWith('/api/tenants/tenant-1/triage-pool?scope=in-progress'),
+    )
+    expect(screen.getByRole('tab', { name: 'Em triagem' })).toHaveAttribute('aria-selected', 'true')
+
+    const filter = screen.getByLabelText(/filtrar por estado/i)
+    expect(within(filter).getByRole('option', { name: 'Em coleta' })).toBeInTheDocument()
+    expect(within(filter).queryByRole('option', { name: 'Liberada ao pool' })).not.toBeInTheDocument()
+
+    fireEvent.change(filter, { target: { value: 'InformacoesSuficientes' } })
+
+    await waitFor(() =>
+      expect(getMock).toHaveBeenLastCalledWith(
+        '/api/tenants/tenant-1/triage-pool?status=InformacoesSuficientes&scope=in-progress',
+      ),
+    )
+  })
+
+  it('reads the scope from the URL and renders no attendance actions', async () => {
+    getMock.mockResolvedValue({ totalCount: 0, items: [] })
+
+    render(
+      <MemoryRouter initialEntries={['/triage-pool?scope=in-progress&status=EmColeta']}>
+        <TriagePoolPage />
+      </MemoryRouter>,
+    )
+
+    await waitFor(() =>
+      expect(getMock).toHaveBeenCalledWith('/api/tenants/tenant-1/triage-pool?status=EmColeta&scope=in-progress'),
+    )
+    expect(screen.queryByRole('button', { name: /assumir/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
   })
 })

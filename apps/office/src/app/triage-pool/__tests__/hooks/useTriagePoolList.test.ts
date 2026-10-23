@@ -4,6 +4,7 @@
  * Cobre:
  * - Chamada ao endpoint correto com tenantId.
  * - Filtro por estado aplicado via query string.
+ * - Escopo `in-progress` (pré-pool) aplicado via query string.
  * - Sucesso: retorna items e totalCount.
  * - Erro genérico.
  * - Nenhuma requisição é disparada enquanto tenantId for null.
@@ -73,6 +74,16 @@ describe('useTriagePoolList', () => {
     await waitFor(() => expect(result.current.isLoading).toBe(false))
 
     expect(getMock).toHaveBeenCalledWith(`/api/tenants/${TENANT_ID}/triage-pool?status=Expirada`)
+  })
+
+  it('applies the in-progress scope (and status) as query parameters', async () => {
+    getMock.mockResolvedValueOnce({ totalCount: 0, items: [] })
+
+    const { result } = renderHook(() => useTriagePoolList(TENANT_ID, 'EmColeta', 'in-progress'))
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false))
+
+    expect(getMock).toHaveBeenCalledWith(`/api/tenants/${TENANT_ID}/triage-pool?status=EmColeta&scope=in-progress`)
   })
 
   it('returns the items and totalCount from the API response on success', async () => {

@@ -1,29 +1,23 @@
 /**
- * Test suite for TriagePoolDetailPage (C2 + C3).
+ * Test suite for TriagePoolDetailPage (C2 — somente leitura).
  *
  * Cobre:
  * - Estado de carregamento.
  * - Renderização do checklist, anexos, conversa e motivo do estado.
  * - Mensagem de "não encontrada" em 404.
- * - Assumir com sucesso: dispara refetch do detalhe.
- * - Assumir com 409: exibe aviso de quem já assumiu.
+ * - Triagem pré-pool (em triagem) exibida com o mesmo detalhe.
+ * - Nenhuma ação de atendimento (sem "Assumir", sem campo de mensagem).
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
+import { render, screen } from '@testing-library/react'
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
 import { TriagePoolDetailPage } from '../../pages/TriagePoolDetailPage'
 import { useTriagePoolDetail } from '../../hooks/useTriagePoolDetail'
-import { useAssumeTriagem } from '../../hooks/useAssumeTriagem'
 import { useMyTenants } from '../../../office/hooks/useTenants'
 
 vi.mock('../../hooks/useTriagePoolDetail', () => ({
   useTriagePoolDetail: vi.fn(),
-}))
-
-vi.mock('../../hooks/useAssumeTriagem', () => ({
-  useAssumeTriagem: vi.fn(),
 }))
 
 vi.mock('../../../office/hooks/useTenants', () => ({
@@ -31,7 +25,6 @@ vi.mock('../../../office/hooks/useTenants', () => ({
 }))
 
 const mockedUseTriagePoolDetail = vi.mocked(useTriagePoolDetail)
-const mockedUseAssumeTriagem = vi.mocked(useAssumeTriagem)
 const mockedUseMyTenants = vi.mocked(useMyTenants)
 
 const mockedDetail = {
@@ -85,11 +78,6 @@ describe('TriagePoolDetailPage', () => {
       requiresSelection: false,
       refetch: vi.fn(),
     } as unknown as ReturnType<typeof useMyTenants>)
-
-    mockedUseAssumeTriagem.mockReturnValue({
-      assume: vi.fn(),
-      isSubmitting: false,
-    })
   })
 
   it('renders a loading state while data is being fetched', () => {
@@ -122,7 +110,41 @@ describe('TriagePoolDetailPage', () => {
     expect(screen.getByText('Endereço completo')).toBeInTheDocument()
     expect(screen.getByText(/nenhum anexo recebido/i)).toBeInTheDocument()
     expect(screen.getByText('Olá')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /assumir/i })).toBeInTheDocument()
+    expect(screen.getByText(/somente leitura/i)).toBeInTheDocument()
+  })
+
+  it('renders no attendance actions (no assume button, no message input)', () => {
+    mockedUseTriagePoolDetail.mockReturnValue({
+      detail: mockedDetail,
+      isLoading: false,
+      isError: false,
+      notFound: false,
+      refetch: vi.fn(),
+    })
+
+    renderPage()
+
+    expect(screen.queryByRole('button', { name: /assumir/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button')).not.toBeInTheDocument()
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
+  })
+
+  it('renders a pre-pool (in-progress) triagem with the same read-only detail', () => {
+    mockedUseTriagePoolDetail.mockReturnValue({
+      detail: { ...mockedDetail, status: 'EmColeta', stateReason: 'Coleta em andamento com o consumidor.' },
+      isLoading: false,
+      isError: false,
+      notFound: false,
+      refetch: vi.fn(),
+    })
+
+    renderPage()
+
+    expect(screen.getByText('Em coleta')).toBeInTheDocument()
+    expect(screen.getByText(/coleta em andamento com o consumidor/i)).toBeInTheDocument()
+    expect(screen.getByText('Descrição do defeito')).toBeInTheDocument()
+    expect(screen.getByText('Olá')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /assumir/i })).not.toBeInTheDocument()
   })
 
   it('shows a friendly not-found message on 404', () => {
@@ -139,7 +161,7 @@ describe('TriagePoolDetailPage', () => {
     expect(screen.getByRole('alert')).toHaveTextContent(/triagem não encontrada ou sem acesso/i)
   })
 
-  it('does not render the assume button when the triagem is already assumed', () => {
+  it('shows who assumed the triagem, read-only, when it is already assumed', () => {
     mockedUseTriagePoolDetail.mockReturnValue({
       detail: { ...mockedDetail, status: 'AssumidaPorOperador', assumidaPorUserId: 'user-1', assumidaEmUtc: '2026-10-22T10:00:00Z' },
       isLoading: false,
@@ -152,65 +174,5 @@ describe('TriagePoolDetailPage', () => {
 
     expect(screen.queryByRole('button', { name: /assumir/i })).not.toBeInTheDocument()
     expect(screen.getByText(/assumida por user-1 em/i)).toBeInTheDocument()
-  })
-
-  it('assumes successfully and triggers a refetch of the detail', async () => {
-    const user = userEvent.setup()
-    const refetch = vi.fn()
-    const assume = vi.fn().mockResolvedValue({
-      status: 'success',
-      response: {
-        triagemId: 'triagem-1',
-        status: 'AssumidaPorOperador',
-        assumidaPorUserId: 'user-1',
-        assumidaEmUtc: '2026-10-22T10:00:00Z',
-      },
-    })
-
-    mockedUseTriagePoolDetail.mockReturnValue({
-      detail: mockedDetail,
-      isLoading: false,
-      isError: false,
-      notFound: false,
-      refetch,
-    })
-    mockedUseAssumeTriagem.mockReturnValue({ assume, isSubmitting: false })
-
-    renderPage()
-
-    await user.click(screen.getByRole('button', { name: /assumir/i }))
-    await user.click(screen.getByRole('button', { name: /^confirmar$/i }))
-
-    await waitFor(() => expect(assume).toHaveBeenCalledWith('triagem-1'))
-    await waitFor(() => expect(refetch).toHaveBeenCalled())
-  })
-
-  it('shows who already assumed the triagem on a 409 conflict', async () => {
-    const user = userEvent.setup()
-    const assume = vi.fn().mockResolvedValue({
-      status: 'conflict',
-      conflict: {
-        error: 'triagem_already_assumed',
-        status: 'AssumidaPorOperador',
-        assumedByUserId: 'user-2',
-        assumedAtUtc: '2026-10-22T09:00:00Z',
-      },
-    })
-
-    mockedUseTriagePoolDetail.mockReturnValue({
-      detail: mockedDetail,
-      isLoading: false,
-      isError: false,
-      notFound: false,
-      refetch: vi.fn(),
-    })
-    mockedUseAssumeTriagem.mockReturnValue({ assume, isSubmitting: false })
-
-    renderPage()
-
-    await user.click(screen.getByRole('button', { name: /assumir/i }))
-    await user.click(screen.getByRole('button', { name: /^confirmar$/i }))
-
-    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(/já assumida por user-2 em/i))
   })
 })
