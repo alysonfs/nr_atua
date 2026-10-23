@@ -685,6 +685,7 @@ test('graceful shutdown waits for pending credential persistence', async () => {
 
 async function runWithoutQr(
   me: { id: string } | undefined,
+  reportsSessionState = false,
 ): Promise<{ sockets: FakeSocket[]; outcome: Promise<unknown>; dispose(): Promise<void> }> {
   const directory = await mkdtemp(join(tmpdir(), 'atua-baileys-session-'))
   const sockets: FakeSocket[] = []
@@ -701,6 +702,9 @@ async function runWithoutQr(
       return socket
     },
   })
+  if (reportsSessionState) {
+    session.onSessionState(() => {})
+  }
   const controller = new AbortController()
   const outcome = session.run(controller.signal).then(
     () => 'stopped',
@@ -736,6 +740,19 @@ test('an unpaired session without QR fails with a fatal session error', async ()
   try {
     assert.ok((await run.outcome) instanceof SessionFatalError)
     assert.equal(run.sockets.length, 0)
+  } finally {
+    await run.dispose()
+  }
+})
+
+test('an unpaired session opens a socket when the QR is reported to the Office', async () => {
+  const run = await runWithoutQr(undefined, true)
+
+  try {
+    for (let attempt = 0; attempt < 1000 && run.sockets.length < 1; attempt += 1) {
+      await new Promise<void>((resolve) => setImmediate(resolve))
+    }
+    assert.equal(run.sockets.length, 1)
   } finally {
     await run.dispose()
   }

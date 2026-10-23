@@ -382,9 +382,10 @@ export class BaileysSession implements WhatsAppMessageSender, WhatsAppMessageRec
     const auth = await this.loadAuthState(this.sessionPath)
     // QR pairing leaves `registered` false; only pairing-code logins set it, so `me` also proves a paired session.
     const hasPairedSession = auth.state.creds.registered || Boolean(auth.state.creds.me?.id)
-    if (!hasPairedSession && !this.printQr) {
+    // Pairing is possible when the QR is printed locally or delivered to the Office (ADR-049).
+    if (!hasPairedSession && !this.printQr && this.sessionStateListeners.size === 0) {
       throw new SessionFatalError(
-        'Não há sessão WhatsApp válida. Configure ChannelWorker__PrintQr=true para parear localmente.',
+        'Não há sessão WhatsApp válida. Configure ChannelWorker__PrintQr=true ou ChannelWorker__SessionReportServiceToken para parear.',
       )
     }
 
