@@ -124,12 +124,12 @@ Limitações/decisões conhecidas, para acompanhamento:
 - "Triagem assumida por outro operador não-gestor" e "triagem de outro
   tenant" retornam ambos 404 no detalhe (nunca 403), para não revelar a
   existência/estado do recurso a quem não tem acesso.
-- **Pendência de infraestrutura:** o anexo usa URL pré-assinada do S3
-  (`ITriagemInboundMediaStorage.CreatePresignedReadUrlAsync`), mas a role
-  da EC2 hoje só tem `s3:PutObject`/`s3:DeleteObject` (ADR-046). A geração
-  da URL não exige `s3:GetObject`, mas o **uso** da URL por quem a recebe
-  exige — permissão a ser concedida via CDK pelo `aws-architect` (fora do
-  escopo deste incremento).
+- O anexo usa URL pré-assinada do S3
+  (`ITriagemInboundMediaStorage.CreatePresignedReadUrlAsync`). A role da
+  EC2 da API tem `s3:PutObject`, `s3:DeleteObject` e `s3:GetObject` nos
+  objetos do bucket de mídia (statement `MediaTriagemBucketObjectAccess`
+  em `infra/lib/atua-compute-stack.ts`; `s3:GetObject` concedido em
+  2026-10-23). Sem `s3:GetObject`, a URL é gerada mas o S3 responde 403.
 - A matéria-prima do indicador de "nova atividade" (critério de aceite 10)
   exigiu estender o casamento de mensagens inbound
   (`TriagemInboundMessageRepository`) para qualquer estado da triagem, não
@@ -156,8 +156,7 @@ com sessão de navegador, layout/navegação, tabelas com `@tanstack/react-table
   (`useTriagePoolDetail`): dados da OS/consumidor, motivo do estado
   (`stateReason`), `ChecklistSection`, `AttachmentsSection` (miniatura para
   imagem, player nativo para áudio/vídeo, link para os demais tipos; falha
-  de carregamento tratada com mensagem amigável via `onError`, antecipando a
-  pendência de `s3:GetObject` registrada acima) e `ConversationSection`
+  de carregamento tratada com mensagem amigável via `onError`) e `ConversationSection`
   (ordem cronológica). 404 (`notFound`) exibe "Triagem não encontrada ou
   sem acesso".
 - `POST /triage-pool/{triagemId}/assume` — **C3**, `AssumeButton` +
@@ -180,11 +179,9 @@ Pendências conhecidas:
   no aviso de conflito e na assunção já efetivada. Se o produto quiser
   nome, é necessário um endpoint de membros do tenant (fora deste
   incremento).
-- **Testes de anexo real:** a validação funcional de carregamento de
-  imagem/áudio/vídeo com URL pré-assinada depende da permissão
-  `s3:GetObject` (ADR-046, pendência de infraestrutura já registrada acima)
-  — o tratamento de erro foi implementado e testado com URLs
-  simuladas, mas não há validação end-to-end contra o S3 real.
+- **Testes de anexo real:** `s3:GetObject` foi concedido e validado na EC2
+  (URL pré-assinada respondendo 200). Falta a validação end-to-end no
+  Office com uma triagem real (próximo E2E do pool).
 - Traduções de `en-US`/`es-AR` não foram adicionadas para as novas chaves
   (`triagePool`, `triagePoolDetail`, `layout.triagePool`,
   `layout.breadcrumbs.triagePool*`); o fallback para `pt-BR`

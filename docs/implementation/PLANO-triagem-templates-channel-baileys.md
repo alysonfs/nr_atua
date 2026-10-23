@@ -943,3 +943,8 @@ pendentes. O status atualizado está na seção 11.
   é atualizada por polling a cada 30 s, não em tempo real.
 - Pendências: anexos não abrem no pool (falta `s3:GetObject`); a transcrição
   no detalhe não foi confirmada visualmente pelo PO.
+- Correção (2026-10-23): `s3:GetObject` concedido à `apiRole` nos objetos do
+  bucket de mídia (`cdk deploy AtuaComputeStack`, só mudança de policy) e
+  validado na EC2 (put/get/URL pré-assinada 200/delete). A skill
+  `atua-testar-triagem` foi atualizada para o fluxo remoto. Repetir o E2E
+  para confirmar lista, transcrição e anexo no detalhe.

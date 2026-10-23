@@ -9,7 +9,8 @@
 # Uso:
 #   e2e-triagem-synthetic.sh inject [ID]       cria uma OS E2E-<timestamp> (ou reapresenta ID, para testar idempotência)
 #   e2e-triagem-synthetic.sh status [ID]       mostra o andamento (todas E2E- sem ID)
-#   e2e-triagem-synthetic.sh cleanup [ID]      remove dados da OS (todas E2E- sem ID)
+#   e2e-triagem-synthetic.sh release-to-pool ID  avança a triagem E2E para LiberadaAoPool (atalho sem LLM)
+#   e2e-triagem-synthetic.sh cleanup [ID]      remove dados da OS e mídias no S3 (todas E2E- sem ID)
 #
 # Requisitos: Postgres__ConnectionString exportada, AWS_PROFILE com acesso ao
 # secret atua/mongodb-atlas, mongosh e psql instalados. Nenhum segredo é impresso.
@@ -27,7 +28,7 @@ MONGO_SECRET_ID="${MONGO_SECRET_ID:-atua/mongodb-atlas}"
 AWS_REGION="${AWS_REGION:-sa-east-1}"
 
 usage() {
-  sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'
 }
 
 require_synthetic_id() {
@@ -206,9 +207,34 @@ SQL
   echo "Limpeza concluída."
 }
 
+cmd_release_to_pool() {
+  # Sem a LLM, nenhum fluxo automático leva a triagem a LiberadaAoPool.
+  # Atalho só para o E2E: exige ID sintético explícito e não toca OS reais.
+  if [ -z "${1:-}" ]; then
+    echo "Erro: release-to-pool exige o ID E2E- da OS." >&2
+    exit 1
+  fi
+  require_synthetic_id "$1"
+
+  pg_run -v ON_ERROR_STOP=1 -v pid="$1" -P pager=off <<SQL
+UPDATE triagens t
+SET "Status" = 'LiberadaAoPool',
+    "UpdatedAtUtc" = now(),
+    "ConcurrencyToken" = gen_random_uuid()
+FROM work_orders w
+WHERE w."Id" = t."WorkOrderId"
+  AND w."TenantId" = '$TENANT_ID'
+  AND starts_with(w."WorkOrderProviderId", '$PREFIX')
+  AND w."WorkOrderProviderId" = :'pid'
+  AND t."Status" IN ('ContatoIniciado', 'EmColeta')
+RETURNING w."WorkOrderProviderId" AS os, t."Status" AS triagem;
+SQL
+}
+
 case "${1:-}" in
   inject) cmd_inject "${2:-}" ;;
   status) cmd_status "${2:-}" ;;
+  release-to-pool) cmd_release_to_pool "${2:-}" ;;
   cleanup) cmd_cleanup "${2:-}" ;;
   *) usage; exit 1 ;;
 esac

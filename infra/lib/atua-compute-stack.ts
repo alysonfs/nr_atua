@@ -606,18 +606,16 @@ export class AtuaComputeStack extends cdk.Stack {
       }),
     );
 
-    // S3: acesso explícito ao bucket de mídia de triagem (pedido do PO).
-    // Exatamente s3:PutObject e s3:DeleteObject, apenas em ARNs de OBJETO
-    // (`.../*`) do bucket de mídia — sem s3:GetObject, sem ListBucket, sem
-    // acesso ao ARN do bucket em si. Ação mínima necessária: a API grava
-    // (Put) e remove (Delete) mídia recebida; leitura/listagem não são
-    // requeridas pelo fluxo atual (ver Atua.Api/Program.cs e o S3 adapter,
-    // que usam somente PutObject/DeleteObject).
+    // S3: acesso ao bucket de mídia de triagem, apenas em ARNs de OBJETO
+    // (`.../*`) — sem ListBucket e sem acesso ao ARN do bucket em si.
+    // PutObject/DeleteObject: a API grava e remove a mídia recebida.
+    // GetObject: as URLs pré-assinadas que a API gera para o pool de triagem
+    // (S3TriagemInboundMediaStorage) só funcionam se a role que assina puder ler.
     apiRole.addToPolicy(
       new iam.PolicyStatement({
         sid: 'MediaTriagemBucketObjectAccess',
         effect: iam.Effect.ALLOW,
-        actions: ['s3:PutObject', 's3:DeleteObject'],
+        actions: ['s3:PutObject', 's3:DeleteObject', 's3:GetObject'],
         resources: [`${mediaTriagemBucket.bucketArn}/*`],
       }),
     );
