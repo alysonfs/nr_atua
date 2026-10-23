@@ -21,7 +21,7 @@ export function ChecklistSection({ checklist }: ChecklistSectionProps) {
             className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-slate-100 px-3 py-2 text-sm"
           >
             <div>
-              <span className="font-medium text-slate-800">{translateChecklistItem(item.item)}</span>
+              <span className="font-medium text-slate-800">{translateChecklistItem(t, item.item)}</span>
               {!item.required && (
                 <span className="ml-2 text-xs text-slate-400">{t('triagePoolDetail.checklist.optional')}</span>
               )}

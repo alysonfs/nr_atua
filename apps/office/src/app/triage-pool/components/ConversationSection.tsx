@@ -31,7 +31,7 @@ export function ConversationSection({ conversation, locale }: ConversationSectio
           {conversation.map((entry, index) => (
             <li key={`${entry.atUtc}-${index}`} className="rounded-md border border-slate-100 p-3 text-sm">
               <div className="mb-1 flex items-center justify-between text-xs text-slate-500">
-                <span className="font-semibold text-slate-700">{translateConversationSender(entry.sender)}</span>
+                <span className="font-semibold text-slate-700">{translateConversationSender(t, entry.sender)}</span>
                 <span>{formatDateTime(entry.atUtc, locale)}</span>
               </div>
               <p className="text-slate-800">

@@ -51,7 +51,7 @@ export function createTriagePoolColumns(
       header: t('triagePool.columns.status'),
       cell: (info) => {
         const status = info.getValue<string>()
-        return <Badge tone={triagemPoolStatusTone(status)}>{translateTriagemPoolStatus(status)}</Badge>
+        return <Badge tone={triagemPoolStatusTone(status)}>{translateTriagemPoolStatus(t, status)}</Badge>
       },
     },
     {

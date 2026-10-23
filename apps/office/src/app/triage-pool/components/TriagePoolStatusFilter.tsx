@@ -24,7 +24,7 @@ export function TriagePoolStatusFilter({ value, onChange, scope = 'pool' }: Tria
         <option value="">{t('triagePool.filter.all')}</option>
         {statusFiltersForScope(scope).map((status) => (
           <option key={status} value={status}>
-            {translateTriagemPoolStatus(status)}
+            {translateTriagemPoolStatus(t, status)}
           </option>
         ))}
       </select>

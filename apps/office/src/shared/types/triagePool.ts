@@ -20,10 +20,11 @@ export type TriagemInProgressStatus = 'ContatoIniciado' | 'EmColeta' | 'Informac
 export type TriagemListStatus = TriagemPoolStatus | TriagemInProgressStatus
 
 /**
- * Escopo da listagem (query param `scope` da API): `pool` (padrão) ou
- * `in-progress` (pré-pool).
+ * Escopo da listagem (query param `scope` da API): `pool` (padrão),
+ * `in-progress` (pré-pool) ou `all` (união de ambos — usado apenas para o
+ * contador de navegação, que precisa de uma única requisição).
  */
-export type TriagemListScope = 'pool' | 'in-progress'
+export type TriagemListScope = 'pool' | 'in-progress' | 'all'
 
 export interface TriagemPoolListItem {
   triagemId: string

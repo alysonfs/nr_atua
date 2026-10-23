@@ -86,7 +86,7 @@ export function TriagePoolDetailPage() {
             {detail.workOrder.workOrderProviderNo ?? detail.workOrder.workOrderId}
           </h1>
           <div className="mt-2 flex items-center gap-2">
-            <Badge tone={triagemPoolStatusTone(detail.status)}>{translateTriagemPoolStatus(detail.status)}</Badge>
+            <Badge tone={triagemPoolStatusTone(detail.status)}>{translateTriagemPoolStatus(t, detail.status)}</Badge>
           </div>
         </div>
       </div>

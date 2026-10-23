@@ -17,8 +17,9 @@ export const TRIAGE_POOL_POLL_INTERVAL_MS = 30_000
  *
  * GET /api/tenants/{tenantId}/triage-pool?status={estado}&scope={escopo}
  *
- * `scope` = `pool` (padrão, omitido na URL) ou `in-progress` (triagens
- * ainda em coleta, pré-pool — somente leitura no Office).
+ * `scope` = `pool` (padrão, omitido na URL), `in-progress` (triagens ainda
+ * em coleta, pré-pool — somente leitura no Office) ou `all` (união de
+ * ambos, usada apenas pelo contador de navegação).
  *
  * `tenantId` deve vir do tenant ativo do usuário (useMyTenants().defaultTenantId).
  * Enquanto `tenantId` for `null`, nenhuma requisição é disparada.
