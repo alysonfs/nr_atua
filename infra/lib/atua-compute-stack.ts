@@ -648,6 +648,23 @@ export class AtuaComputeStack extends cdk.Stack {
       }),
     );
 
+    // Bedrock (ADR-048, adendo): LLM da triagem via perfil de inferência global.
+    // O perfil global exige permissão no próprio perfil, no modelo da região de
+    // origem e no ARN global do modelo (sem região). Converse usa InvokeModel.
+    const triagemLlmModelId = 'anthropic.claude-haiku-4-5-20251001-v1:0';
+    apiRole.addToPolicy(
+      new iam.PolicyStatement({
+        sid: 'BedrockTriagemLlmInvoke',
+        effect: iam.Effect.ALLOW,
+        actions: ['bedrock:InvokeModel'],
+        resources: [
+          `arn:aws:bedrock:sa-east-1:${cdk.Stack.of(this).account}:inference-profile/global.${triagemLlmModelId}`,
+          `arn:aws:bedrock:sa-east-1::foundation-model/${triagemLlmModelId}`,
+          `arn:aws:bedrock:::foundation-model/${triagemLlmModelId}`,
+        ],
+      }),
+    );
+
     // Nenhuma permissão com Action:"*"/Resource:"*" - princípio de menor privilégio.
 
     // --- User data: bootstrap da EC2 (runtime + env + systemd + artefato) ---
