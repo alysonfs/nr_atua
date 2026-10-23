@@ -10,6 +10,7 @@ import makeWASocket, {
   type BinaryNode,
   type ConnectionState,
   type WAMessage,
+  type UserFacingSocketConfig,
   normalizeMessageContent,
 } from '@whiskeysockets/baileys'
 import pino from 'pino'
@@ -26,6 +27,7 @@ import type {
 } from './contracts.js'
 import { PermanentChannelSendError } from './phone.js'
 import { collectBufferWithLimit, MAX_INBOUND_MEDIA_BYTES, MediaTooLargeError } from './media-download-limit.js'
+import { OutboundMessageCache } from './outbound-message-cache.js'
 
 const qrcodeTerminal: typeof import('qrcode-terminal') =
   createRequire(import.meta.url)('qrcode-terminal')
@@ -42,11 +44,12 @@ export interface BaileysSessionSocket {
   onCredentialsUpdate(listener: () => void): () => void
   onMessagesUpsert(listener: (messages: WAMessage[], type: string) => void): () => void
   onMessageAck(listener: (messageId: string, errorCode?: string) => void): () => void
-  resolveRecipient(recipientJid: string): Promise<string>
+  resolveRecipient(recipientJid: string): Promise<{ jid: string; aliases: readonly string[] }>
   sendMessage(
     recipientJid: string,
     text: string,
     messageId: string,
+    recipientAliases?: readonly string[],
   ): Promise<{ key?: { id?: string | null } | null } | undefined>
   end(error?: Error): void
 }
@@ -78,6 +81,7 @@ export class BaileysSession implements WhatsAppMessageSender, WhatsAppMessageRec
   private readonly wait: (milliseconds: number, signal: AbortSignal) => Promise<void>
   private readonly downloadMedia: (message: WAMessage) => Promise<Buffer>
   private readonly now: () => Date
+  private readonly outboundMessages: OutboundMessageCache
 
   constructor(
     sessionPath: string,
@@ -89,7 +93,9 @@ export class BaileysSession implements WhatsAppMessageSender, WhatsAppMessageRec
     this.printQr = printQr
     this.logger = logger
     this.loadAuthState = dependencies.loadAuthState ?? useMultiFileAuthState
-    this.createSocket = dependencies.createSocket ?? createBaileysSocket
+    this.outboundMessages = new OutboundMessageCache(logger)
+    this.createSocket = dependencies.createSocket ??
+      ((auth) => createBaileysSocket(auth, logger, this.outboundMessages))
     this.wait = dependencies.wait ?? delay
     this.downloadMedia = dependencies.downloadMedia ?? defaultDownloadMedia
     this.now = dependencies.now ?? (() => new Date())
@@ -139,6 +145,7 @@ export class BaileysSession implements WhatsAppMessageSender, WhatsAppMessageRec
       this.ready = false
       this.socket?.end(undefined)
       this.socket = undefined
+      this.outboundMessages.clear()
     }
   }
 
@@ -298,16 +305,16 @@ export class BaileysSession implements WhatsAppMessageSender, WhatsAppMessageRec
         Promise.all([
           acknowledgement,
           (async () => {
-            const resolvedJid = await socket.resolveRecipient(recipientJid)
+            const recipient = await socket.resolveRecipient(recipientJid)
             signal.throwIfAborted()
             if (!sendingAllowed || !this.ready || this.socket !== socket) {
               throw new Error('O envio expirou ou a sessão WhatsApp mudou durante a consulta.')
             }
             this.logger.info('whatsapp_recipient_resolved', {
               messageId,
-              canonicalJidChanged: resolvedJid !== recipientJid,
+              canonicalJidChanged: recipient.jid !== recipientJid,
             })
-            const result = await socket.sendMessage(resolvedJid, text, messageId)
+            const result = await socket.sendMessage(recipient.jid, text, messageId, recipient.aliases)
             if (result?.key?.id !== messageId) {
               throw new Error('Baileys não confirmou o identificador idempotente da mensagem.')
             }
@@ -560,10 +567,52 @@ export class BaileysSession implements WhatsAppMessageSender, WhatsAppMessageRec
   }
 }
 
-function createBaileysSocket(auth: AuthenticationState): BaileysSessionSocket {
-  const socket = makeWASocket({
+type RawBaileysSocket = Pick<ReturnType<typeof makeWASocket>, 'onWhatsApp' | 'sendMessage' | 'end'> & {
+  ev: Pick<ReturnType<typeof makeWASocket>['ev'], 'on' | 'off'>
+  ws: {
+    on(event: string, listener: (node: BinaryNode) => void): unknown
+    off(event: string, listener: (node: BinaryNode) => void): unknown
+  }
+}
+
+export function createBaileysSocket(
+  auth: AuthenticationState,
+  logger: SafeLogger,
+  outboundMessages: OutboundMessageCache,
+  socketFactory: (config: UserFacingSocketConfig) => RawBaileysSocket = makeWASocket,
+): BaileysSessionSocket {
+  const socket = socketFactory({
     auth,
-    logger: pino({ level: 'silent' }),
+    getMessage: outboundMessages.getMessage,
+    logger: pino({
+      level: 'debug',
+      hooks: {
+        logMethod(args, _method, level) {
+          const message = typeof args[0] === 'string' ? args[0] : args[1]
+          switch (message) {
+            case 'recv retry request':
+              logger.info('whatsapp_retry_requested')
+              break
+            case 'recv retry request, but message not available':
+              logger.warn('whatsapp_retry_original_message_missing')
+              break
+            case 'error in sending message again':
+              logger.error('whatsapp_retry_send_failed')
+              break
+            case 'will not send message again, as sent too many times':
+              logger.error('whatsapp_retry_limit_reached')
+              break
+            default:
+              // SDK fields can contain message content, JIDs and keys; never forward them.
+              if (level >= 50) {
+                logger.error('whatsapp_sdk_error')
+              } else if (level >= 40) {
+                logger.warn('whatsapp_sdk_warning')
+              }
+          }
+        },
+      },
+    }),
   })
 
   return {
@@ -602,10 +651,15 @@ function createBaileysSocket(auth: AuthenticationState): BaileysSessionSocket {
           'O WhatsApp não encontrou uma conta para o telefone informado.',
         )
       }
-      return recipient.jid
+      const aliases = [recipientJid]
+      if (typeof recipient.lid === 'string' && recipient.lid.endsWith('@lid')) {
+        aliases.push(recipient.lid)
+      }
+      return { jid: recipient.jid, aliases }
     },
-    sendMessage(recipientJid, text, messageId) {
-      return socket.sendMessage(recipientJid, { text }, { messageId })
+    sendMessage(recipientJid, text, messageId, recipientAliases = []) {
+      return outboundMessages.send(recipientJid, messageId, recipientAliases,
+        () => socket.sendMessage(recipientJid, { text }, { messageId }))
     },
     end(error) {
       socket.end(error)
