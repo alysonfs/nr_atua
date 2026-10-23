@@ -55,8 +55,8 @@ class FakeSocket implements BaileysSessionSocket {
     return () => this.ackListeners.delete(listener)
   }
 
-  async resolveRecipient(recipientJid: string): Promise<string> {
-    return this.resolvedJid ?? recipientJid
+  async resolveRecipient(recipientJid: string): Promise<{ jid: string; aliases: readonly string[] }> {
+    return { jid: this.resolvedJid ?? recipientJid, aliases: [recipientJid] }
   }
 
   emitAck(messageId: string, errorCode?: string): void {
@@ -623,7 +623,7 @@ test('recipient lookup finishing after timeout cannot send a late message', asyn
   try {
     const socket = await harness.waitForSocket(1)
     socket.emitConnectionUpdate({ connection: 'open' })
-    socket.resolveRecipient = async (jid) => { await lookup.promise; return jid }
+    socket.resolveRecipient = async (jid) => { await lookup.promise; return { jid, aliases: [jid] } }
     let sends = 0
     socket.setSendMessageHandler(async (_jid, _text, messageId) => {
       sends += 1
