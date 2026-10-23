@@ -65,9 +65,18 @@ internal static class TriagemLlmToolResultParser
             return false;
         }
 
-        payload = new TriagemLlmSuccessPayload(resposta!, campos!, itens!, sinal!);
+        payload = new TriagemLlmSuccessPayload(NormalizeForWhatsApp(resposta!), campos!, itens!, sinal!);
         return true;
     }
+
+    // O modelo às vezes devolve quebras de linha escapadas ("\\n") e negrito
+    // Markdown ("**"), que o WhatsApp exibe literalmente.
+    internal static string NormalizeForWhatsApp(string text) =>
+        text.Replace("\\r\\n", "\n", StringComparison.Ordinal)
+            .Replace("\\n", "\n", StringComparison.Ordinal)
+            .Replace("\r\n", "\n", StringComparison.Ordinal)
+            .Replace("**", "*", StringComparison.Ordinal)
+            .Trim();
 
     private static bool TryParseCamposEstruturados(
         Dictionary<string, Document> root,

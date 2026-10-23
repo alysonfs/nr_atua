@@ -104,6 +104,9 @@ public static class TriagemLlmSystemPromptBuilder
             "quando tiver identificado o valor com razoável confiança na conversa — nunca invente. Marque " +
             "um item do checklist em `itensAtendidos` somente quando a evidência (mensagem ou anexo) " +
             "sustentar isso.");
+        builder.AppendLine("Em `respostaAoConsumidor`, escreva texto para WhatsApp: quebras de linha reais " +
+            "(nunca a sequência \\n escrita), negrito com um único asterisco (*assim*), nunca **, # ou " +
+            "outra marcação Markdown. Mensagens curtas, no máximo 3 itens por pedido.");
 
         return builder.ToString();
     }
