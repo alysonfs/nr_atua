@@ -1038,3 +1038,18 @@ pendentes. O status atualizado está na seção 11.
   ao Office gerencial (validar pré-pool e ausência de `Assumir`/envio).
   O status do script agora expõe quantidades, tipos e resultados de mídia,
   além do contador de textos; sintaxe e consulta somente leitura aprovadas.
+
+### E2E pós-fix `getMessage` e Office de gestão (2026-10-23)
+
+- OS `E2E-20261023140750`, uma única injeção: comando `Completed`, 0 retentativas.
+- Entrega: nos dois aparelhos, a mensagem mostrou "Aguardando mensagem" por
+  cerca de 5 s e depois ficou **legível** (1 mensagem). Os logs registram 4
+  `whatsapp_retry_requested` e 4 `whatsapp_retry_message_available`. Isso
+  confirma a causa: o aparelho pede retry e, sem `getMessage`, o original não
+  era retransmitido.
+- Atraso residual de alguns segundos no primeiro envio (negociação de sessão
+  E2E do aparelho): aceito por ora; ver riscos.
+- Office (gestão, somente leitura): a aba "Em triagem" mostrou a OS em
+  `EmColeta` com texto e foto; após `release-to-pool`, a aba "Pool" mostrou a
+  conversa e a foto. Sem "Assumir" e sem campo de mensagem.
+- Cleanup autorizado: linhas e 1 objeto S3 removidos; `status` = 0 linhas.
