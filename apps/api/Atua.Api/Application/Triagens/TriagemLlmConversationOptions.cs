@@ -70,7 +70,15 @@ public sealed class TriagemLlmConversationOptions
     public bool IsEligible(Guid tenantId, string consumerPhone) =>
         ConversationEnabled
         && AllowedTenantIds.Contains(tenantId)
-        && AllowedPhones.Any(allowed => OnlyDigits(allowed) == OnlyDigits(consumerPhone));
+        && AllowedPhones.Any(allowed => ToPhoneMatchKey(allowed) == ToPhoneMatchKey(consumerPhone));
 
-    private static string OnlyDigits(string value) => new(value.Where(char.IsDigit).ToArray());
+    // O WhatsApp entrega celulares brasileiros sem o nono dígito
+    // (55 + DDD + 8 dígitos); mesma regra de TriagemInboundMessageRepository.
+    private static string ToPhoneMatchKey(string value)
+    {
+        var digits = new string(value.Where(char.IsDigit).ToArray());
+        return digits.Length == 13 && digits.StartsWith("55", StringComparison.Ordinal) && digits[4] == '9'
+            ? digits.Remove(4, 1)
+            : digits;
+    }
 }
