@@ -64,11 +64,11 @@ inválida. O texto sem validação nunca é enviado ao consumidor.
 |---|---|---|
 | Descrição do defeito | Sim | Texto ou transcrição com sintoma identificável |
 | Vídeo do defeito | Não | Anexo de vídeo recebido |
-| Foto da nota fiscal | Sim | Imagem recebida e marcada pela LLM como legível |
-| Foto da etiqueta (modelo e série) | Sim | Imagem recebida e marcada como legível |
+| Foto da nota fiscal | Sim | Imagem recebida e marcada pelo operador como legível |
+| Foto da etiqueta (modelo e série) | Sim | Imagem recebida e marcada pelo operador como legível |
 | Endereço completo | Sim | Logradouro, número, bairro e cidade identificados |
-| Ponto de referência | Sim | Texto recebido |
-| Localização | Sim | Localização compartilhada no WhatsApp ou link de mapa |
+| Ponto de referência | Não | Texto recebido |
+| Localização | Não | Localização compartilhada no WhatsApp ou link de mapa |
 
 A suficiência é **determinística**: a API move a triagem para
 `INFORMACOES_SUFICIENTES` e depois para `LIBERADA_AO_POOL` quando todos os
@@ -83,10 +83,10 @@ decisão é da API. O operador confere o resultado no painel C2.
 - Ao atingir qualquer um dos limites, ou quando o consumidor pede
   atendimento humano, a triagem vai para `AGUARDANDO_INTERVENCAO`, a LLM
   para e a triagem aparece no pool.
-- Se o fornecedor estiver indisponível ou exceder o tempo limite, há
-  retentativa com backoff. Se a falha persistir, a triagem vai para
-  `AGUARDANDO_INTERVENCAO`. O consumidor nunca fica sem resposta por tempo
-  indefinido.
+- Se o fornecedor estiver indisponível ou exceder o tempo limite, há até
+  2 novas tentativas com backoff exponencial (3 chamadas no total). Se a
+  falha persistir, a triagem vai para `AGUARDANDO_INTERVENCAO`. O
+  consumidor nunca fica sem resposta por tempo indefinido.
 - Quando a triagem chega a `ASSUMIDA_POR_OPERADOR`, `EXPIRADA` ou
   `FALHA_DE_CONTATO`, a API não chama mais a LLM.
 
@@ -133,7 +133,9 @@ decisão é da API. O operador confere o resultado no painel C2.
 - Estimativa de custo por triagem e orçamento mensal por tenant.
 - Catálogo de peças e sintomas por fabricante e produto, pré-requisito do
   B5.
-- Avaliação da legibilidade de imagens: pela LLM multimodal ou só pela
-  conferência do operador.
+- Avaliação da legibilidade de imagens (nota fiscal, etiqueta com modelo e
+  série, vídeo do defeito): por visão computacional/Bedrock é evolução
+  futura. Hoje o operador confere manualmente a legibilidade; não há
+  reconhecimento automático pela LLM.
 - Transcrição de áudio, adiada (ADR-046). Enquanto ela não existir, o áudio
   não conta como descrição atendida.

@@ -144,7 +144,7 @@ decide") — este plano estende o mesmo princípio ao motor selecionado.
 | Papel | Componente | Responsabilidade |
 |---|---|---|
 | Conversar | LLM (Bedrock) | Entender a mensagem do consumidor, redigir a próxima pergunta/resposta no tom definido (`triagem-llm-identidade-tom.md`), extrair campos estruturados candidatos, sugerir peças quando houver catálogo (futuro). |
-| Decidir | Motor de decisão selecionado no ADR-051 | Choice: categoria de defeito dentre as opções do ATUA. Score: prioridade operacional (rubrica 1–5, a definir pelo PO — ver §12). Decisões binárias equivalentes a Noul: probabilidade de proposições como "checklist tem evidência suficiente para liberar ao pool", "esta triagem precisa de intervenção humana agora", "este anexo é nota fiscal/etiqueta legível". |
+| Decidir | Motor de decisão selecionado no ADR-051 | Choice: categoria de defeito dentre as opções do ATUA. Score: prioridade operacional (rubrica 1–5, a definir pelo PO — ver §12). Decisões binárias equivalentes a Noul: probabilidade de proposições como "checklist tem evidência suficiente para liberar ao pool", "esta triagem precisa de intervenção humana agora". Validação de legibilidade (nota fiscal, etiqueta, vídeo) é evolução futura; hoje o operador confere manualmente. |
 | Aplicar | Código determinístico (domínio `Triagem`) | Lê a saída do motor, compara com o limiar vigente (ver §5) e só então chama os métodos existentes do agregado (ex.: avançar para `InformacoesSuficientes`, mover para `AguardandoIntervencao`). |
 
 O motor de decisão não conversa com o consumidor, não escreve orientação
@@ -279,15 +279,16 @@ ADR-042, ADR-043, ADR-047); não há novo endpoint de transporte.
 ## 4. Fallback de indisponibilidade
 
 Reaproveita a política já definida em `triagem-llm-conducao.md` §4
-(retentativa com backoff; falha persistente → `AguardandoIntervencao`).
-Este plano estende a mesma política ao motor selecionado:
+(até 2 novas tentativas com backoff exponencial, 3 chamadas no total; falha
+persistente → `AguardandoIntervencao`). Este plano estende a mesma política
+ao motor selecionado:
 
-- Motor indisponível ou timeout: retentativa com backoff limitado; se
-  persistir, a API **não aplica o gate automático** e segue a regra
-  determinística equivalente já existente (ex.: checklist determinístico
-  de `triagem-llm-conducao.md` §3) ou encaminha a triagem para
-  `AguardandoIntervencao` quando não houver regra determinística
-  equivalente disponível para aquele gate.
+- Motor indisponível ou timeout: até 2 novas tentativas com backoff
+  exponencial (3 chamadas no total); se persistir, a API **não aplica o
+  gate automático** e segue a regra determinística equivalente já existente
+  (ex.: checklist determinístico de `triagem-llm-conducao.md` §3) ou
+  encaminha a triagem para `AguardandoIntervencao` quando não houver regra
+  determinística equivalente disponível para aquele gate.
 - Em nenhum caso o consumidor fica sem resposta por tempo indefinido —
   mesma garantia já estabelecida para a LLM.
 - Falha de ambos (LLM e motor) no mesmo turno: mesma consequência de falha
@@ -327,7 +328,7 @@ fase é decisão de produto (`product-analyst` + PO), não técnica.
 |---|---|---|---|
 | Checklist suficiente | Noul | Autoriza o código a mover para `InformacoesSuficientes` (hoje: regra determinística do checklist, mantida como dupla checagem mesmo após M4) | Mantém `EmColeta` |
 | Necessita intervenção humana | Noul | Move para `AguardandoIntervencao` | Mantém fluxo normal |
-| Anexo é nota fiscal/etiqueta legível | Noul | Marca item do checklist como atendido | Pede reenvio (contador de tentativa já existente) |
+| Anexo é nota fiscal/etiqueta legível | Noul (evolução futura: visão computacional/Bedrock) | Marca item do checklist como atendido | Pede reenvio (contador de tentativa já existente); hoje o operador confere manualmente |
 | Categoria de defeito | Choice ou equivalente | Preenche campo estruturado exibido no Office como sugestão | — |
 | Prioridade operacional | Score ou equivalente | Preenche campo estruturado exibido no Office como sugestão | — |
 
@@ -465,8 +466,8 @@ Não define esquema físico; aponta as adições necessárias para o
 | Fase | Objetivo | Agentes responsáveis | Critério de aceite |
 |---|---|---|---|
 | **M0** | Spike comparativo com Bedrock structured output, JEV e Strands Decider 2B: confirmar API/artefatos/licença, disponibilidade, região, retenção, preço/custo de infraestrutura, hardware, latência, qualidade e calibração em golden set; redigir ADR-051; confirmar com o PO as questões abertas do §12. Não usar dados pessoais reais no spike. | `software-architect` (ADR e avaliação), `product-analyst` (requisitos abertos, rubrica, categorias), `aws-architect` (Bedrock e infraestrutura de inferência própria), `qa-engineer` (protocolo de comparação) | Comparação reproduzível, critérios e resultados documentados; ADR-051 aceito com uma alternativa selecionada; respostas do PO registradas; se todas as alternativas forem rejeitadas, M3+ não inicia. |
-| **M1** | Extração da LLM offline sobre transcrições já existentes (dataset golden), sem loop de conversa em produção. Validar qualidade de extração de campos estruturados antes de automatizar qualquer resposta ao consumidor. | `backend-engineer` (adaptador `ITriagemLlmClient` + fake), `qa-engineer` (avaliação de qualidade do dataset) | Extração roda sobre o dataset golden com taxa de acerto revisada manualmente pelo PO/product-analyst; nenhuma chamada em produção ainda. |
-| **M2** | Loop conversacional real, atrás de feature flag, restrito ao número de teste (E2E), sem gates automáticos do motor (checklist determinístico e validações de resposta obrigatórias). | `backend-engineer` (loop na Master API, idempotência, fallback), `qa-engineer` (E2E estendido) | E2E completo: consumidor de teste conversa com a LLM do início ao fim do checklist mínimo; respostas inseguras/inválidas não são enviadas; a triagem chega a `InformacoesSuficientes`/`LiberadaAoPool` sem o script manual. |
+| **M1** | Extração da LLM offline sobre transcrições já existentes (dataset golden), sem loop de conversa em produção. Validar qualidade de extração de campos estruturados antes de automatizar qualquer resposta ao consumidor. | `backend-engineer` (adaptador `ITriagemLlmClient` + fake), `qa-engineer` (avaliação de qualidade do dataset) | ✓ **Implementado** (commits 7f3cd00, 7cd3ac7). Extração roda sobre o dataset golden com taxa de acerto revisada manualmente pelo PO/product-analyst; nenhuma chamada em produção ainda. |
+| **M2** | Loop conversacional real, atrás de feature flag `TriagemLlmConversationEnabled` com allowlist de tenant e telefone, restrito ao número de teste (E2E), sem gates automáticos do motor (checklist determinístico e validações de resposta obrigatórias). | `backend-engineer` (loop na Master API, idempotência, fallback), `qa-engineer` (E2E estendido) | ✓ **Implementado** (commits e35109b, 664529b). E2E completo: consumidor de teste conversa com a LLM do início ao fim do checklist mínimo; respostas inseguras/inválidas não são enviadas; a triagem chega a `InformacoesSuficientes`/`LiberadaAoPool` sem o script manual. |
 | **M3** | Motor selecionado em modo sombra: registra decisão e probabilidade, não altera estado nem libera respostas com base na avaliação probabilística. Requer ADR-051 aceito com alternativa selecionada. | `backend-engineer` (adaptador `ITriagemDecisionClient`, log de decisão), `frontend-engineer` (exibição read-only no Office), `aws-architect` (infra própria ou conectividade do fornecedor, conforme ADR) | Decisões aparecem em log e Office como somente leitura para todos os turnos elegíveis; nenhuma transição nem envio é autorizado apenas pelo motor. |
 | **M4** | Calibração: comparar decisões e verificações de resposta com desfechos reais (humanos ou determinísticos) de volume mínimo a definir com o PO; aprovar limiares por gate. | `product-analyst` (critérios), `qa-engineer` (relatório), `software-architect` (revisão do ADR de limiares) | Limiares por gate aprovados pelo PO e registrados; sem isso, nenhum gate probabilístico liga. |
 | **M5** | Habilitação gradual para o tenant atual: gates automáticos ativos acima do limiar aprovado; abaixo do limiar, sempre cai para intervenção humana. | `backend-engineer`, `frontend-engineer` (exibição no Office), `qa-engineer` (regressão completa), `documentation` (atualizar arquitetura e features) | Canary controlado no tenant com feature flag, monitoramento e critério de rollback definidos; ciclo completo roda sem o script E2E manual; métricas de custo/observabilidade (§8) ativas; documentação de arquitetura atualizada. |
