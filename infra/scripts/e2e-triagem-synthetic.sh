@@ -143,14 +143,34 @@ ORDER BY w."CreatedAt";
 SQL
 }
 
+media_bucket() {
+  if [ -n "${E2E_MEDIA_BUCKET:-}" ]; then
+    printf '%s' "$E2E_MEDIA_BUCKET"
+    return
+  fi
+  printf 'atua-%s-media-triagem' "$(aws sts get-caller-identity --query Account --output text)"
+}
+
 cmd_cleanup() {
-  local filter
+  local filter media_keys bucket key
   if [ -n "${1:-}" ]; then
     require_synthetic_id "$1"
     filter="= :'pid'"
   else
     filter="LIKE '${PREFIX}%'"
   fi
+
+  # Objetos no S3 das mídias recebidas; removidos só após o COMMIT.
+  media_keys="$(pg_run -At -v ON_ERROR_STOP=1 -v pid="${1:-}" <<SQL
+SELECT m."StorageKey" FROM triagem_channel_media m
+JOIN triagens t ON t."Id" = m."TriagemId"
+JOIN work_orders w ON w."Id" = t."WorkOrderId"
+WHERE w."TenantId" = '$TENANT_ID'
+  AND starts_with(w."WorkOrderProviderId", '$PREFIX')
+  AND w."WorkOrderProviderId" $filter
+  AND m."StorageKey" IS NOT NULL;
+SQL
+)"
 
   pg_run -v ON_ERROR_STOP=1 -v pid="${1:-}" -P pager=off <<SQL
 BEGIN;
@@ -165,6 +185,9 @@ CREATE TEMP TABLE e2e_triagem_ids ON COMMIT DROP AS
 DELETE FROM triagem_channel_messages
 WHERE "TriagemId" IN (SELECT "Id" FROM e2e_triagem_ids)
    OR "CandidateTriagemIds" && ARRAY(SELECT "Id" FROM e2e_triagem_ids)::uuid[];
+DELETE FROM triagem_channel_media
+WHERE "TriagemId" IN (SELECT "Id" FROM e2e_triagem_ids)
+   OR "CandidateTriagemIds" && ARRAY(SELECT "Id" FROM e2e_triagem_ids)::uuid[];
 DELETE FROM triagem_channel_commands WHERE "WorkOrderId" IN (SELECT "Id" FROM e2e_ids);
 DELETE FROM triagens WHERE "Id" IN (SELECT "Id" FROM e2e_triagem_ids);
 DELETE FROM triagem_trigger_outbox WHERE "WorkOrderId" IN (SELECT "Id" FROM e2e_ids);
@@ -172,6 +195,14 @@ DELETE FROM work_order_histories WHERE "WorkOrderId" IN (SELECT "Id" FROM e2e_id
 DELETE FROM work_orders WHERE "Id" IN (SELECT "Id" FROM e2e_ids);
 COMMIT;
 SQL
+
+  if [ -n "$media_keys" ]; then
+    bucket="$(media_bucket)"
+    while IFS= read -r key; do
+      [ -n "$key" ] && aws s3 rm "s3://$bucket/$key" --only-show-errors
+    done <<<"$media_keys"
+    echo "Mídias removidas do S3: $(printf '%s\n' "$media_keys" | grep -c .)"
+  fi
   echo "Limpeza concluída."
 }
 

@@ -921,3 +921,25 @@ pendentes. O status atualizado está na seção 11.
   túnel (`127.0.0.1:18080`); executar E2E remoto de mídia com dados sintéticos.
   PDF/áudio/vídeo ainda não foram exercitados em E2E remoto. A transcrição
   permanece bloqueada pelos gates do ADR-046.
+
+### E2E remoto do pool (2026-10-23): envio e pool aprovados
+
+- Primeiro E2E com o Channel rodando na EC2 da API (`atua-channel`, ADR-050),
+  sem túnel local. OS sintética `E2E-20261023100358`: outbox `Processed`,
+  comando `Completed` sem retentativas, triagem `ContatoIniciado`. O PO
+  confirmou o recebimento nos dois aparelhos.
+- A resposta do número de teste (texto e foto) foi vinculada: 1 mensagem e 1
+  mídia com `Outcome=ColetaIniciada`; triagem `ContatoIniciado` → `EmColeta`.
+- Sem a LLM, nenhum fluxo automático leva a `LiberadaAoPool`. Com autorização
+  do PO, **somente** essa triagem sintética foi avançada via SQL de `EmColeta`
+  para `LiberadaAoPool`. O PO viu o item no pool do Office e conseguiu assumir.
+- Limpeza autorizada. O `cleanup` original falhou e foi revertido por
+  completo (FK de `triagem_channel_media`). O script passou a apagar as linhas
+  de mídia e os objetos no S3 depois do `COMMIT`. Nova execução: 1 mídia
+  removida do S3 e status final com 0 linhas.
+- Observações do PO: (1) depois de assumir, a triagem sai do pool e o
+  operador perde o acesso à conversa; é preciso um ambiente de atendimento
+  (proposta: `channel.atyno.com.br`, base do omnichannel). (2) A lista do pool
+  é atualizada por polling a cada 30 s, não em tempo real.
+- Pendências: anexos não abrem no pool (falta `s3:GetObject`); a transcrição
+  no detalhe não foi confirmada visualmente pelo PO.
