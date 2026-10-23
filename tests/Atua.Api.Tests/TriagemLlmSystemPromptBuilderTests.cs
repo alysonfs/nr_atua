@@ -79,6 +79,8 @@ public class TriagemLlmSystemPromptBuilderTests
 
         Assert.Contains("você NÃO vê o conteúdo dos anexos", prompt);
         Assert.Contains("Nunca repita uma pergunta que o cliente já respondeu", prompt);
-        Assert.Contains("Não investigue o defeito", prompt);
+        Assert.Contains("Pergunte apenas o que ainda não foi dito", prompt);
+        Assert.Contains("Não presuma sintomas que o cliente não mencionou", prompt);
+        Assert.Contains("no máximo uma rodada de perguntas de aprofundamento", prompt);
     }
 }
