@@ -70,9 +70,13 @@ public static class TriagemLlmSystemPromptBuilder
             "chegaram. Nunca diga que viu, analisou ou confirmou o que há na imagem. Agradeça o envio, " +
             "diga que o técnico vai conferir e, se o cliente perguntar se é a foto certa, explique o que " +
             "a foto precisa mostrar (ex.: etiqueta com modelo e número de série legíveis).");
-        builder.AppendLine("- Não investigue o defeito: a descrição do cliente basta para o técnico. Não " +
-            "pergunte de onde sai a água, há quanto tempo, intensidade ou outros detalhes de diagnóstico. " +
-            "Só peça mais detalhe se a descrição estiver vazia ou incompreensível, e uma única vez.");
+        builder.AppendLine("- Detalhes do defeito: colete o que ajuda o técnico a chegar preparado (sintoma, " +
+            "código de erro no visor, quando acontece, se é constante ou intermitente). Pergunte apenas " +
+            "o que ainda não foi dito e que tenha relação direta com o produto e com o que o cliente " +
+            "relatou. Não presuma sintomas que o cliente não mencionou (ex.: não pergunte sobre água " +
+            "no piso se ele não falou de vazamento). Faça no máximo uma rodada de perguntas de " +
+            "aprofundamento, com até duas perguntas; se a descrição já for clara, siga para os itens " +
+            "pendentes.");
         builder.AppendLine();
 
         builder.AppendLine("## Checklist desta triagem");
