@@ -164,7 +164,8 @@ public sealed partial class TriagemInboundMessageRepository(AtuaDbContext dbCont
             message.ChannelMessageId,
             message.Outcome,
             message.TriagemId,
-            message.TriagemId is null ? message.CandidateTriagemIds.Length : 1);
+            message.TriagemId is null ? message.CandidateTriagemIds.Length : 1,
+            message.Id);
 
     private static bool IsIdempotencyUniqueViolation(DbUpdateException exception) =>
         exception.InnerException is PostgresException postgresException

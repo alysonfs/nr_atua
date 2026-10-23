@@ -27,7 +27,8 @@ public sealed class TriagemChannelCommand
 
     public TriagemChannelCommand(Guid id, Guid tenantId, Guid integrationId, Guid triagemId, Guid workOrderId,
         string templateId, int templateVersion, string renderedContent, string idempotencyKey,
-        Guid correlationId, DateTimeOffset now, string? recipientPhone = null)
+        Guid correlationId, DateTimeOffset now, string? recipientPhone = null,
+        ETriagemChannelCommandKind kind = ETriagemChannelCommandKind.TemplateInicial)
     {
         if (tenantId == Guid.Empty)
         {
@@ -68,6 +69,7 @@ public sealed class TriagemChannelCommand
         Status = ETriagemChannelCommandStatus.Pending;
         AttemptCount = 0;
         CreatedAtUtc = now;
+        Kind = kind;
     }
 
     public Guid Id { get; private set; }
@@ -107,6 +109,17 @@ public sealed class TriagemChannelCommand
 
     /// <summary>Correlação entre comando, resposta do canal e evento de entrega (arquitetura, seção 5.1).</summary>
     public Guid CorrelationId { get; private set; }
+
+    /// <summary>
+    /// Template inicial fixo ou resposta conduzida pela LLM (plano M2) —
+    /// ver <see cref="ETriagemChannelCommandKind"/>. Usado exclusivamente
+    /// por <see cref="Application.Triagens.TriagemChannelCommandService"/>
+    /// para decidir se o <c>complete</c> deve reaplicar a transição de
+    /// <c>ContatoIniciado</c>/<c>FalhaDeContato</c> (somente
+    /// <see cref="ETriagemChannelCommandKind.TemplateInicial"/>) — o canal
+    /// em si trata ambos os tipos de forma idêntica (mesmo claim/complete).
+    /// </summary>
+    public ETriagemChannelCommandKind Kind { get; private set; } = ETriagemChannelCommandKind.TemplateInicial;
 
     public ETriagemChannelCommandStatus Status { get; private set; }
 

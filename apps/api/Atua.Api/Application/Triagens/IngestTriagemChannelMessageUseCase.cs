@@ -6,6 +6,7 @@ namespace Atua.Api.Application.Triagens;
 
 public sealed class IngestTriagemChannelMessageUseCase(
     ITriagemInboundMessageRepository repository,
+    TriagemLlmConversationService llmConversationService,
     ILogger<IngestTriagemChannelMessageUseCase> logger) : IIngestTriagemChannelMessageUseCase
 {
     public async Task<TriagemInboundMessageResult> ExecuteAsync(
@@ -30,6 +31,17 @@ public sealed class IngestTriagemChannelMessageUseCase(
                 result.Outcome);
         }
 
+        if ((result.Outcome is ETriagemInboundMessageOutcome.ColetaIniciada or ETriagemInboundMessageOutcome.JaEmColeta)
+            && result.TriagemId is { } triagemId && result.MessageId is { } messageId)
+        {
+            // Plano M2 — loop conversacional da LLM dentro da Master API
+            // (sem worker novo), atrás de feature flag + allowlist. Nenhum
+            // efeito quando fora de escopo — ver TriagemLlmConversationOptions.
+            await llmConversationService.ConductAsync(command.TenantId, triagemId, messageId, command.SenderPhone,
+                cancellationToken);
+        }
+
         return result;
     }
 }
+

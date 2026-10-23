@@ -191,6 +191,24 @@ public sealed class Triagem
     }
 
     /// <summary>
+    /// Encaminha a triagem para intervenção humana diretamente a partir de
+    /// <see cref="ETriagemStatus.EmColeta"/> — usada pela condução da
+    /// conversa pela LLM (plano M2,
+    /// docs/implementation/PLANO-triagem-llm-jev.md §3/§4) quando o
+    /// orçamento de chamadas da triagem é excedido ou quando o fornecedor da
+    /// LLM está indisponível após as tentativas definidas
+    /// (`triagem-llm-conducao.md` §4/§5). Diferente de
+    /// <see cref="RegistrarTentativaInvalida"/> e <see cref="RegistrarDesvio"/>,
+    /// não depende de um contador prévio — move imediatamente.
+    /// </summary>
+    public void MarcarAguardandoIntervencao(DateTimeOffset now)
+    {
+        ExigirEmColeta(nameof(MarcarAguardandoIntervencao));
+        Status = ETriagemStatus.AguardandoIntervencao;
+        Touch(now);
+    }
+
+    /// <summary>
     /// Estados do pool compartilhado de operadores (épico, bloco C — pool de
     /// triagem). Fonte única usada tanto por <see cref="AssumirPorOperador"/>
     /// quanto pela listagem do pool, para que os dois nunca divirjam.

@@ -1,5 +1,6 @@
 using Atua.Api.Application.Triagens.Contracts;
 using Atua.Api.Domain.Triagens;
+using Microsoft.EntityFrameworkCore;
 
 namespace Atua.Api.Infrastructure.Persistence;
 
@@ -26,4 +27,7 @@ public sealed class TriagemLlmUsageRepository(AtuaDbContext dbContext) : ITriage
         dbContext.TriagemLlmUsages.Add(usage);
         await dbContext.SaveChangesAsync(cancellationToken);
     }
+
+    public Task<int> CountCallsAsync(Guid triagemId, CancellationToken cancellationToken) =>
+        dbContext.TriagemLlmUsages.CountAsync(usage => usage.TriagemId == triagemId, cancellationToken);
 }

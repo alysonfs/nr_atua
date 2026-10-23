@@ -286,6 +286,16 @@ else
 builder.Services.AddSingleton<ITriagemLlmResponseVerifier, TriagemLlmResponseVerifier>();
 builder.Services.AddScoped<ITriagemLlmUsageRepository, TriagemLlmUsageRepository>();
 
+// Plano M2: loop conversacional da LLM dentro da Master API, sem worker
+// novo — atrás da feature flag/allowlist de TriagemLlmConversationOptions
+// (mesma seção "TriagemLlm", restrita a tenant/telefone de teste;
+// ConversationEnabled=false + allowlists vazias por padrão = nenhum efeito
+// observável, "fora da allowlist, comportamento atual inalterado").
+builder.Services.AddOptions<TriagemLlmConversationOptions>()
+    .Bind(builder.Configuration.GetSection(TriagemLlmConversationOptions.SectionName));
+builder.Services.AddScoped<ITriagemLlmConversationContextRepository, TriagemLlmConversationContextRepository>();
+builder.Services.AddScoped<TriagemLlmConversationService>();
+
 // CORS: as origens de produção são injetadas pelo user-data da EC2 via
 // Cors__AllowedOrigins__*. O fallback aberto abaixo existe apenas para
 // desenvolvimento local; produção deve sempre configurar a lista.

@@ -768,6 +768,11 @@ namespace Atua.Api.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("IntegrationId")
                         .HasColumnType("uuid");
 
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
                     b.Property<string>("LastErrorCode")
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)");

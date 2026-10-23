@@ -26,4 +26,5 @@ public sealed record TriagemInboundMessageResult(
     string ChannelMessageId,
     ETriagemInboundMessageOutcome Outcome,
     Guid? TriagemId,
-    int CandidateCount);
+    int CandidateCount,
+    Guid? MessageId = null);

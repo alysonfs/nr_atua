@@ -41,5 +41,11 @@ public sealed class TriagemChannelCommandRepository(AtuaDbContext dbContext) : I
                 && command.IntegrationId == integrationId,
             cancellationToken);
 
+    public void Add(TriagemChannelCommand command) => dbContext.Set<TriagemChannelCommand>().Add(command);
+
+    public Task<bool> ExistsByIdempotencyKeyAsync(string idempotencyKey, CancellationToken cancellationToken) =>
+        dbContext.Set<TriagemChannelCommand>()
+            .AnyAsync(command => command.IdempotencyKey == idempotencyKey, cancellationToken);
+
     public Task SaveChangesAsync(CancellationToken cancellationToken) => dbContext.SaveChangesAsync(cancellationToken);
 }

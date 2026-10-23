@@ -29,6 +29,25 @@ public interface ITriagemChannelCommandRepository
         CancellationToken cancellationToken);
 
     /// <summary>
+    /// Agenda um novo comando de canal (plano M2) fora do fluxo de aceite
+    /// idempotente de <see cref="ITriagemRepository.GetOrAddWithChannelCommandAsync"/>
+    /// — usado pela condução da conversa pela LLM
+    /// (<see cref="ETriagemChannelCommandKind.RespostaLlm"/>) para enfileirar
+    /// a resposta aprovada/fallback no mesmo <c>DbContext</c> da transição de
+    /// <see cref="Triagem"/> já aplicada em memória. Requer
+    /// <see cref="SaveChangesAsync"/> subsequente para persistir.
+    /// </summary>
+    void Add(TriagemChannelCommand command);
+
+    /// <summary>
+    /// Verifica se já existe um comando com a chave de idempotência
+    /// informada (plano M2 — idempotência por mensagem inbound). Usado
+    /// antes de chamar a LLM, para não repetir a chamada quando o mesmo
+    /// evento inbound é reentregue.
+    /// </summary>
+    Task<bool> ExistsByIdempotencyKeyAsync(string idempotencyKey, CancellationToken cancellationToken);
+
+    /// <summary>
     /// Persiste transições já aplicadas em memória (ex.:
     /// <c>MarkCompletedSuccess</c>, <c>RecordTransientFailure</c>) — e
     /// quaisquer outras mutações pendentes no mesmo <c>DbContext</c> (ex.:

@@ -104,19 +104,33 @@ public sealed class TriagemChannelCommandService(
         {
             case ETriagemChannelSendOutcome.Success:
                 command.MarkCompletedSuccess(now);
-                await ApplyTriagemTransitionAsync(command.TriagemId, triagem => triagem.MarcarContatoIniciado(now),
-                    cancellationToken);
+                if (command.Kind == ETriagemChannelCommandKind.TemplateInicial)
+                {
+                    await ApplyTriagemTransitionAsync(command.TriagemId,
+                        triagem => triagem.MarcarContatoIniciado(now), cancellationToken);
+                }
+
+                // RespostaLlm (plano M2): a transição da triagem já foi
+                // decidida e aplicada pelo domínio Triagem no momento em que
+                // a resposta foi montada (TriagemLlmConversationService) —
+                // o complete deste comando só confirma o envio do texto,
+                // nunca reaplica nem reinterpreta uma transição de estado.
                 break;
 
             case ETriagemChannelSendOutcome.PermanentFailure:
                 command.MarkCompletedPermanentFailure(errorCode, now);
-                await ApplyTriagemTransitionAsync(command.TriagemId, triagem => triagem.MarcarFalhaDeContato(now),
-                    cancellationToken);
+                if (command.Kind == ETriagemChannelCommandKind.TemplateInicial)
+                {
+                    await ApplyTriagemTransitionAsync(command.TriagemId,
+                        triagem => triagem.MarcarFalhaDeContato(now), cancellationToken);
+                }
+
                 break;
 
             case ETriagemChannelSendOutcome.TransientFailure:
                 command.RecordTransientFailure(errorCode, now);
-                if (command.Status == ETriagemChannelCommandStatus.Failed)
+                if (command.Status == ETriagemChannelCommandStatus.Failed
+                    && command.Kind == ETriagemChannelCommandKind.TemplateInicial)
                 {
                     // Quinta falha transitória consecutiva (ADR-042).
                     await ApplyTriagemTransitionAsync(command.TriagemId,
