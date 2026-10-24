@@ -113,3 +113,15 @@ export interface SafeLogger {
   warn(event: string, fields?: Record<string, string | number | boolean>): void
   error(event: string, fields?: Record<string, string | number | boolean>): void
 }
+
+/**
+ * Permite que um produtor de eventos inbound (texto ou mídia) acorde o
+ * {@link ChannelWorker} antecipadamente após um ingest bem-sucedido, em vez
+ * de esperar o próximo ciclo de polling — reduz a latência percebida entre
+ * a resposta da IA virar comando na outbox e o envio pelo Channel. A
+ * implementação nunca deve lançar: uma falha ao agendar o despertar
+ * antecipado não pode derrubar o worker de origem.
+ */
+export interface EarlyClaimTrigger {
+  scheduleEarlyClaim(signal: AbortSignal, reason: string): void
+}

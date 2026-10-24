@@ -1,20 +1,33 @@
 import { ChannelApiError } from './channel-api-client.js'
 import type {
   ChannelApi,
+  EarlyClaimTrigger,
   IncomingWhatsAppMessage,
   SafeLogger,
   WhatsAppMessageReceiver,
 } from './contracts.js'
 
+/** Trigger nulo usado quando nenhum {@link EarlyClaimTrigger} é injetado — mantém o worker funcional sem o recurso de busca antecipada. */
+const noopEarlyClaimTrigger: EarlyClaimTrigger = {
+  scheduleEarlyClaim() {},
+}
+
 export class IncomingMessageWorker {
   private readonly api: ChannelApi
   private readonly receiver: WhatsAppMessageReceiver
   private readonly logger: SafeLogger
+  private readonly earlyClaimTrigger: EarlyClaimTrigger
 
-  constructor(api: ChannelApi, receiver: WhatsAppMessageReceiver, logger: SafeLogger) {
+  constructor(
+    api: ChannelApi,
+    receiver: WhatsAppMessageReceiver,
+    logger: SafeLogger,
+    earlyClaimTrigger: EarlyClaimTrigger = noopEarlyClaimTrigger,
+  ) {
     this.api = api
     this.receiver = receiver
     this.logger = logger
+    this.earlyClaimTrigger = earlyClaimTrigger
   }
 
   async run(signal: AbortSignal): Promise<void> {
@@ -45,6 +58,7 @@ export class IncomingMessageWorker {
           channelMessageId: message.channelMessageId,
           correlationId: message.correlationId,
         })
+        this.triggerEarlyClaim(message, signal)
         return
       } catch (error) {
         if (signal.aborted) {
@@ -70,6 +84,24 @@ export class IncomingMessageWorker {
         })
         await delay(retryInMs, signal)
       }
+    }
+  }
+
+  /**
+   * Agenda buscas antecipadas de comandos (claim) após o ingest bem-sucedido
+   * da mensagem — nunca lança: uma falha no agendamento não pode derrubar
+   * este worker (o polling normal do {@link ChannelWorker} segue como
+   * recuperação).
+   */
+  private triggerEarlyClaim(message: IncomingWhatsAppMessage, signal: AbortSignal): void {
+    try {
+      this.earlyClaimTrigger.scheduleEarlyClaim(signal, 'inbound_text_ingested')
+    } catch (error) {
+      this.logger.error('channel_early_claim_trigger_failed', {
+        channelMessageId: message.channelMessageId,
+        correlationId: message.correlationId,
+        errorType: error instanceof Error ? error.name : 'UnknownError',
+      })
     }
   }
 }

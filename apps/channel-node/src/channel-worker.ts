@@ -3,6 +3,7 @@ import type {
   ChannelApi,
   ChannelOutcome,
   ClaimedChannelCommand,
+  EarlyClaimTrigger,
   SafeLogger,
   WhatsAppMessageSender,
 } from './contracts.js'
@@ -12,15 +13,32 @@ import { isAllowedTestRecipient } from './test-safeguard.js'
 export interface ChannelWorkerOptions {
   pollingIntervalMs: number
   sendTimeoutMs: number
+  /**
+   * Atrasos (em ms, a partir de 0 e crescentes) em que uma busca antecipada
+   * de comandos é disparada após {@link ChannelWorker.scheduleEarlyClaim}
+   * ser chamado — ex.: `[0, 3_000, 6_000, 10_000]`. O polling normal
+   * (`pollingIntervalMs`) continua funcionando como mecanismo de
+   * recuperação, independentemente deste agendamento.
+   */
+  earlyClaimDelaysMs: number[]
 }
 
 export type ChannelCycleResult = 'idle' | 'sent' | 'transient-failure' | 'permanent-failure' | 'lease-lost'
 
-export class ChannelWorker {
+export class ChannelWorker implements EarlyClaimTrigger {
   private readonly api: ChannelApi
   private readonly sender: WhatsAppMessageSender
   private readonly options: ChannelWorkerOptions
   private readonly logger: SafeLogger
+
+  /** `true` enquanto um ciclo (claim → envio → complete) está em execução. */
+  private cycleInProgress = false
+  /** Marca que um novo ciclo deve rodar assim que o atual terminar, sem esperar o intervalo de polling. */
+  private pendingKick = false
+  /** Resolvers da espera atual (idle ou backoff) — acordados por um kick antecipado. */
+  private readonly waitResolvers = new Set<() => void>()
+  /** Timers agendados por {@link scheduleEarlyClaim}, limpos no shutdown. */
+  private readonly scheduledTimers = new Set<ReturnType<typeof setTimeout>>()
 
   constructor(
     api: ChannelApi,
@@ -34,38 +52,152 @@ export class ChannelWorker {
     this.logger = logger
   }
 
+  /**
+   * Agenda tentativas antecipadas de claim/envio nos atrasos configurados
+   * (`earlyClaimDelaysMs`) a partir de agora. Chamado após o ingest
+   * bem-sucedido de uma mensagem inbound (texto ou mídia). Nunca lança —
+   * uma falha aqui não pode derrubar o worker de origem (ingest).
+   */
+  scheduleEarlyClaim(signal: AbortSignal, reason: string): void {
+    try {
+      if (signal.aborted) {
+        return
+      }
+
+      for (const delayMs of this.options.earlyClaimDelaysMs) {
+        const timer = setTimeout(() => {
+          this.scheduledTimers.delete(timer)
+          this.kick(reason)
+        }, delayMs)
+        if (typeof timer.unref === 'function') {
+          timer.unref()
+        }
+        this.scheduledTimers.add(timer)
+      }
+
+      this.logger.info('channel_early_claim_scheduled', {
+        reason,
+        attempts: this.options.earlyClaimDelaysMs.length,
+      })
+    } catch (error) {
+      this.logger.error('channel_early_claim_schedule_failed', {
+        reason,
+        errorType: error instanceof Error ? error.name : 'UnknownError',
+      })
+    }
+  }
+
+  /** Acorda uma espera em andamento ou marca para rodar novamente assim que o ciclo atual terminar. */
+  private kick(reason: string): void {
+    try {
+      if (this.cycleInProgress) {
+        this.pendingKick = true
+        return
+      }
+
+      if (this.waitResolvers.size === 0) {
+        // Nada esperando no momento (ciclo nem em execução, nem em espera) —
+        // o próprio loop seguirá seu curso normal; não há o que acordar.
+        return
+      }
+
+      this.logger.info('channel_early_claim_triggered', { reason })
+      for (const resolve of this.waitResolvers) {
+        resolve()
+      }
+    } catch (error) {
+      this.logger.error('channel_early_claim_kick_failed', {
+        reason,
+        errorType: error instanceof Error ? error.name : 'UnknownError',
+      })
+    }
+  }
+
+  private clearScheduledTimers(): void {
+    for (const timer of this.scheduledTimers) {
+      clearTimeout(timer)
+    }
+    this.scheduledTimers.clear()
+  }
+
   async run(signal: AbortSignal): Promise<void> {
     let consecutiveFailures = 0
+    const onAbort = () => this.clearScheduledTimers()
+    signal.addEventListener('abort', onAbort, { once: true })
 
-    while (!signal.aborted) {
-      try {
-        const result = await this.runCycle(signal)
-        consecutiveFailures = 0
-        if (result === 'idle') {
-          await delay(this.options.pollingIntervalMs, signal)
+    try {
+      while (!signal.aborted) {
+        try {
+          this.cycleInProgress = true
+          const result = await this.runCycle(signal)
+          this.cycleInProgress = false
+          consecutiveFailures = 0
+
+          if (this.pendingKick) {
+            this.pendingKick = false
+            continue
+          }
+
+          if (result === 'idle') {
+            await this.waitInterruptibly(this.options.pollingIntervalMs, signal)
+          }
+        } catch (error) {
+          this.cycleInProgress = false
+          if (signal.aborted) {
+            return
+          }
+
+          if (error instanceof ChannelApiError && !error.isRetryable) {
+            this.logger.error('channel_api_rejected_request', {
+              operation: error.operation,
+              statusCode: error.statusCode ?? 0,
+            })
+            throw error
+          }
+
+          consecutiveFailures += 1
+          const backoffMs = Math.min(1_000 * 2 ** (consecutiveFailures - 1), 30_000)
+          this.logger.error('channel_cycle_failed_retrying', {
+            retryInMs: backoffMs,
+            errorType: error instanceof Error ? error.name : 'UnknownError',
+          })
+
+          if (this.pendingKick) {
+            this.pendingKick = false
+            continue
+          }
+
+          await this.waitInterruptibly(backoffMs, signal)
         }
-      } catch (error) {
-        if (signal.aborted) {
+      }
+    } finally {
+      signal.removeEventListener('abort', onAbort)
+      this.clearScheduledTimers()
+    }
+  }
+
+  /** Espera `milliseconds`, mas pode ser interrompida antecipadamente por um kick de {@link scheduleEarlyClaim} ou pelo abort do `signal`. */
+  private waitInterruptibly(milliseconds: number, signal: AbortSignal): Promise<void> {
+    if (signal.aborted) {
+      return Promise.resolve()
+    }
+
+    return new Promise((resolve) => {
+      let settled = false
+      const finish = () => {
+        if (settled) {
           return
         }
-
-        if (error instanceof ChannelApiError && !error.isRetryable) {
-          this.logger.error('channel_api_rejected_request', {
-            operation: error.operation,
-            statusCode: error.statusCode ?? 0,
-          })
-          throw error
-        }
-
-        consecutiveFailures += 1
-        const backoffMs = Math.min(1_000 * 2 ** (consecutiveFailures - 1), 30_000)
-        this.logger.error('channel_cycle_failed_retrying', {
-          retryInMs: backoffMs,
-          errorType: error instanceof Error ? error.name : 'UnknownError',
-        })
-        await delay(backoffMs, signal)
+        settled = true
+        clearTimeout(timer)
+        this.waitResolvers.delete(finish)
+        signal.removeEventListener('abort', finish)
+        resolve()
       }
-    }
+      const timer = setTimeout(finish, milliseconds)
+      this.waitResolvers.add(finish)
+      signal.addEventListener('abort', finish, { once: true })
+    })
   }
 
   async runCycle(signal: AbortSignal): Promise<ChannelCycleResult> {
@@ -157,23 +289,4 @@ function permanentFailure(
   errorDescription: string,
 ): { outcome: 'PermanentFailure'; errorCode: string; errorDescription: string } {
   return { outcome: 'PermanentFailure', errorCode, errorDescription }
-}
-
-function delay(milliseconds: number, signal: AbortSignal): Promise<void> {
-  if (signal.aborted) {
-    return Promise.resolve()
-  }
-
-  return new Promise((resolve) => {
-    const timer = setTimeout(() => {
-      signal.removeEventListener('abort', onAbort)
-      resolve()
-    }, milliseconds)
-    const onAbort = () => {
-      clearTimeout(timer)
-      signal.removeEventListener('abort', onAbort)
-      resolve()
-    }
-    signal.addEventListener('abort', onAbort, { once: true })
-  })
 }

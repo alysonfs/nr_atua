@@ -1,6 +1,7 @@
 import { ChannelApiError } from './channel-api-client.js'
 import type {
   ChannelApi,
+  EarlyClaimTrigger,
   IncomingWhatsAppMedia,
   SafeLogger,
   WhatsAppMessageReceiver,
@@ -8,6 +9,11 @@ import type {
 
 /** Capacidade padrão da fila inbound de mídia (R1) quando não configurada via `ChannelWorker__MediaQueueCapacity`. */
 export const DEFAULT_MEDIA_QUEUE_CAPACITY = 20
+
+/** Trigger nulo usado quando nenhum {@link EarlyClaimTrigger} é injetado — mantém o worker funcional sem o recurso de busca antecipada. */
+const noopEarlyClaimTrigger: EarlyClaimTrigger = {
+  scheduleEarlyClaim() {},
+}
 
 /**
  * Espelha {@link IncomingMessageWorker} para o evento de mídia — fila
@@ -30,17 +36,20 @@ export class IncomingMediaWorker {
   private readonly receiver: WhatsAppMessageReceiver
   private readonly logger: SafeLogger
   private readonly queueCapacity: number
+  private readonly earlyClaimTrigger: EarlyClaimTrigger
 
   constructor(
     api: ChannelApi,
     receiver: WhatsAppMessageReceiver,
     logger: SafeLogger,
     queueCapacity: number = DEFAULT_MEDIA_QUEUE_CAPACITY,
+    earlyClaimTrigger: EarlyClaimTrigger = noopEarlyClaimTrigger,
   ) {
     this.api = api
     this.receiver = receiver
     this.logger = logger
     this.queueCapacity = queueCapacity
+    this.earlyClaimTrigger = earlyClaimTrigger
   }
 
   async run(signal: AbortSignal): Promise<void> {
@@ -83,6 +92,7 @@ export class IncomingMediaWorker {
           correlationId: media.correlationId,
           mediaKind: media.mediaKind,
         })
+        this.triggerEarlyClaim(media, signal)
         return
       } catch (error) {
         if (signal.aborted) {
@@ -114,6 +124,24 @@ export class IncomingMediaWorker {
         })
         await delay(retryInMs, signal)
       }
+    }
+  }
+
+  /**
+   * Agenda buscas antecipadas de comandos (claim) após o ingest bem-sucedido
+   * da mídia — nunca lança: uma falha no agendamento não pode derrubar este
+   * worker (o polling normal do {@link ChannelWorker} segue como
+   * recuperação).
+   */
+  private triggerEarlyClaim(media: IncomingWhatsAppMedia, signal: AbortSignal): void {
+    try {
+      this.earlyClaimTrigger.scheduleEarlyClaim(signal, 'inbound_media_ingested')
+    } catch (error) {
+      this.logger.error('channel_early_claim_trigger_failed', {
+        channelMessageId: media.channelMessageId,
+        correlationId: media.correlationId,
+        errorType: error instanceof Error ? error.name : 'UnknownError',
+      })
     }
   }
 }

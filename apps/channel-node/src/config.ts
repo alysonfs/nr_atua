@@ -19,7 +19,19 @@ export interface ChannelConfig {
   printQr: boolean
   /** Capacidade máxima da fila inbound de mídia (R1) — descarta com log acima deste limite. */
   mediaQueueCapacity: number
+  /**
+   * Atrasos (em ms) em que uma busca antecipada de comandos (claim) é
+   * disparada após o ingest bem-sucedido de uma mensagem inbound — reduz a
+   * latência entre a resposta da IA virar comando na outbox e o envio pelo
+   * Channel, sem substituir o polling normal (que continua como
+   * recuperação). Configurado via `ChannelWorker__EarlyClaimDelaysSeconds`
+   * (lista de inteiros em segundos, separados por vírgula).
+   */
+  earlyClaimDelaysMs: number[]
 }
+
+/** Atrasos padrão (em ms) das buscas antecipadas de comandos: imediato, 3s, 6s e 10s após o ingest. */
+export const DEFAULT_EARLY_CLAIM_DELAYS_MS = [0, 3_000, 6_000, 10_000]
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../..')
 
@@ -76,6 +88,14 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env): Channe
     sessionPath,
     printQr: parseBoolean(environment, 'ChannelWorker__PrintQr', false),
     mediaQueueCapacity: parseInteger(environment, 'ChannelWorker__MediaQueueCapacity', 20, 1, 1_000),
+    earlyClaimDelaysMs: parseDelayListSeconds(
+      environment,
+      'ChannelWorker__EarlyClaimDelaysSeconds',
+      DEFAULT_EARLY_CLAIM_DELAYS_MS,
+      0,
+      30,
+      10,
+    ),
   }
 }
 
@@ -152,4 +172,48 @@ function parseInteger(
   }
 
   return value
+}
+
+/**
+ * Lista de atrasos (segundos, separados por vírgula) convertida para ms,
+ * ordenada e deduplicada — usada pelas buscas antecipadas de comandos
+ * (claim) agendadas após o ingest de uma mensagem inbound. Uma lista vazia
+ * (`""`) desativa o recurso: nenhuma busca antecipada é agendada e o
+ * comportamento cai de volta ao polling normal.
+ */
+function parseDelayListSeconds(
+  environment: NodeJS.ProcessEnv,
+  name: string,
+  defaultValuesMs: number[],
+  minimumSeconds: number,
+  maximumSeconds: number,
+  maximumEntries: number,
+): number[] {
+  const rawValue = environment[name]
+  if (rawValue === undefined || rawValue.trim() === '') {
+    return defaultValuesMs
+  }
+
+  if (rawValue.trim() === '-') {
+    return []
+  }
+
+  const parts = rawValue
+    .split(',')
+    .map((part) => part.trim())
+    .filter((part) => part !== '')
+
+  if (parts.length === 0 || parts.length > maximumEntries) {
+    throw new Error(`${name} deve conter entre 1 e ${maximumEntries} valores inteiros separados por vírgula.`)
+  }
+
+  const seconds = parts.map((part) => {
+    const value = Number(part)
+    if (!Number.isInteger(value) || value < minimumSeconds || value > maximumSeconds) {
+      throw new Error(`${name} deve conter inteiros entre ${minimumSeconds} e ${maximumSeconds} segundos.`)
+    }
+    return value
+  })
+
+  return [...new Set(seconds)].sort((a, b) => a - b).map((value) => value * 1_000)
 }

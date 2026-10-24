@@ -35,11 +35,18 @@ async function main(): Promise<void> {
     {
       pollingIntervalMs: config.pollingIntervalMs,
       sendTimeoutMs: config.sendTimeoutMs,
+      earlyClaimDelaysMs: config.earlyClaimDelaysMs,
     },
     consoleLogger,
   )
-  const incomingMessageWorker = new IncomingMessageWorker(api, session, consoleLogger)
-  const incomingMediaWorker = new IncomingMediaWorker(api, session, consoleLogger, config.mediaQueueCapacity)
+  const incomingMessageWorker = new IncomingMessageWorker(api, session, consoleLogger, worker)
+  const incomingMediaWorker = new IncomingMediaWorker(
+    api,
+    session,
+    consoleLogger,
+    config.mediaQueueCapacity,
+    worker,
+  )
   const sessionStateReporter = new SessionStateReporter(
     api,
     session,
