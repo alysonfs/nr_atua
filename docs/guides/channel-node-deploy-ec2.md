@@ -89,6 +89,27 @@ source ~/.config/atua/channel/session-report.env     # opcional
 (Os nomes exatos dos arquivos dependem de como `seed-channel-credentials.sh`
 grava — confirme com `--dry-run` antes.)
 
+## Latência de envio e configuração persistente
+
+`make deploy-channel` grava `ChannelWorker__PollingIntervalSeconds=2`
+por padrão no arquivo de ambiente da instância. Para sobrescrever esse
+intervalo, exporte a variável antes do deploy. Assim, a configuração é
+reaplicada após `make down` / `make up`, sem edição manual na EC2.
+
+Após um ingest inbound bem-sucedido, o Channel também antecipa buscas de
+comandos nos instantes definidos por `ChannelWorker__EarlyClaimDelaysSeconds`
+(padrão `0,3,6,10`, em segundos contados após o ingest). O valor `-`
+desativa as buscas antecipadas. Os ciclos são serializados; o polling
+normal continua como recuperação. A confirmação de envio pelo WhatsApp
+não garante que o celular já decifrou ou exibiu a mensagem: a mensagem
+“Aguardando mensagem” deve ser investigada separadamente pelos logs de
+sessão e reenvio do Baileys.
+
+A API recebe sua configuração `TriagemLlm__*` pelo UserData do CDK,
+incluindo modelo, orçamento e allowlists de tenant e telefone de teste.
+A recriação da EC2 reaplica esses valores; as credenciais do Channel
+continuam sendo reinjetadas pelo deploy, nunca pelo CDK.
+
 ## Sequência de publicação
 
 ### 1. Primeira instalação (ou após um `make up` em instância recriada)
