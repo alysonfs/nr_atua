@@ -105,6 +105,16 @@ não garante que o celular já decifrou ou exibiu a mensagem: a mensagem
 “Aguardando mensagem” deve ser investigada separadamente pelos logs de
 sessão e reenvio do Baileys.
 
+O evento `whatsapp_message_server_ack` e o comando `Completed` indicam
+aceite pelo servidor, não entrega ao celular. O evento
+`whatsapp_message_delivery_update` diferencia `server_ack`, `delivered`,
+`read`, `played` e `error`, correlacionados apenas por `messageId`, sem
+texto ou telefone nos logs. A ausência de um recibo não prova que o
+celular recebeu ou deixou de receber; não reenvie automaticamente um
+comando concluído apenas por essa ausência. O evento
+`whatsapp_retry_session_rebuilt` registra reconstrução criptográfica
+para retransmissão, distinta de reconexão do socket.
+
 A API recebe sua configuração `TriagemLlm__*` pelo UserData do CDK,
 incluindo modelo, orçamento e allowlists de tenant e telefone de teste.
 A recriação da EC2 reaplica esses valores; as credenciais do Channel
