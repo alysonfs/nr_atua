@@ -5,6 +5,7 @@ import { Remind } from '@icon-park/react'
 import type { TriagemListScope, TriagemPoolListItem } from '../../../../shared/types/triagePool'
 import { translateTriagemPoolStatus, triagemPoolStatusTone } from '../../lib/triageStatus'
 import { formatRelativeTime } from '../../lib/formatRelativeTime'
+import { formatTriageDurationLabel } from '../../lib/formatTriageDuration'
 import { Badge } from '../../../../shared/components/ui/Badge'
 
 /**
@@ -67,6 +68,14 @@ export function createTriagePoolColumns(
       // Fora do pool, a API devolve aqui o momento da última transição de estado.
       header: t(scope === 'in-progress' ? 'triagePool.columns.timeInState' : 'triagePool.columns.timeInPool'),
       cell: (info) => formatRelativeTime(info.getValue<string>(), locale, nowMs),
+    },
+    {
+      id: 'triageDuration',
+      header: t('triagePool.columns.triageDuration'),
+      cell: (info) => {
+        const item = info.row.original
+        return formatTriageDurationLabel(t, item.startedAtUtc, item.finishedAtUtc, nowMs)
+      },
     },
     {
       id: 'hasNewActivity',

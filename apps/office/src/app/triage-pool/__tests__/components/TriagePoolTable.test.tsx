@@ -84,6 +84,7 @@ describe('TriagePoolTable', () => {
     expect(screen.getByRole('columnheader', { name: /^estado$/i })).toBeInTheDocument()
     expect(screen.getByRole('columnheader', { name: /^checklist$/i })).toBeInTheDocument()
     expect(screen.getByRole('columnheader', { name: /tempo no pool/i })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: /tempo de triagem/i })).toBeInTheDocument()
     expect(screen.getByRole('columnheader', { name: /nova atividade/i })).toBeInTheDocument()
   })
 
@@ -119,6 +120,37 @@ describe('TriagePoolTable', () => {
     await waitFor(() => expect(screen.getByText('BRWO260909869')).toBeInTheDocument())
 
     expect(screen.getAllByTitle('Nova mensagem do consumidor')).toHaveLength(1)
+  })
+
+  it('renders the triage duration for items with startedAtUtc/finishedAtUtc', async () => {
+    const startedInProgress = new Date(Date.now() - 60 * 60_000).toISOString()
+
+    getMock.mockResolvedValueOnce({
+      totalCount: 2,
+      items: [
+        { ...mockedItems[0], startedAtUtc: startedInProgress, finishedAtUtc: null },
+        { ...mockedItems[1], startedAtUtc: '2026-10-20T09:00:00Z', finishedAtUtc: '2026-10-20T09:12:00Z' },
+      ],
+    })
+
+    renderTable({ tenantId: TENANT_ID })
+
+    await waitFor(() => expect(screen.getByText('BRWO260909869')).toBeInTheDocument())
+
+    expect(screen.getByText(/\(em andamento\)/)).toBeInTheDocument()
+    expect(screen.getByText('Finalizada em 12 min')).toBeInTheDocument()
+  })
+
+  it('renders "—" for triage duration when startedAtUtc is missing', async () => {
+    getMock.mockResolvedValueOnce({ totalCount: 1, items: [mockedItems[0]] })
+
+    renderTable({ tenantId: TENANT_ID })
+
+    await waitFor(() => expect(screen.getByText('BRWO260909869')).toBeInTheDocument())
+
+    const row = screen.getByText('BRWO260909869').closest('tr')
+    expect(row).not.toBeNull()
+    expect(row).toHaveTextContent('—')
   })
 
   it('applies the status filter in the request', async () => {

@@ -300,6 +300,7 @@ const ptBR = {
     notFoundMessage: 'Não foi possível encontrar esta ordem de serviço ou você não tem acesso a ela.',
     loadError: 'Não foi possível carregar os detalhes da ordem de serviço. Tente novamente mais tarde.',
     notInformed: 'Não informado',
+    viewTriage: 'Ver triagem',
     generalInfo: {
       title: 'Informações Gerais',
       id: 'ID da OS',
@@ -390,9 +391,15 @@ const ptBR = {
       checklist: 'Checklist',
       timeInPool: 'Tempo no pool',
       timeInState: 'Tempo no estado atual',
+      triageDuration: 'Tempo de triagem',
       newActivity: 'Nova atividade',
       newActivityAria: 'Nova mensagem do consumidor',
     },
+  },
+  triageDuration: {
+    unknown: '—',
+    inProgress: '{{duration}} (em andamento)',
+    finished: 'Finalizada em {{duration}}',
   },
   triagePoolDetail: {
     loading: 'Carregando detalhes da triagem...',
@@ -402,6 +409,8 @@ const ptBR = {
     readOnlyNotice:
       'Visualização somente leitura. O atendimento ao consumidor não é feito pelo Office.',
     assumedBy: 'Assumida por {{user}} em {{date}}.',
+    triageDuration: 'Tempo de triagem',
+    viewWorkOrder: 'Ver OS',
     workOrder: {
       title: 'OS e consumidor',
       providerNo: 'Nº da OS no provedor',
@@ -903,6 +912,7 @@ const enUS = {
     notFoundMessage: 'This work order could not be found or you do not have access to it.',
     loadError: 'Unable to load work order details. Please try again later.',
     notInformed: 'Not informed',
+    viewTriage: 'View triage',
     generalInfo: {
       title: 'General Information',
       id: 'Work order ID',
@@ -993,9 +1003,15 @@ const enUS = {
       checklist: 'Checklist',
       timeInPool: 'Time in pool',
       timeInState: 'Time in current state',
+      triageDuration: 'Triage duration',
       newActivity: 'New activity',
       newActivityAria: 'New message from the consumer',
     },
+  },
+  triageDuration: {
+    unknown: '—',
+    inProgress: '{{duration}} (in progress)',
+    finished: 'Finished in {{duration}}',
   },
   triagePoolDetail: {
     loading: 'Loading triage details...',
@@ -1005,6 +1021,8 @@ const enUS = {
     readOnlyNotice:
       'Read-only view. The consumer is not serviced through the Office.',
     assumedBy: 'Taken over by {{user}} on {{date}}.',
+    triageDuration: 'Triage duration',
+    viewWorkOrder: 'View work order',
     workOrder: {
       title: 'Work order and consumer',
       providerNo: 'Provider work order no.',
@@ -1445,6 +1463,7 @@ const esAR = {
     notFoundMessage: 'No fue posible encontrar esta orden de servicio o no tenés acceso a ella.',
     loadError: 'No fue posible cargar los detalles de la orden de servicio. Intentá nuevamente más tarde.',
     notInformed: 'No informado',
+    viewTriage: 'Ver triaje',
     generalInfo: {
       title: 'Información General',
       id: 'ID de la OS',
@@ -1535,9 +1554,15 @@ const esAR = {
       checklist: 'Checklist',
       timeInPool: 'Tiempo en el pool',
       timeInState: 'Tiempo en el estado actual',
+      triageDuration: 'Tiempo de triaje',
       newActivity: 'Nueva actividad',
       newActivityAria: 'Nuevo mensaje del consumidor',
     },
+  },
+  triageDuration: {
+    unknown: '—',
+    inProgress: '{{duration}} (en curso)',
+    finished: 'Finalizada en {{duration}}',
   },
   triagePoolDetail: {
     loading: 'Cargando los detalles del triaje...',
@@ -1547,6 +1572,8 @@ const esAR = {
     readOnlyNotice:
       'Vista de solo lectura. La atención al consumidor no se realiza desde el Office.',
     assumedBy: 'Asumida por {{user}} el {{date}}.',
+    triageDuration: 'Tiempo de triaje',
+    viewWorkOrder: 'Ver OS',
     workOrder: {
       title: 'OS y consumidor',
       providerNo: 'N.º de OS en el proveedor',

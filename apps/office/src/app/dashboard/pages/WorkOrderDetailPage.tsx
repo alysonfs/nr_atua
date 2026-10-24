@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { useParams } from 'react-router-dom'
+import { Link, useParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useMyTenants } from '../../office/hooks/useTenants'
 import { useWorkOrderDetail } from '../hooks/useWorkOrderDetail'
@@ -87,6 +87,14 @@ export function WorkOrderDetailPage() {
         <h1 className="text-2xl font-semibold text-slate-950 sm:text-3xl">
           {detail.workOrderProviderNo ?? detail.workOrderProviderId}
         </h1>
+        {detail.triagemId && (
+          <Link
+            to={`/triage-pool/${detail.triagemId}`}
+            className="mt-2 inline-block text-sm font-medium text-sky-700 hover:underline"
+          >
+            {t('workOrderDetail.viewTriage')}
+          </Link>
+        )}
       </div>
 
       <Section title={t('workOrderDetail.generalInfo.title')}>

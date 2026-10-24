@@ -113,6 +113,69 @@ describe('TriagePoolDetailPage', () => {
     expect(screen.getByText(/somente leitura/i)).toBeInTheDocument()
   })
 
+  it('renders a "Ver OS" link pointing to the related work order', () => {
+    mockedUseTriagePoolDetail.mockReturnValue({
+      detail: mockedDetail,
+      isLoading: false,
+      isError: false,
+      notFound: false,
+      refetch: vi.fn(),
+    })
+
+    renderPage()
+
+    const link = screen.getByRole('link', { name: /ver os/i })
+    expect(link).toHaveAttribute('href', '/work-orders/wo-1')
+  })
+
+  it('renders the triage duration, showing "in progress" without finishedAtUtc', () => {
+    const startedInProgress = new Date(Date.now() - 2 * 60 * 60_000).toISOString()
+
+    mockedUseTriagePoolDetail.mockReturnValue({
+      detail: { ...mockedDetail, startedAtUtc: startedInProgress, finishedAtUtc: null },
+      isLoading: false,
+      isError: false,
+      notFound: false,
+      refetch: vi.fn(),
+    })
+
+    renderPage()
+
+    expect(screen.getByText(/\(em andamento\)/)).toBeInTheDocument()
+  })
+
+  it('renders the triage duration as "finalizada em" when finishedAtUtc is set', () => {
+    mockedUseTriagePoolDetail.mockReturnValue({
+      detail: {
+        ...mockedDetail,
+        startedAtUtc: '2026-10-20T10:00:00Z',
+        finishedAtUtc: '2026-10-20T10:12:00Z',
+      },
+      isLoading: false,
+      isError: false,
+      notFound: false,
+      refetch: vi.fn(),
+    })
+
+    renderPage()
+
+    expect(screen.getByText(/finalizada em 12 min/i)).toBeInTheDocument()
+  })
+
+  it('renders "—" for triage duration when startedAtUtc is missing', () => {
+    mockedUseTriagePoolDetail.mockReturnValue({
+      detail: mockedDetail,
+      isLoading: false,
+      isError: false,
+      notFound: false,
+      refetch: vi.fn(),
+    })
+
+    renderPage()
+
+    expect(screen.getByText(`${'Tempo de triagem'}: —`)).toBeInTheDocument()
+  })
+
   it('renders no attendance actions (no assume button, no message input)', () => {
     mockedUseTriagePoolDetail.mockReturnValue({
       detail: mockedDetail,

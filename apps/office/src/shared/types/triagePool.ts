@@ -37,6 +37,16 @@ export interface TriagemPoolListItem {
   checklistItemsTotal: number
   enteredPoolAtUtc: string
   hasNewActivity: boolean
+  /**
+   * Início do atendimento da triagem (ISO 8601). Opcional enquanto o
+   * backend não publica o campo — tratar ausência como "—" na UI.
+   */
+  startedAtUtc?: string
+  /**
+   * Conclusão do atendimento da triagem (ISO 8601) ou `null`/ausente
+   * enquanto a triagem está em andamento.
+   */
+  finishedAtUtc?: string | null
 }
 
 export interface TriagemPoolListResponse {
@@ -109,4 +119,14 @@ export interface TriagemPoolDetail {
   checklist: TriagemPoolChecklistItemView[]
   attachments: TriagemPoolAttachment[]
   conversation: TriagemPoolConversationEntry[]
+  /**
+   * Início do atendimento da triagem (ISO 8601). Opcional enquanto o
+   * backend não publica o campo — tratar ausência como "—" na UI.
+   */
+  startedAtUtc?: string
+  /**
+   * Conclusão do atendimento da triagem (ISO 8601) ou `null`/ausente
+   * enquanto a triagem está em andamento.
+   */
+  finishedAtUtc?: string | null
 }

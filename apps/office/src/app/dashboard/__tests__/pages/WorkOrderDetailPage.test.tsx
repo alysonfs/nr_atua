@@ -129,6 +129,33 @@ describe('WorkOrderDetailPage', () => {
     expect(screen.getByRole('alert')).toHaveTextContent(/não foi possível encontrar esta ordem de serviço/i)
   })
 
+  it('renders a "Ver triagem" link when triagemId is present', () => {
+    mockedUseWorkOrderDetail.mockReturnValue({
+      detail: { ...mockedDetail, triagemId: 'triagem-1' },
+      isLoading: false,
+      isError: false,
+      notFound: false,
+    })
+
+    renderPage()
+
+    const link = screen.getByRole('link', { name: /ver triagem/i })
+    expect(link).toHaveAttribute('href', '/triage-pool/triagem-1')
+  })
+
+  it('does not render a "Ver triagem" link when triagemId is absent', () => {
+    mockedUseWorkOrderDetail.mockReturnValue({
+      detail: mockedDetail,
+      isLoading: false,
+      isError: false,
+      notFound: false,
+    })
+
+    renderPage()
+
+    expect(screen.queryByRole('link', { name: /ver triagem/i })).not.toBeInTheDocument()
+  })
+
   it('renders the status history in chronological order', () => {
     mockedUseWorkOrderDetail.mockReturnValue({
       detail: mockedDetail,

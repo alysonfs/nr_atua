@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
-import { useParams } from 'react-router-dom'
+import { useEffect, useState } from 'react'
+import { Link, useParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useMyTenants } from '../../office/hooks/useTenants'
 import { useTriagePoolDetail } from '../hooks/useTriagePoolDetail'
@@ -8,6 +9,8 @@ import { AttachmentsSection } from '../components/AttachmentsSection'
 import { ConversationSection } from '../components/ConversationSection'
 import { Badge } from '../../../shared/components/ui/Badge'
 import { translateTriagemPoolStatus, triagemPoolStatusTone } from '../lib/triageStatus'
+import { formatTriageDurationLabel } from '../lib/formatTriageDuration'
+import { TRIAGE_POOL_POLL_INTERVAL_MS } from '../hooks/useTriagePoolList'
 
 function Field({ label, value }: { label: string; value: string | null }) {
   const { t } = useTranslation()
@@ -44,6 +47,14 @@ export function TriagePoolDetailPage() {
     defaultTenantId,
     triagemId ?? null,
   )
+
+  // Mantém a duração da triagem ("em andamento") atualizada mesmo sem
+  // refetch, reaproveitando o intervalo de polling do pool (30 s).
+  const [nowMs, setNowMs] = useState(() => Date.now())
+  useEffect(() => {
+    const intervalId = setInterval(() => setNowMs(Date.now()), TRIAGE_POOL_POLL_INTERVAL_MS)
+    return () => clearInterval(intervalId)
+  }, [])
 
   if (isTenantLoading || isLoading) {
     return (
@@ -85,10 +96,20 @@ export function TriagePoolDetailPage() {
           <h1 className="text-2xl font-semibold text-slate-950 sm:text-3xl">
             {detail.workOrder.workOrderProviderNo ?? detail.workOrder.workOrderId}
           </h1>
-          <div className="mt-2 flex items-center gap-2">
+          <div className="mt-2 flex flex-wrap items-center gap-2">
             <Badge tone={triagemPoolStatusTone(detail.status)}>{translateTriagemPoolStatus(t, detail.status)}</Badge>
+            <span className="text-xs text-slate-500">
+              {t('triagePoolDetail.triageDuration')}:{' '}
+              {formatTriageDurationLabel(t, detail.startedAtUtc, detail.finishedAtUtc, nowMs)}
+            </span>
           </div>
         </div>
+        <Link
+          to={`/work-orders/${detail.workOrder.workOrderId}`}
+          className="text-sm font-medium text-sky-700 hover:underline"
+        >
+          {t('triagePoolDetail.viewWorkOrder')}
+        </Link>
       </div>
 
       <p className="text-xs text-slate-500">{t('triagePoolDetail.readOnlyNotice')}</p>

@@ -28,7 +28,16 @@ export function TriagePoolTable({ tenantId, statusFilter, scope = 'pool' }: Tria
   const { items, totalCount, isLoading, isError } = useTriagePoolList(tenantId, statusFilter, scope)
 
   const locale = i18n.resolvedLanguage ?? 'pt-BR'
-  const columns = useMemo(() => createTriagePoolColumns(t, locale, Date.now(), scope), [t, locale, scope])
+  // `items` muda a cada ciclo de polling (ver useTriagePoolList): usá-lo como
+  // dependência recalcula `Date.now()` e mantém "tempo no pool" e "tempo de
+  // triagem" atualizados sem exigir um intervalo próprio. O valor em si não
+  // é lido no corpo do memo — serve apenas de gatilho de recálculo.
+  /* eslint-disable react-hooks/exhaustive-deps */
+  const columns = useMemo(
+    () => createTriagePoolColumns(t, locale, Date.now(), scope),
+    [t, locale, scope, items],
+  )
+  /* eslint-enable react-hooks/exhaustive-deps */
   const textKey = scope === 'in-progress' ? 'triagePool.inProgress' : 'triagePool'
 
   const table = useReactTable({

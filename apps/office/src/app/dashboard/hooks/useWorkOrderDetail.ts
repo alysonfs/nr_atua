@@ -44,6 +44,12 @@ export interface WorkOrderDetail {
   productStatus: string | null
   symptom: string | null
   history: WorkOrderHistoryEntry[]
+  /**
+   * Triagem associada a esta OS (ISO id), quando existir. Opcional enquanto
+   * o backend não publica o campo — nesse caso o link "Ver triagem" não é
+   * exibido.
+   */
+  triagemId?: string | null
 }
 
 /**
