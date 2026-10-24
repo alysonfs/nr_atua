@@ -120,6 +120,7 @@ echo "==> [4/6] Escrevendo /etc/atua-channel.env (permissão 600, nunca versiona
   fi
   echo "ChannelWorker__SessionPath=/var/lib/atua-channel/session"
   echo "ChannelWorker__PrintQr=false"
+  echo "ChannelWorker__PollingIntervalSeconds=${ChannelWorker__PollingIntervalSeconds:-2}"
 } > "$ENV_FILE_LOCAL"
 
 scp -o StrictHostKeyChecking=accept-new -i "$SSH_KEY" "$ENV_FILE_LOCAL" "ec2-user@$INSTANCE_IP:/tmp/atua-channel.env"
