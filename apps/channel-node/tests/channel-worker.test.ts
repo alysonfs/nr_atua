@@ -76,8 +76,22 @@ const logger: SafeLogger = {
   error: () => {},
 }
 
-function createWorker(api: ChannelApi, sender: WhatsAppMessageSender): ChannelWorker {
-  return new ChannelWorker(api, sender, { pollingIntervalMs: 15_000, sendTimeoutMs: 30_000 }, logger)
+function createWorker(
+  api: ChannelApi,
+  sender: WhatsAppMessageSender,
+  overrides: Partial<{ pollingIntervalMs: number; sendTimeoutMs: number; earlyClaimDelaysMs: number[] }> = {},
+): ChannelWorker {
+  return new ChannelWorker(
+    api,
+    sender,
+    {
+      pollingIntervalMs: 15_000,
+      sendTimeoutMs: 30_000,
+      earlyClaimDelaysMs: [0, 3_000, 6_000, 10_000],
+      ...overrides,
+    },
+    logger,
+  )
 }
 
 test('sends the approved content to the snapshotted phone and reports success', async () => {
@@ -198,4 +212,225 @@ test('the worker waits for WhatsApp readiness before claiming', async () => {
 
   assert.equal(ready, true)
   assert.equal(claimed, true)
+})
+
+function flushMicrotasks(): Promise<void> {
+  return new Promise((resolve) => setImmediate(resolve))
+}
+
+test('scheduleEarlyClaim wakes an idling worker immediately, ahead of the polling interval', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] })
+
+  let claimCalls = 0
+  const api: ChannelApi = {
+    async claim() {
+      claimCalls += 1
+      return null
+    },
+    async ingestMessage() {},
+    async ingestMedia() {},
+    async reportSessionState() {},
+    async complete() {
+      return true
+    },
+  }
+  const sender: WhatsAppMessageSender = {
+    async waitUntilReady() {},
+    async sendText() {},
+  }
+  const worker = createWorker(api, sender, { pollingIntervalMs: 15_000, earlyClaimDelaysMs: [0] })
+  const controller = new AbortController()
+  const task = worker.run(controller.signal)
+
+  await flushMicrotasks()
+  assert.equal(claimCalls, 1, 'the first cycle claims immediately on startup')
+
+  worker.scheduleEarlyClaim(controller.signal, 'inbound_text_ingested')
+  // Only the 0ms early-claim timer fires here — nowhere near the 15s polling interval.
+  t.mock.timers.tick(0)
+  await flushMicrotasks()
+  assert.equal(claimCalls, 2, 'the early-claim kick triggers a new cycle without waiting for the poll interval')
+
+  // Advancing a little more (still far from 15s) must not trigger another claim on its own.
+  t.mock.timers.tick(1_000)
+  await flushMicrotasks()
+  assert.equal(claimCalls, 2, 'no extra claim happens without a new kick or the full polling interval')
+
+  // Completing the remaining interval proves normal polling still works as a recovery mechanism.
+  t.mock.timers.tick(14_000)
+  await flushMicrotasks()
+  assert.equal(claimCalls, 3, 'normal polling still recovers after the configured interval')
+
+  controller.abort()
+  await task
+})
+
+test('kicks received while a cycle is running coalesce into a single extra cycle (no overlap)', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] })
+
+  const claimQueue: Array<ClaimedChannelCommand | null> = [command, null, null]
+  let claimCalls = 0
+  let releaseSend: (() => void) | undefined
+  let sendCalls = 0
+  const api: ChannelApi = {
+    async claim() {
+      const next = claimQueue[claimCalls] ?? null
+      claimCalls += 1
+      return next
+    },
+    async ingestMessage() {},
+    async ingestMedia() {},
+    async reportSessionState() {},
+    async complete() {
+      return true
+    },
+  }
+  const sender: WhatsAppMessageSender = {
+    async waitUntilReady() {},
+    async sendText() {
+      sendCalls += 1
+      await new Promise<void>((resolve) => {
+        releaseSend = resolve
+      })
+    },
+  }
+  const worker = createWorker(api, sender, { pollingIntervalMs: 15_000, earlyClaimDelaysMs: [0] })
+  const controller = new AbortController()
+  const task = worker.run(controller.signal)
+
+  await flushMicrotasks()
+  assert.equal(claimCalls, 1, 'the first cycle claimed the pending command and is now sending it')
+  assert.equal(sendCalls, 1)
+  assert.equal(typeof releaseSend, 'function', 'the cycle is paused mid-send, simulating a slow in-flight cycle')
+
+  // Three ingests arrive while the cycle above is still running — all three
+  // must coalesce into exactly one extra cycle once the current one ends.
+  worker.scheduleEarlyClaim(controller.signal, 'inbound_text_ingested')
+  t.mock.timers.tick(0)
+  await flushMicrotasks()
+  worker.scheduleEarlyClaim(controller.signal, 'inbound_media_ingested')
+  t.mock.timers.tick(0)
+  await flushMicrotasks()
+  worker.scheduleEarlyClaim(controller.signal, 'inbound_text_ingested')
+  t.mock.timers.tick(0)
+  await flushMicrotasks()
+
+  assert.equal(claimCalls, 1, 'no new cycle starts while the current one is still in progress')
+  assert.equal(sendCalls, 1, 'the in-progress cycle was not duplicated by the pending kicks')
+
+  releaseSend?.()
+  await flushMicrotasks()
+  await flushMicrotasks()
+
+  assert.equal(claimCalls, 2, 'exactly one extra cycle ran immediately after the in-progress one finished')
+  assert.equal(sendCalls, 1, 'the extra cycle claimed null (idle) and never called sendText again')
+
+  // Normal polling still recovers afterwards.
+  t.mock.timers.tick(15_000)
+  await flushMicrotasks()
+  assert.equal(claimCalls, 3, 'the worker keeps polling normally after the coalesced kick cycle')
+
+  controller.abort()
+  await task
+})
+
+test('normal polling keeps recovering even when no early claim is ever scheduled', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] })
+
+  let claimCalls = 0
+  const api: ChannelApi = {
+    async claim() {
+      claimCalls += 1
+      return null
+    },
+    async ingestMessage() {},
+    async ingestMedia() {},
+    async reportSessionState() {},
+    async complete() {
+      return true
+    },
+  }
+  const sender: WhatsAppMessageSender = {
+    async waitUntilReady() {},
+    async sendText() {},
+  }
+  const worker = createWorker(api, sender, { pollingIntervalMs: 15_000, earlyClaimDelaysMs: [0, 3_000, 6_000, 10_000] })
+  const controller = new AbortController()
+  const task = worker.run(controller.signal)
+
+  await flushMicrotasks()
+  assert.equal(claimCalls, 1)
+
+  t.mock.timers.tick(15_000)
+  await flushMicrotasks()
+  assert.equal(claimCalls, 2)
+
+  t.mock.timers.tick(15_000)
+  await flushMicrotasks()
+  assert.equal(claimCalls, 3)
+
+  controller.abort()
+  await task
+})
+
+test('a failure while scheduling an early claim is logged and does not stop the worker', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] })
+
+  let claimCalls = 0
+  const api: ChannelApi = {
+    async claim() {
+      claimCalls += 1
+      return null
+    },
+    async ingestMessage() {},
+    async ingestMedia() {},
+    async reportSessionState() {},
+    async complete() {
+      return true
+    },
+  }
+  const sender: WhatsAppMessageSender = {
+    async waitUntilReady() {},
+    async sendText() {},
+  }
+  const loggedErrors: Array<{ event: string; fields: Record<string, string | number | boolean> }> = []
+  const capturingLogger: SafeLogger = {
+    info: () => {},
+    warn: () => {},
+    error: (event, fields = {}) => {
+      loggedErrors.push({ event, fields })
+    },
+  }
+  // earlyClaimDelaysMs is intentionally broken (not iterable) to force scheduleEarlyClaim to throw internally.
+  const worker = new ChannelWorker(
+    api,
+    sender,
+    {
+      pollingIntervalMs: 15_000,
+      sendTimeoutMs: 30_000,
+      earlyClaimDelaysMs: null as unknown as number[],
+    },
+    capturingLogger,
+  )
+  const controller = new AbortController()
+  const task = worker.run(controller.signal)
+
+  await flushMicrotasks()
+  assert.equal(claimCalls, 1)
+
+  assert.doesNotThrow(() => worker.scheduleEarlyClaim(controller.signal, 'inbound_text_ingested'))
+  await flushMicrotasks()
+
+  assert.ok(
+    loggedErrors.some((entry) => entry.event === 'channel_early_claim_schedule_failed'),
+    'the scheduling failure is logged with a structured event',
+  )
+
+  // The worker keeps polling normally despite the early-claim failure.
+  t.mock.timers.tick(15_000)
+  await flushMicrotasks()
+  assert.equal(claimCalls, 2, 'normal polling is unaffected by the early-claim scheduling failure')
+
+  controller.abort()
+  await task
 })

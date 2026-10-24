@@ -4,6 +4,7 @@ import { ChannelApiError } from '../src/channel-api-client.js'
 import { IncomingMediaWorker } from '../src/incoming-media-worker.js'
 import type {
   ChannelApi,
+  EarlyClaimTrigger,
   IncomingWhatsAppMedia,
   SafeLogger,
   WhatsAppMessageReceiver,
@@ -285,4 +286,97 @@ test('media beyond queue capacity (R1) is discarded with a log instead of growin
     event === 'channel_inbound_media_queue_full_discarded' &&
     fields?.channelMessageId === 'media-message-c'))
   assert.equal(received.some((item) => item.channelMessageId === 'media-message-c'), false)
+})
+
+test('schedules an early claim after a successful media ingest, carrying the signal and a reason', async () => {
+  let listener: ((incoming: IncomingWhatsAppMedia) => void) | undefined
+  const receiver: WhatsAppMessageReceiver = {
+    onIncomingMessage() {
+      return () => {}
+    },
+    onIncomingMedia(value) {
+      listener = value
+      return () => {}
+    },
+  }
+  const api: ChannelApi = {
+    async claim() {
+      return null
+    },
+    async ingestMessage() {},
+    async ingestMedia() {},
+    async reportSessionState() {},
+    async complete() {
+      return true
+    },
+  }
+  const scheduleCalls: Array<{ signal: AbortSignal; reason: string }> = []
+  const earlyClaimTrigger: EarlyClaimTrigger = {
+    scheduleEarlyClaim(signal, reason) {
+      scheduleCalls.push({ signal, reason })
+    },
+  }
+  const controller = new AbortController()
+  const worker = new IncomingMediaWorker(api, receiver, logger, 20, earlyClaimTrigger)
+  const task = worker.run(controller.signal)
+
+  listener?.(media)
+  await new Promise((resolve) => setImmediate(resolve))
+  controller.abort()
+  await task
+
+  assert.equal(scheduleCalls.length, 1)
+  assert.equal(scheduleCalls[0]?.reason, 'inbound_media_ingested')
+  assert.equal(scheduleCalls[0]?.signal, controller.signal)
+})
+
+test('a throwing early claim trigger is logged but does not stop the media worker or lose the item', async () => {
+  let listener: ((incoming: IncomingWhatsAppMedia) => void) | undefined
+  const receiver: WhatsAppMessageReceiver = {
+    onIncomingMessage() {
+      return () => {}
+    },
+    onIncomingMedia(value) {
+      listener = value
+      return () => {}
+    },
+  }
+  const received: IncomingWhatsAppMedia[] = []
+  const api: ChannelApi = {
+    async claim() {
+      return null
+    },
+    async ingestMessage() {},
+    async ingestMedia(value) {
+      received.push(value)
+    },
+    async reportSessionState() {},
+    async complete() {
+      return true
+    },
+  }
+  const earlyClaimTrigger: EarlyClaimTrigger = {
+    scheduleEarlyClaim() {
+      throw new Error('boom')
+    },
+  }
+  const loggedErrors: string[] = []
+  const capturingLogger: SafeLogger = {
+    info: () => {},
+    warn: () => {},
+    error: (event) => {
+      loggedErrors.push(event)
+    },
+  }
+  const controller = new AbortController()
+  const worker = new IncomingMediaWorker(api, receiver, capturingLogger, 20, earlyClaimTrigger)
+  const task = worker.run(controller.signal)
+
+  listener?.(media)
+  await new Promise((resolve) => setImmediate(resolve))
+  controller.abort()
+  await task
+
+  assert.deepEqual(received, [media])
+  assert.ok(loggedErrors.includes('channel_early_claim_trigger_failed'))
 })

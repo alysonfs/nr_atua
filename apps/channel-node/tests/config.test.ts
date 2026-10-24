@@ -21,6 +21,45 @@ test('loadConfig accepts isolated credentials and an external session path', () 
   assert.equal(config.sessionPath, '/tmp/atua-channel-session')
   assert.equal(config.sessionReportServiceToken, undefined)
   assert.equal(config.mediaQueueCapacity, 20)
+  assert.deepEqual(config.earlyClaimDelaysMs, [0, 3_000, 6_000, 10_000])
+})
+
+test('loadConfig accepts a custom early-claim delay list and rejects out-of-range or malformed values', () => {
+  const config = loadConfig({
+    ...validEnvironment,
+    ChannelWorker__EarlyClaimDelaysSeconds: '0, 5, 5, 2',
+  })
+  assert.deepEqual(config.earlyClaimDelaysMs, [0, 2_000, 5_000])
+
+  const disabled = loadConfig({
+    ...validEnvironment,
+    ChannelWorker__EarlyClaimDelaysSeconds: '-',
+  })
+  assert.deepEqual(disabled.earlyClaimDelaysMs, [])
+
+  assert.throws(
+    () => loadConfig({
+      ...validEnvironment,
+      ChannelWorker__EarlyClaimDelaysSeconds: '0,31',
+    }),
+    /entre 0 e 30 segundos/,
+  )
+
+  assert.throws(
+    () => loadConfig({
+      ...validEnvironment,
+      ChannelWorker__EarlyClaimDelaysSeconds: '0,1.5',
+    }),
+    /entre 0 e 30 segundos/,
+  )
+
+  assert.throws(
+    () => loadConfig({
+      ...validEnvironment,
+      ChannelWorker__EarlyClaimDelaysSeconds: ',',
+    }),
+    /entre 1 e 10 valores/,
+  )
 })
 
 test('loadConfig accepts an optional, distinct session-report credential', () => {
