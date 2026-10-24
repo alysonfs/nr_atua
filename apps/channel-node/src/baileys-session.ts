@@ -12,6 +12,8 @@ import makeWASocket, {
   type WAMessage,
   type UserFacingSocketConfig,
   normalizeMessageContent,
+  proto,
+  type WAMessageUpdate,
 } from '@whiskeysockets/baileys'
 import pino from 'pino'
 import type {
@@ -593,6 +595,9 @@ export function createBaileysSocket(
             case 'recv retry request':
               logger.info('whatsapp_retry_requested')
               break
+            case 'forced new session for retry recp':
+              logger.info('whatsapp_retry_session_rebuilt')
+              break
             case 'recv retry request, but message not available':
               logger.warn('whatsapp_retry_original_message_missing')
               break
@@ -614,6 +619,25 @@ export function createBaileysSocket(
       },
     }),
   })
+
+  const onMessageUpdates = (updates: WAMessageUpdate[]) => {
+    for (const { key, update } of updates) {
+      if (key.fromMe !== true || typeof key.id !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(key.id)) {
+        continue
+      }
+      let deliveryStatus: string
+      switch (update.status) {
+        case proto.WebMessageInfo.Status.ERROR: deliveryStatus = 'error'; break
+        case proto.WebMessageInfo.Status.SERVER_ACK: deliveryStatus = 'server_ack'; break
+        case proto.WebMessageInfo.Status.DELIVERY_ACK: deliveryStatus = 'delivered'; break
+        case proto.WebMessageInfo.Status.READ: deliveryStatus = 'read'; break
+        case proto.WebMessageInfo.Status.PLAYED: deliveryStatus = 'played'; break
+        default: continue
+      }
+      logger.info('whatsapp_message_delivery_update', { messageId: key.id, deliveryStatus })
+    }
+  }
+  socket.ev.on('messages.update', onMessageUpdates)
 
   return {
     onConnectionUpdate(listener) {
@@ -662,6 +686,7 @@ export function createBaileysSocket(
         () => socket.sendMessage(recipientJid, { text }, { messageId }))
     },
     end(error) {
+      socket.ev.off('messages.update', onMessageUpdates)
       socket.end(error)
     },
   }
