@@ -63,9 +63,9 @@ inválida. O texto sem validação nunca é enviado ao consumidor.
 | Item | Obrigatório | Atendido quando |
 |---|---|---|
 | Descrição do defeito | Sim | Texto ou transcrição com sintoma identificável |
-| Vídeo do defeito | Não | Anexo de vídeo recebido |
-| Foto da nota fiscal | Sim | Imagem recebida e marcada pelo operador como legível |
-| Foto da etiqueta (modelo e série) | Sim | Imagem recebida e marcada pelo operador como legível |
+| Vídeo/foto do defeito | Não | Mídia opcional — nunca bloqueia a suficiência; não é interpretada pela LLM nem por visão computacional |
+| Foto da nota fiscal | Sim | Imagem recebida e classificada como legível pela visão computacional no Bedrock (regra determinística) |
+| Foto da etiqueta (modelo e série) | Sim | Imagem recebida e classificada como legível, com modelo e número de série extraídos pela visão computacional no Bedrock (regra determinística) |
 | Endereço completo | Sim | Logradouro, número, bairro e cidade identificados |
 | Ponto de referência | Não | Texto recebido |
 | Localização | Não | Localização compartilhada no WhatsApp ou link de mapa |
@@ -74,6 +74,29 @@ A suficiência é **determinística**: a API move a triagem para
 `INFORMACOES_SUFICIENTES` e depois para `LIBERADA_AO_POOL` quando todos os
 itens obrigatórios estão atendidos. A marcação da LLM é um insumo, e a
 decisão é da API. O operador confere o resultado no painel C2.
+
+Decisão do PO (adiantar a visão computacional no Bedrock): quando uma mídia
+de imagem (jpeg/png/webp) chega numa triagem elegível, ela é classificada
+automaticamente — antes da chamada de conversa do mesmo turno — como nota
+fiscal, etiqueta ou outra imagem, com legibilidade e, no caso da etiqueta,
+modelo e número de série. Quem decide marcar os itens `NotaFiscal` e
+`Etiqueta` como atendidos é uma regra determinística (nunca a LLM
+conversacional), a partir desse resultado. Imagens acima do limite de
+tamanho do Bedrock (~3,75 MiB) ou com falha do fornecedor ficam pendentes
+— sem quebrar o fluxo nem levar a triagem a `AGUARDANDO_INTERVENCAO` só por
+isso — e são retentadas em um turno futuro. Quando a imagem é classificada
+como ilegível, a LLM recebe apenas esse fato (nunca a imagem) e pede uma
+nova foto mais nítida. Vídeo, áudio e documento nunca são enviados ao
+classificador — o vídeo/foto do defeito é opcional e nunca interpretado.
+
+Ressalva de confiabilidade (smoke test manual pós-implementação, etiqueta
+sintética): a classificação de tipo/legibilidade e a extração de modelo e
+número de série são probabilísticas e sujeitas a erro (ex.: dígito a mais
+ou a menos no número de série) — não são uma leitura determinística de
+OCR nem equivalem a validação fiscal, autenticidade do produto ou garantia.
+A conferência humana pelo operador no painel C2 continua obrigatória antes
+de qualquer decisão que dependa desses dados; a marcação automática do
+checklist acelera a triagem, mas não substitui essa conferência.
 
 ## 4. Guardrails e interrupção
 
@@ -133,9 +156,10 @@ decisão é da API. O operador confere o resultado no painel C2.
 - Estimativa de custo por triagem e orçamento mensal por tenant.
 - Catálogo de peças e sintomas por fabricante e produto, pré-requisito do
   B5.
-- Avaliação da legibilidade de imagens (nota fiscal, etiqueta com modelo e
-  série, vídeo do defeito): por visão computacional/Bedrock é evolução
-  futura. Hoje o operador confere manualmente a legibilidade; não há
-  reconhecimento automático pela LLM.
+- ~~Avaliação da legibilidade de imagens (nota fiscal, etiqueta com modelo e
+  série)~~: **implementado**. Visão computacional no Bedrock classifica
+  automaticamente nota fiscal e etiqueta a cada turno elegível (decisão do
+  PO de adiantar esta capacidade, antes do motor JEV completo); ver §3. O
+  vídeo/foto do defeito continua opcional e nunca é interpretado.
 - Transcrição de áudio, adiada (ADR-046). Enquanto ela não existir, o áudio
   não conta como descrição atendida.

@@ -144,7 +144,7 @@ decide") — este plano estende o mesmo princípio ao motor selecionado.
 | Papel | Componente | Responsabilidade |
 |---|---|---|
 | Conversar | LLM (Bedrock) | Entender a mensagem do consumidor, redigir a próxima pergunta/resposta no tom definido (`triagem-llm-identidade-tom.md`), extrair campos estruturados candidatos, sugerir peças quando houver catálogo (futuro). |
-| Decidir | Motor de decisão selecionado no ADR-051 | Choice: categoria de defeito dentre as opções do ATUA. Score: prioridade operacional (rubrica 1–5, a definir pelo PO — ver §12). Decisões binárias equivalentes a Noul: probabilidade de proposições como "checklist tem evidência suficiente para liberar ao pool", "esta triagem precisa de intervenção humana agora". Validação de legibilidade (nota fiscal, etiqueta, vídeo) é evolução futura; hoje o operador confere manualmente. |
+| Decidir | Motor de decisão selecionado no ADR-051 | Choice: categoria de defeito dentre as opções do ATUA. Score: prioridade operacional (rubrica 1–5, a definir pelo PO — ver §12). Decisões binárias equivalentes a Noul: probabilidade de proposições como "checklist tem evidência suficiente para liberar ao pool", "esta triagem precisa de intervenção humana agora". Nota fiscal e etiqueta recebem classificação e avaliação de legibilidade pela visão do Bedrock no fluxo M2, com aplicação determinística ao checklist e conferência humana posterior. Vídeo do defeito é opcional e não é interpretado nesta entrega; a evolução de gates probabilísticos continua em M3–M4. |
 | Aplicar | Código determinístico (domínio `Triagem`) | Lê a saída do motor, compara com o limiar vigente (ver §5) e só então chama os métodos existentes do agregado (ex.: avançar para `InformacoesSuficientes`, mover para `AguardandoIntervencao`). |
 
 O motor de decisão não conversa com o consumidor, não escreve orientação
@@ -328,7 +328,7 @@ fase é decisão de produto (`product-analyst` + PO), não técnica.
 |---|---|---|---|
 | Checklist suficiente | Noul | Autoriza o código a mover para `InformacoesSuficientes` (hoje: regra determinística do checklist, mantida como dupla checagem mesmo após M4) | Mantém `EmColeta` |
 | Necessita intervenção humana | Noul | Move para `AguardandoIntervencao` | Mantém fluxo normal |
-| Anexo é nota fiscal/etiqueta legível | Noul (evolução futura: visão computacional/Bedrock) | Marca item do checklist como atendido | Pede reenvio (contador de tentativa já existente); hoje o operador confere manualmente |
+| Anexo é nota fiscal/etiqueta legível | M2: visão Bedrock + validação determinística; Noul calibrado permanece evolução futura | Marca nota fiscal legível; etiqueta exige também modelo e série preenchidos | Item permanece pendente; informa resultado à conversa para pedir nova foto; operador confere posteriormente |
 | Categoria de defeito | Choice ou equivalente | Preenche campo estruturado exibido no Office como sugestão | — |
 | Prioridade operacional | Score ou equivalente | Preenche campo estruturado exibido no Office como sugestão | — |
 
