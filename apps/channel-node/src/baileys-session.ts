@@ -512,6 +512,7 @@ export class BaileysSession implements WhatsAppMessageSender, WhatsAppMessageRec
           if (mediaResult.reason === 'document_type_excluded') {
             this.logger.info('whatsapp_inbound_message_ignored', {
               reason: mediaResult.reason,
+              mimetype: mediaResult.excludedMimetype ?? 'unknown',
               remoteJidKind: getJidKind(message.key.remoteJid ?? ''),
             })
             continue
@@ -781,15 +782,16 @@ type MediaMetadataFailureReason = 'no_media_content' | 'document_type_excluded' 
 
 type MediaMetadataParseResult =
   | { media: IncomingMediaMetadata; reason: null }
-  | { media: null; reason: MediaMetadataFailureReason }
+  | { media: null; reason: MediaMetadataFailureReason; excludedMimetype?: string | null }
 
 /**
  * Identifica se a mensagem é uma mídia aceita (áudio, imagem, vídeo ou
  * PDF) e extrai os metadados declarados pelo WhatsApp — nunca baixa o
  * binário aqui (feito separadamente por {@link BaileysSession.deliverIncomingMedia},
- * apenas quando a mensagem é aceita). Figurinhas e documentos que não sejam
- * PDF são excluídos (decisão do PO, 2026-10-21) — nunca chegam a ser
- * relatados como mídia nem como texto.
+ * apenas quando a mensagem é aceita). Documentos com mimetype de imagem
+ * (JPEG/PNG/WebP) são relatados como imagem. Figurinhas e demais documentos
+ * que não sejam PDF são excluídos (decisão do PO, 2026-10-21) — nunca chegam
+ * a ser relatados como mídia nem como texto.
  */
 function extractMediaMetadata(message: WAMessage): MediaMetadataParseResult {
   const body = normalizeMessageContent(message.message)
@@ -806,14 +808,27 @@ function extractMediaMetadata(message: WAMessage): MediaMetadataParseResult {
       body.audioMessage.ptt ?? false, body.audioMessage.seconds ?? null, null)
   }
   if (body?.documentMessage) {
-    if (body.documentMessage.mimetype !== 'application/pdf') {
-      return { media: null, reason: 'document_type_excluded' }
+    const documentMimetype = normalizeMimetype(body.documentMessage.mimetype)
+    // Foto enviada "como documento" (comum para nota fiscal, preserva a
+    // qualidade) é tratada como imagem.
+    if (DOCUMENT_IMAGE_MIMETYPES.has(documentMimetype)) {
+      return buildMediaMetadata('image', documentMimetype, body.documentMessage.fileLength,
+        false, null, body.documentMessage.caption)
     }
-    return buildMediaMetadata('document', body.documentMessage.mimetype, body.documentMessage.fileLength,
+    if (documentMimetype !== 'application/pdf') {
+      return { media: null, reason: 'document_type_excluded', excludedMimetype: documentMimetype || null }
+    }
+    return buildMediaMetadata('document', documentMimetype, body.documentMessage.fileLength,
       false, null, body.documentMessage.caption)
   }
 
   return { media: null, reason: 'no_media_content' }
+}
+
+const DOCUMENT_IMAGE_MIMETYPES = new Set(['image/jpeg', 'image/png', 'image/webp'])
+
+function normalizeMimetype(mimetype: string | null | undefined): string {
+  return typeof mimetype === 'string' ? (mimetype.split(';')[0] ?? '').trim().toLowerCase() : ''
 }
 
 function buildMediaMetadata(

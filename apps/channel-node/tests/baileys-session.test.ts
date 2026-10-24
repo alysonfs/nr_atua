@@ -300,14 +300,26 @@ test('extracts and delivers audio, image, video and PDF media as a single event,
       messageTimestamp: 1_792_243_200,
     } as unknown as WAMessage
 
-    socket.emitMessagesUpsert([audioMessage, imageMessage, videoMessage, pdfMessage, excludedDocumentMessage])
+    const imageAsDocumentMessage = {
+      key: { ...baseKey, id: 'wamid-image-doc' },
+      message: { documentMessage: { mimetype: 'IMAGE/JPEG; charset=binary', fileLength: 3_072, fileName: 'nota.jpg' } },
+      messageTimestamp: 1_792_243_200,
+    } as unknown as WAMessage
 
-    for (let attempt = 0; attempt < 1_000 && receivedMedia.length < 4; attempt += 1) {
+    socket.emitMessagesUpsert([
+      audioMessage, imageMessage, videoMessage, pdfMessage, excludedDocumentMessage, imageAsDocumentMessage,
+    ])
+
+    for (let attempt = 0; attempt < 1_000 && receivedMedia.length < 5; attempt += 1) {
       await new Promise<void>((resolve) => setImmediate(resolve))
     }
 
-    assert.equal(receivedMedia.length, 4)
-    assert.equal(downloadedMessages.length, 4)
+    assert.equal(receivedMedia.length, 5)
+    assert.equal(downloadedMessages.length, 5)
+
+    const imageDocument = receivedMedia.find((item) => item.channelMessageId === 'wamid-image-doc')
+    assert.equal(imageDocument?.mediaKind, 'image')
+    assert.equal(imageDocument?.contentType, 'image/jpeg')
     assert.equal(receivedText.length, 0)
 
     const audio = receivedMedia.find((item) => item.channelMessageId === 'wamid-audio')
