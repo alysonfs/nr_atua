@@ -51,8 +51,9 @@ public sealed class GetLlmUsageSummaryUseCase(
             return LlmUsageSummaryResult.Failure(ELlmUsageSummaryOutcome.InvalidDateRange);
         }
 
-        var fromUtc = new DateTimeOffset(from.ToDateTime(TimeOnly.MinValue), SaoPauloOffset);
-        var toUtcExclusive = new DateTimeOffset(to.AddDays(1).ToDateTime(TimeOnly.MinValue), SaoPauloOffset);
+        var fromUtc = new DateTimeOffset(from.ToDateTime(TimeOnly.MinValue), SaoPauloOffset).ToUniversalTime();
+        var toUtcExclusive = new DateTimeOffset(to.AddDays(1).ToDateTime(TimeOnly.MinValue), SaoPauloOffset)
+            .ToUniversalTime();
 
         var rows = await aggregateQuery.ExecuteAsync(tenantIds, fromUtc, toUtcExclusive, cancellationToken);
 
