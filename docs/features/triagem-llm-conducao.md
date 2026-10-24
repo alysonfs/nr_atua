@@ -116,6 +116,18 @@ o caminho técnico de imagem/PDF digitalizado, não a autenticidade da nota
 nem a entrega WhatsApp. O adaptador usa AWS SDK BedrockRuntime 4.0.100
 para expor a configuração de citações de documentos do Converse.
 
+Validação operacional em 24/10/2026, após publicação da correção: a foto do
+defeito recebida às 10:47:45 BRT estava armazenada, mas não tinha disparado
+visão nem conversa. Com autorização do PO, a mesma mídia foi reentregue ao
+endpoint usando sua chave original, sem criar outro anexo. Foi classificada
+como `Outro`, gerou exatamente uma resposta e elevou o uso da triagem de
+12 para 14 chamadas (visão + conversa). O Channel confirmou aceite do
+servidor às 12:06:34, entrega às 12:06:36 e leitura às 12:06:45 BRT.
+Ainda ocorreram duas retransmissões criptográficas; o sucesso deste turno
+não encerra a investigação da estabilidade/latência do WhatsApp. A nota
+fiscal real do consumidor continua pendente de recebimento e conferência;
+o smoke sintético não satisfaz esse item na triagem.
+
 Ressalva de confiabilidade (smoke test manual pós-implementação, etiqueta
 sintética): a classificação de tipo/legibilidade e a extração de modelo e
 número de série são probabilísticas e sujeitas a erro (ex.: dígito a mais
