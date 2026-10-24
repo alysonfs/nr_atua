@@ -1,3 +1,5 @@
+using Atua.Api.Application.LlmUsage;
+using Atua.Api.Application.LlmUsage.Contracts;
 using Atua.Api.Application.Triagens;
 using Atua.Api.Application.Triagens.Contracts;
 using Atua.Api.Domain.Integrations;
@@ -7,6 +9,7 @@ using Atua.Api.Domain.WorkOrders;
 using Atua.Api.Infrastructure.Persistence;
 using Atua.Api.Infrastructure.Storage;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 
 namespace Atua.Api.Tests;
 
@@ -61,7 +64,7 @@ public class TriagemPoolUseCasesTests
         }
 
         await using var assertContext = CreateContext(databaseName);
-        var useCase = new ListTriagemPoolUseCase(assertContext);
+        var useCase = CreateListUseCase(assertContext);
 
         var result = await useCase.ExecuteAsync(new TriagemPoolListQuery(tenantId, userId, StatusFilter: null),
             CancellationToken.None);
@@ -94,7 +97,7 @@ public class TriagemPoolUseCasesTests
         }
 
         await using var assertContext = CreateContext(databaseName);
-        var useCase = new ListTriagemPoolUseCase(assertContext);
+        var useCase = CreateListUseCase(assertContext);
 
         var result = await useCase.ExecuteAsync(
             new TriagemPoolListQuery(tenantId, Guid.CreateVersion7(), StatusFilter: null), CancellationToken.None);
@@ -121,7 +124,7 @@ public class TriagemPoolUseCasesTests
         }
 
         await using var assertContext = CreateContext(databaseName);
-        var useCase = new ListTriagemPoolUseCase(assertContext);
+        var useCase = CreateListUseCase(assertContext);
 
         var result = await useCase.ExecuteAsync(
             new TriagemPoolListQuery(tenantId, userId, ETriagemStatus.Expirada), CancellationToken.None);
@@ -145,7 +148,7 @@ public class TriagemPoolUseCasesTests
         }
 
         await using var assertContext = CreateContext(databaseName);
-        var useCase = new ListTriagemPoolUseCase(assertContext);
+        var useCase = CreateListUseCase(assertContext);
 
         var result = await useCase.ExecuteAsync(
             new TriagemPoolListQuery(tenantId, userId, ETriagemStatus.EmColeta), CancellationToken.None);
@@ -181,7 +184,7 @@ public class TriagemPoolUseCasesTests
         }
 
         await using var assertContext = CreateContext(databaseName);
-        var useCase = new ListTriagemPoolUseCase(assertContext);
+        var useCase = CreateListUseCase(assertContext);
 
         var result = await useCase.ExecuteAsync(new TriagemPoolListQuery(tenantId, userId, StatusFilter: null),
             CancellationToken.None);
@@ -213,7 +216,7 @@ public class TriagemPoolUseCasesTests
         }
 
         await using var assertContext = CreateContext(databaseName);
-        var useCase = new ListTriagemPoolUseCase(assertContext);
+        var useCase = CreateListUseCase(assertContext);
 
         var result = await useCase.ExecuteAsync(
             new TriagemPoolListQuery(tenantId, userId, StatusFilter: null, ETriagemPoolListScope.InProgress),
@@ -246,7 +249,7 @@ public class TriagemPoolUseCasesTests
         }
 
         await using var assertContext = CreateContext(databaseName);
-        var useCase = new ListTriagemPoolUseCase(assertContext);
+        var useCase = CreateListUseCase(assertContext);
 
         var result = await useCase.ExecuteAsync(
             new TriagemPoolListQuery(tenantId, userId, StatusFilter: null, ETriagemPoolListScope.All),
@@ -277,7 +280,7 @@ public class TriagemPoolUseCasesTests
         }
 
         await using var assertContext = CreateContext(databaseName);
-        var useCase = new ListTriagemPoolUseCase(assertContext);
+        var useCase = CreateListUseCase(assertContext);
 
         var result = await useCase.ExecuteAsync(
             new TriagemPoolListQuery(tenantId, userId, statusFilter, scope), CancellationToken.None);
@@ -304,7 +307,7 @@ public class TriagemPoolUseCasesTests
         }
 
         await using var assertContext = CreateContext(databaseName);
-        var useCase = new ListTriagemPoolUseCase(assertContext);
+        var useCase = CreateListUseCase(assertContext);
 
         var result = await useCase.ExecuteAsync(
             new TriagemPoolListQuery(tenantId, userId, ETriagemStatus.EmColeta, ETriagemPoolListScope.InProgress),
@@ -708,7 +711,12 @@ public class TriagemPoolUseCasesTests
     // -------------------------------------------------------------------
 
     private static GetTriagemPoolDetailUseCase CreateDetailUseCase(AtuaDbContext context) =>
-        new(context, new FakeTriagemInboundMediaStorage(), new FakeTimeProvider(Now));
+        new(context, new FakeTriagemInboundMediaStorage(), new TriagemLlmUsageByTriagemQueryHandler(context),
+            new TriagemLlmPricingCatalog(), Options.Create(new TriagemLlmConversationOptions()),
+            new FakeTimeProvider(Now));
+
+    private static ListTriagemPoolUseCase CreateListUseCase(AtuaDbContext context) =>
+        new(context, new TriagemLlmUsageByTriagemQueryHandler(context), new TriagemLlmPricingCatalog());
 
     private static Triagem CriarTriagemNoEstado(Guid tenantId, Guid integrationId, Guid workOrderId,
         ETriagemStatus estado)

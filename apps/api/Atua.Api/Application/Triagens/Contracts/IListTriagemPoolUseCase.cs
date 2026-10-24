@@ -1,3 +1,4 @@
+using Atua.Api.Application.LlmUsage;
 using Atua.Api.Domain.Triagens;
 
 namespace Atua.Api.Application.Triagens.Contracts;
@@ -69,6 +70,7 @@ public sealed record TriagemPoolListResult(
 /// </param>
 /// <param name="StartedAtUtc">Momento em que a triagem foi criada (<see cref="Triagem.CreatedAtUtc"/>) — início do tempo de triagem no Office.</param>
 /// <param name="FinishedAtUtc">Momento em que a coleta da LLM terminou (<see cref="Triagem.ColetaEncerradaEmUtc"/>); <c>null</c> enquanto ainda em coleta.</param>
+/// <param name="LlmUsage">Totais de chamadas/tokens/custo de LLM desta triagem (ADR-048) — inclui classificação de visão e conversa.</param>
 public sealed record TriagemPoolListItem(
     Guid TriagemId,
     Guid WorkOrderId,
@@ -82,4 +84,5 @@ public sealed record TriagemPoolListItem(
     DateTimeOffset EnteredPoolAtUtc,
     bool HasNewActivity,
     DateTimeOffset StartedAtUtc,
-    DateTimeOffset? FinishedAtUtc);
+    DateTimeOffset? FinishedAtUtc,
+    TriagemLlmCostSummary LlmUsage);

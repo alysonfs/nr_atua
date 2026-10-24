@@ -1,3 +1,4 @@
+using Atua.Api.Application.LlmUsage;
 using Atua.Api.Domain.Triagens;
 
 namespace Atua.Api.Application.Triagens.Contracts;
@@ -39,6 +40,14 @@ public sealed record TriagemPoolDetailResult(ETriagemPoolDetailOutcome Outcome, 
 /// <param name="WorkOrderId">Id da OS vinculada — mesmo id usado pela rota do Office <c>/work-orders/:workOrderId</c> (<c>WorkOrder.Id</c>); idêntico a <see cref="TriagemPoolWorkOrderView.WorkOrderId"/>.</param>
 /// <param name="StartedAtUtc">Momento em que a triagem foi criada (<see cref="Triagem.CreatedAtUtc"/>) — início do tempo de triagem no Office.</param>
 /// <param name="FinishedAtUtc">Momento em que a coleta da LLM terminou (<see cref="Triagem.ColetaEncerradaEmUtc"/>); <c>null</c> enquanto ainda em coleta.</param>
+/// <param name="WarrantyEstimate">
+/// Indicador de garantia calculado na leitura a partir de
+/// <see cref="Triagem.DataEmissaoNotaFiscal"/> (estimativa provisória e
+/// global — decisão do PO; nunca persistido).
+/// </param>
+/// <param name="NotaFiscalNumero">Número da nota fiscal extraído pela classificação de visão (<see cref="Triagem.NumeroNotaFiscal"/>); <c>null</c> quando ainda não extraído.</param>
+/// <param name="NotaFiscalSerie">Série da nota fiscal — mesma origem e ressalva de <paramref name="NotaFiscalNumero"/>.</param>
+/// <param name="LlmUsage">Totais de chamadas/tokens/custo de LLM desta triagem (ADR-048) — inclui classificação de visão e conversa.</param>
 public sealed record TriagemPoolDetailView(
     Guid TriagemId,
     ETriagemStatus Status,
@@ -49,6 +58,10 @@ public sealed record TriagemPoolDetailView(
     Guid WorkOrderId,
     DateTimeOffset StartedAtUtc,
     DateTimeOffset? FinishedAtUtc,
+    WarrantyEstimate WarrantyEstimate,
+    string? NotaFiscalNumero,
+    string? NotaFiscalSerie,
+    TriagemLlmCostSummary LlmUsage,
     TriagemPoolWorkOrderView WorkOrder,
     IReadOnlyList<TriagemPoolChecklistItemView> Checklist,
     IReadOnlyList<TriagemPoolAttachmentView> Attachments,

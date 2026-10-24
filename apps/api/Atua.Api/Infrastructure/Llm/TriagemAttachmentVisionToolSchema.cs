@@ -45,6 +45,21 @@ internal static class TriagemAttachmentVisionToolSchema
                 ["type"] = "string",
                 ["description"] = "Número de série lido na etiqueta — só preenchido quando tipo = Etiqueta e legivel = true.",
             },
+            ["numeroNotaFiscal"] = new Dictionary<string, object?>
+            {
+                ["type"] = "string",
+                ["description"] = "Número da nota fiscal — só preenchido quando tipo = NotaFiscal e legivel = true.",
+            },
+            ["serieNotaFiscal"] = new Dictionary<string, object?>
+            {
+                ["type"] = "string",
+                ["description"] = "Série da nota fiscal — só preenchido quando tipo = NotaFiscal e legivel = true.",
+            },
+            ["dataEmissaoNotaFiscal"] = new Dictionary<string, object?>
+            {
+                ["type"] = "string",
+                ["description"] = "Data de emissão da nota fiscal no formato AAAA-MM-DD — só preenchido quando tipo = NotaFiscal e legivel = true.",
+            },
             ["confianca"] = new Dictionary<string, object?>
             {
                 ["type"] = "number",

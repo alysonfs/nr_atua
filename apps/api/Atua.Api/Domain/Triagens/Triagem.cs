@@ -94,6 +94,27 @@ public sealed class Triagem
 
     public bool NotaFiscalLegivel { get; private set; }
 
+    /// <summary>
+    /// Número da nota fiscal extraído pela classificação de visão
+    /// computacional (decisão do PO, incremento de garantia). Fato bruto —
+    /// o indicador de garantia (<see cref="EWarrantyEstimateStatus"/>)
+    /// nunca é persistido, sempre calculado na leitura a partir de
+    /// <see cref="DataEmissaoNotaFiscal"/>.
+    /// </summary>
+    public string? NumeroNotaFiscal { get; private set; }
+
+    /// <summary>Série da nota fiscal — mesma origem e mesma ressalva de <see cref="NumeroNotaFiscal"/>.</summary>
+    public string? SerieNotaFiscal { get; private set; }
+
+    /// <summary>
+    /// Data de emissão da nota fiscal — dado principal para o indicador de
+    /// garantia (hoje: prazo padrão global e provisório, configurável em
+    /// <c>TriagemLlm:GarantiaPadraoMeses</c>; no futuro, prazo por produto e
+    /// por empresa). Por isso só a data é persistida — o status calculado
+    /// nunca é gravado.
+    /// </summary>
+    public DateTimeOffset? DataEmissaoNotaFiscal { get; private set; }
+
     public string? EtiquetaModelo { get; private set; }
 
     public string? EtiquetaSerie { get; private set; }
@@ -301,10 +322,23 @@ public sealed class Triagem
         RegistrarInteracaoValida(now);
     }
 
-    public void RegistrarNotaFiscalLegivel(DateTimeOffset now)
+    /// <param name="numero">Número da nota fiscal (opcional — quando a classificação de visão o extraiu com confiança).</param>
+    /// <param name="serie">Série da nota fiscal (opcional, mesma origem de <paramref name="numero"/>).</param>
+    /// <param name="dataEmissao">
+    /// Data de emissão da nota fiscal (opcional, mesma origem). Dado
+    /// principal para o indicador de garantia calculado na leitura — nunca
+    /// o status em si (ver <see cref="DataEmissaoNotaFiscal"/>).
+    /// </param>
+    public void RegistrarNotaFiscalLegivel(DateTimeOffset now, string? numero = null, string? serie = null,
+        DateTimeOffset? dataEmissao = null)
     {
         ExigirEmColeta(nameof(RegistrarNotaFiscalLegivel));
         NotaFiscalLegivel = true;
+
+        if (!string.IsNullOrWhiteSpace(numero)) NumeroNotaFiscal = numero.Trim();
+        if (!string.IsNullOrWhiteSpace(serie)) SerieNotaFiscal = serie.Trim();
+        if (dataEmissao is not null) DataEmissaoNotaFiscal = dataEmissao;
+
         RegistrarInteracaoValida(now);
     }
 

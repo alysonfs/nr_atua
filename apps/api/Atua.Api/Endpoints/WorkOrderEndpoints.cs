@@ -297,7 +297,17 @@ public static class WorkOrderEndpoints
             result.ProductCode, result.ProductModel, result.ProductStatus, result.Symptom, result.SymptomRaw,
             result.History.Select(entry => new WorkOrderHistoryEntryResponse(entry.Status, entry.CreatedAt))
                 .ToArray(),
-            result.TriagemId);
+            result.TriagemId,
+            result.TriagemStartedAtUtc,
+            result.TriagemFinishedAtUtc,
+            new WarrantyEstimateResponse(
+                result.WarrantyEstimate.Status.ToString(), result.WarrantyEstimate.BaseDate,
+                result.WarrantyEstimate.DefaultMonths),
+            result.NotaFiscalNumero,
+            result.NotaFiscalSerie,
+            new TriagemLlmUsageResponse(
+                result.LlmUsage.Calls, result.LlmUsage.InputTokens, result.LlmUsage.OutputTokens,
+                result.LlmUsage.EstimatedCostUsd));
 
         return Results.Ok(response);
     }
@@ -371,6 +381,12 @@ public sealed record WorkOrderDetailResponse(
     string? ProductBrand, string? PdCode, string? CategoryId, string? ProductCategoryCode,
     string? ProductCode, string? ProductModel, string? ProductStatus, string? Symptom, string? SymptomRaw,
     IReadOnlyList<WorkOrderHistoryEntryResponse> History,
-    Guid? TriagemId);
+    Guid? TriagemId,
+    DateTimeOffset? TriagemStartedAtUtc,
+    DateTimeOffset? TriagemFinishedAtUtc,
+    WarrantyEstimateResponse WarrantyEstimate,
+    string? NotaFiscalNumero,
+    string? NotaFiscalSerie,
+    TriagemLlmUsageResponse LlmUsage);
 
 public sealed record WorkOrderHistoryEntryResponse(string Status, DateTimeOffset CreatedAt);

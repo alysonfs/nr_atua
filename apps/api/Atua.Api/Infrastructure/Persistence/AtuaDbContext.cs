@@ -473,6 +473,9 @@ public sealed class AtuaDbContext(DbContextOptions<AtuaDbContext> options) : DbC
         // Checklist mínimo (metadados apenas — ver resumo da classe acima).
         builder.Property(triagem => triagem.DescricaoDefeito).HasMaxLength(4_000);
         builder.Property(triagem => triagem.NotaFiscalLegivel).IsRequired();
+        builder.Property(triagem => triagem.NumeroNotaFiscal).HasMaxLength(64);
+        builder.Property(triagem => triagem.SerieNotaFiscal).HasMaxLength(16);
+        builder.Property(triagem => triagem.DataEmissaoNotaFiscal);
         builder.Property(triagem => triagem.EtiquetaModelo).HasMaxLength(256);
         builder.Property(triagem => triagem.EtiquetaSerie).HasMaxLength(256);
         builder.Property(triagem => triagem.MidiaDefeitoTipo).HasConversion<string>().HasMaxLength(16);
@@ -763,6 +766,9 @@ public sealed class AtuaDbContext(DbContextOptions<AtuaDbContext> options) : DbC
         builder.Property(media => media.VisionModelo).HasMaxLength(128);
         builder.Property(media => media.VisionNumeroSerie).HasMaxLength(128);
         builder.Property(media => media.VisionConfianca);
+        builder.Property(media => media.VisionNotaFiscalNumero).HasMaxLength(64);
+        builder.Property(media => media.VisionNotaFiscalSerie).HasMaxLength(16);
+        builder.Property(media => media.VisionNotaFiscalDataEmissao);
         builder.Property(media => media.VisionClassifiedAtUtc);
 
         builder.HasIndex(media => new { media.TenantId, media.ChannelIdempotencyKey })

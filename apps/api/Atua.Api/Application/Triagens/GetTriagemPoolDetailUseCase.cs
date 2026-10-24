@@ -1,8 +1,11 @@
+using Atua.Api.Application.LlmUsage;
+using Atua.Api.Application.LlmUsage.Contracts;
 using Atua.Api.Application.Triagens.Contracts;
 using Atua.Api.Domain.Tenants;
 using Atua.Api.Domain.Triagens;
 using Atua.Api.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 
 namespace Atua.Api.Application.Triagens;
 
@@ -13,6 +16,9 @@ namespace Atua.Api.Application.Triagens;
 public sealed class GetTriagemPoolDetailUseCase(
     AtuaDbContext dbContext,
     ITriagemInboundMediaStorage mediaStorage,
+    ITriagemLlmUsageByTriagemQuery llmUsageByTriagemQuery,
+    TriagemLlmPricingCatalog pricingCatalog,
+    IOptions<TriagemLlmConversationOptions> conversationOptions,
     TimeProvider timeProvider) : IGetTriagemPoolDetailUseCase
 {
     /// <summary>Validade do link pré-assinado de cada anexo (tempo suficiente para abrir o painel sem reemitir a cada render).</summary>
@@ -82,6 +88,12 @@ public sealed class GetTriagemPoolDetailUseCase(
 
         var conversation = BuildConversation(outboundCommands, inboundMessages, inboundMedia);
 
+        var llmUsageRows = await llmUsageByTriagemQuery.ExecuteAsync([triagemId], cancellationToken);
+        var llmUsage = TriagemLlmCostSummaryCalculator.Build(llmUsageRows, pricingCatalog);
+
+        var warrantyEstimate = WarrantyEstimateCalculator.Calculate(
+            triagem.DataEmissaoNotaFiscal, conversationOptions.Value.GarantiaPadraoMeses, now);
+
         var detail = new TriagemPoolDetailView(
             triagem.Id,
             triagem.Status,
@@ -92,6 +104,10 @@ public sealed class GetTriagemPoolDetailUseCase(
             triagem.WorkOrderId,
             triagem.CreatedAtUtc,
             triagem.ColetaEncerradaEmUtc,
+            warrantyEstimate,
+            triagem.NumeroNotaFiscal,
+            triagem.SerieNotaFiscal,
+            llmUsage,
             new TriagemPoolWorkOrderView(
                 triagem.WorkOrderId,
                 workOrder?.WorkOrderProviderNo,

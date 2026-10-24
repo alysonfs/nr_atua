@@ -117,6 +117,15 @@ public sealed class TriagemInboundMedia
 
     public double? VisionConfianca { get; private set; }
 
+    /// <summary>Número da nota fiscal — só preenchido quando <see cref="VisionTipoDetectado"/> é <see cref="ETriagemAttachmentVisionTipo.NotaFiscal"/> e legível (incremento de garantia).</summary>
+    public string? VisionNotaFiscalNumero { get; private set; }
+
+    /// <summary>Série da nota fiscal — mesma origem e condição de <see cref="VisionNotaFiscalNumero"/>.</summary>
+    public string? VisionNotaFiscalSerie { get; private set; }
+
+    /// <summary>Data de emissão da nota fiscal — mesma origem e condição de <see cref="VisionNotaFiscalNumero"/>; base do indicador de garantia calculado na leitura.</summary>
+    public DateTimeOffset? VisionNotaFiscalDataEmissao { get; private set; }
+
     /// <summary>Presente somente após uma classificação concluída com sucesso pelo fornecedor — marcador de idempotência.</summary>
     public DateTimeOffset? VisionClassifiedAtUtc { get; private set; }
 
@@ -133,13 +142,19 @@ public sealed class TriagemInboundMedia
         string? modelo,
         string? numeroSerie,
         double confianca,
-        DateTimeOffset now)
+        DateTimeOffset now,
+        string? numeroNotaFiscal = null,
+        string? serieNotaFiscal = null,
+        DateTimeOffset? dataEmissaoNotaFiscal = null)
     {
         VisionTipoDetectado = tipo;
         VisionLegivel = legivel;
         VisionModelo = string.IsNullOrWhiteSpace(modelo) ? null : modelo.Trim();
         VisionNumeroSerie = string.IsNullOrWhiteSpace(numeroSerie) ? null : numeroSerie.Trim();
         VisionConfianca = confianca;
+        VisionNotaFiscalNumero = string.IsNullOrWhiteSpace(numeroNotaFiscal) ? null : numeroNotaFiscal.Trim();
+        VisionNotaFiscalSerie = string.IsNullOrWhiteSpace(serieNotaFiscal) ? null : serieNotaFiscal.Trim();
+        VisionNotaFiscalDataEmissao = dataEmissaoNotaFiscal;
         VisionClassifiedAtUtc = now;
     }
 }

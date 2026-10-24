@@ -168,7 +168,8 @@ public sealed class ClassifyTriagemAttachmentsUseCase(
 
         media.RegistrarClassificacaoVisao(
             result.Payload.Tipo, result.Payload.Legivel, result.Payload.Modelo, result.Payload.NumeroSerie,
-            result.Payload.Confianca, now);
+            result.Payload.Confianca, now, result.Payload.NumeroNotaFiscal, result.Payload.SerieNotaFiscal,
+            result.Payload.DataEmissaoNotaFiscal);
         return true;
     }
 
@@ -194,7 +195,9 @@ public sealed class ClassifyTriagemAttachmentsUseCase(
             switch (media.VisionTipoDetectado)
             {
                 case ETriagemAttachmentVisionTipo.NotaFiscal when !triagem.NotaFiscalLegivel:
-                    triagem.RegistrarNotaFiscalLegivel(now);
+                    triagem.RegistrarNotaFiscalLegivel(
+                        now, media.VisionNotaFiscalNumero, media.VisionNotaFiscalSerie,
+                        media.VisionNotaFiscalDataEmissao);
                     break;
 
                 case ETriagemAttachmentVisionTipo.Etiqueta

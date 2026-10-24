@@ -83,12 +83,57 @@ internal static class TriagemAttachmentVisionToolResultParser
             numeroSerie = numeroSerieDoc.AsString();
         }
 
+        string? numeroNotaFiscal = null;
+        if (root.TryGetValue("numeroNotaFiscal", out var numeroNotaFiscalDoc) && !numeroNotaFiscalDoc.IsNull())
+        {
+            if (!numeroNotaFiscalDoc.IsString())
+            {
+                error = "campo 'numeroNotaFiscal' não é texto";
+                return false;
+            }
+
+            numeroNotaFiscal = numeroNotaFiscalDoc.AsString();
+        }
+
+        string? serieNotaFiscal = null;
+        if (root.TryGetValue("serieNotaFiscal", out var serieNotaFiscalDoc) && !serieNotaFiscalDoc.IsNull())
+        {
+            if (!serieNotaFiscalDoc.IsString())
+            {
+                error = "campo 'serieNotaFiscal' não é texto";
+                return false;
+            }
+
+            serieNotaFiscal = serieNotaFiscalDoc.AsString();
+        }
+
+        DateTimeOffset? dataEmissaoNotaFiscal = null;
+        if (root.TryGetValue("dataEmissaoNotaFiscal", out var dataEmissaoDoc) && !dataEmissaoDoc.IsNull())
+        {
+            if (!dataEmissaoDoc.IsString())
+            {
+                error = "campo 'dataEmissaoNotaFiscal' não é texto";
+                return false;
+            }
+
+            if (!DateOnly.TryParse(dataEmissaoDoc.AsString(), out var dataEmissao))
+            {
+                error = $"campo 'dataEmissaoNotaFiscal' em formato inválido: '{dataEmissaoDoc.AsString()}'";
+                return false;
+            }
+
+            dataEmissaoNotaFiscal = new DateTimeOffset(dataEmissao.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero);
+        }
+
         payload = new TriagemAttachmentVisionPayload(
             tipo,
             legivelDoc.AsBool(),
             string.IsNullOrWhiteSpace(modelo) ? null : modelo,
             string.IsNullOrWhiteSpace(numeroSerie) ? null : numeroSerie,
-            confianca);
+            confianca,
+            string.IsNullOrWhiteSpace(numeroNotaFiscal) ? null : numeroNotaFiscal,
+            string.IsNullOrWhiteSpace(serieNotaFiscal) ? null : serieNotaFiscal,
+            dataEmissaoNotaFiscal);
         return true;
     }
 }

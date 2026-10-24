@@ -137,7 +137,10 @@ public static class TriagemPoolEndpoints
                 item.EnteredPoolAtUtc,
                 item.HasNewActivity,
                 item.StartedAtUtc,
-                item.FinishedAtUtc))
+                item.FinishedAtUtc,
+                new TriagemLlmUsageResponse(
+                    item.LlmUsage.Calls, item.LlmUsage.InputTokens, item.LlmUsage.OutputTokens,
+                    item.LlmUsage.EstimatedCostUsd)))
             .ToArray());
 
     private static TriagemPoolDetailResponse ToResponse(TriagemPoolDetailView detail) =>
@@ -151,6 +154,14 @@ public static class TriagemPoolEndpoints
             detail.WorkOrderId,
             detail.StartedAtUtc,
             detail.FinishedAtUtc,
+            new WarrantyEstimateResponse(
+                detail.WarrantyEstimate.Status.ToString(), detail.WarrantyEstimate.BaseDate,
+                detail.WarrantyEstimate.DefaultMonths),
+            detail.NotaFiscalNumero,
+            detail.NotaFiscalSerie,
+            new TriagemLlmUsageResponse(
+                detail.LlmUsage.Calls, detail.LlmUsage.InputTokens, detail.LlmUsage.OutputTokens,
+                detail.LlmUsage.EstimatedCostUsd),
             new TriagemPoolWorkOrderResponse(
                 detail.WorkOrder.WorkOrderId,
                 detail.WorkOrder.WorkOrderProviderNo,
@@ -193,7 +204,8 @@ public sealed record TriagemPoolListItemResponse(
     DateTimeOffset EnteredPoolAtUtc,
     bool HasNewActivity,
     DateTimeOffset StartedAtUtc,
-    DateTimeOffset? FinishedAtUtc);
+    DateTimeOffset? FinishedAtUtc,
+    TriagemLlmUsageResponse LlmUsage);
 
 public sealed record TriagemPoolDetailResponse(
     Guid TriagemId,
@@ -205,10 +217,18 @@ public sealed record TriagemPoolDetailResponse(
     Guid WorkOrderId,
     DateTimeOffset StartedAtUtc,
     DateTimeOffset? FinishedAtUtc,
+    WarrantyEstimateResponse WarrantyEstimate,
+    string? NotaFiscalNumero,
+    string? NotaFiscalSerie,
+    TriagemLlmUsageResponse LlmUsage,
     TriagemPoolWorkOrderResponse WorkOrder,
     IReadOnlyList<TriagemPoolChecklistItemResponse> Checklist,
     IReadOnlyList<TriagemPoolAttachmentResponse> Attachments,
     IReadOnlyList<TriagemPoolConversationEntryResponse> Conversation);
+
+public sealed record WarrantyEstimateResponse(string Status, DateTimeOffset? BaseDate, int DefaultMonths);
+
+public sealed record TriagemLlmUsageResponse(int Calls, long InputTokens, long OutputTokens, decimal EstimatedCostUsd);
 
 public sealed record TriagemPoolWorkOrderResponse(
     Guid WorkOrderId,

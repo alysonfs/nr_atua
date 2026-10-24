@@ -69,6 +69,17 @@ public sealed class TriagemLlmConversationOptions
     public int ProcessingNoticeDelayMs { get; init; } = 2000;
 
     /// <summary>
+    /// Prazo padrão (em meses) usado para estimar o indicador de garantia a
+    /// partir da data de emissão da nota fiscal (decisão do PO — estimativa
+    /// provisória e global, calculada sempre na leitura; nunca persistida).
+    /// No futuro este prazo será substituído por um prazo configurável por
+    /// produto e por empresa — até lá, só a data de emissão é persistida
+    /// (<see cref="Domain.Triagens.Triagem.DataEmissaoNotaFiscal"/>) e o
+    /// status é recalculado a cada leitura com este valor. Padrão 12 meses.
+    /// </summary>
+    public int GarantiaPadraoMeses { get; init; } = 12;
+
+    /// <summary>
     /// Verifica se a triagem informada está dentro do escopo restrito do
     /// loop conversacional (plano M2 — "restrito a número de teste").
     /// Compara telefones só pelos dígitos (mesma normalização de

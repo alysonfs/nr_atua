@@ -1,3 +1,5 @@
+using Atua.Api.Application.LlmUsage;
+using Atua.Api.Application.LlmUsage.Contracts;
 using Atua.Api.Application.Triagens.Contracts;
 using Atua.Api.Domain.Triagens;
 using Atua.Api.Infrastructure.Persistence;
@@ -10,7 +12,10 @@ namespace Atua.Api.Application.Triagens;
 /// da Master API (mesmo padrão de leitura dos demais query handlers — ver
 /// <c>Atua.Api.Application.WorkOrders.WorkOrderListByStatusQueryHandler</c>).
 /// </summary>
-public sealed class ListTriagemPoolUseCase(AtuaDbContext dbContext) : IListTriagemPoolUseCase
+public sealed class ListTriagemPoolUseCase(
+    AtuaDbContext dbContext,
+    ITriagemLlmUsageByTriagemQuery llmUsageByTriagemQuery,
+    TriagemLlmPricingCatalog pricingCatalog) : IListTriagemPoolUseCase
 {
     public async Task<TriagemPoolListResult> ExecuteAsync(TriagemPoolListQuery query,
         CancellationToken cancellationToken)
@@ -62,11 +67,15 @@ public sealed class ListTriagemPoolUseCase(AtuaDbContext dbContext) : IListTriag
 
         var lastActivityByTriagemId = await GetLastConsumerActivityAsync(triagemIds, cancellationToken);
 
+        var llmUsageRows = await llmUsageByTriagemQuery.ExecuteAsync(triagemIds, cancellationToken);
+        var llmUsageByTriagemId = TriagemLlmCostSummaryCalculator.BuildByTriagemId(llmUsageRows, pricingCatalog);
+
         var items = rows.Select(row =>
         {
             workOrders.TryGetValue(row.WorkOrderId, out var workOrder);
             lastActivityByTriagemId.TryGetValue(row.Id, out var lastActivityAtUtc);
             var hasNewActivity = lastActivityAtUtc != default && lastActivityAtUtc > row.UpdatedAtUtc;
+            var llmUsage = llmUsageByTriagemId.TryGetValue(row.Id, out var usage) ? usage : TriagemLlmCostSummary.Zero;
 
             return new TriagemPoolListItem(
                 row.Id,
@@ -81,7 +90,8 @@ public sealed class ListTriagemPoolUseCase(AtuaDbContext dbContext) : IListTriag
                 row.UpdatedAtUtc,
                 hasNewActivity,
                 row.CreatedAtUtc,
-                row.ColetaEncerradaEmUtc);
+                row.ColetaEncerradaEmUtc,
+                llmUsage);
         }).ToArray();
 
         return new TriagemPoolListResult(ETriagemPoolListOutcome.Success, items.Length, items);

@@ -34,6 +34,10 @@ internal static class TriagemAttachmentVisionPromptBuilder
         "Quando o tipo for Etiqueta e a imagem for legível, preencha `modelo` e `numeroSerie` exatamente " +
         "como aparecem na etiqueta — nunca invente ou complete valores que não estejam visíveis. Quando " +
         "não for possível ler um desses dois campos, defina `legivel` como falso e deixe os campos vazios.\n\n" +
+        "Quando o tipo for NotaFiscal e o anexo for legível, preencha `numeroNotaFiscal`, `serieNotaFiscal` " +
+        "e `dataEmissaoNotaFiscal` (no formato AAAA-MM-DD) exatamente como aparecem na nota fiscal — nunca " +
+        "invente ou complete valores que não estejam visíveis. Quando não for possível ler a data de " +
+        "emissão, defina `legivel` como falso e deixe os campos vazios.\n\n" +
         "`confianca` é um número entre 0 e 1 que reflete o quanto você tem certeza da classificação acima.";
 
     public static string BuildToolDescription() =>

@@ -302,6 +302,7 @@ var llmPricingEntries = builder.Configuration.GetSection(TriagemLlmPricingCatalo
     .Get<List<TriagemLlmModelPricing>>();
 builder.Services.AddSingleton(new TriagemLlmPricingCatalog(llmPricingEntries));
 builder.Services.AddScoped<ITriagemLlmUsageAggregateQuery, TriagemLlmUsageAggregateQueryHandler>();
+builder.Services.AddScoped<ITriagemLlmUsageByTriagemQuery, TriagemLlmUsageByTriagemQueryHandler>();
 builder.Services.AddScoped<IGetLlmUsageSummaryUseCase, GetLlmUsageSummaryUseCase>();
 
 // Plano M2: loop conversacional da LLM dentro da Master API, sem worker

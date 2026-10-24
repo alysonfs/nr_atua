@@ -35,17 +35,21 @@ public sealed record TriagemAttachmentVisionRequest(
 
 /// <summary>
 /// Saída estruturada da classificação: tipo detectado, legibilidade e,
-/// quando aplicável, modelo/número de série da etiqueta. A regra
-/// determinística de qual item do checklist é marcado como atendido vive no
-/// domínio/serviço que consome este resultado — o adaptador nunca decide
-/// isso sozinho.
+/// quando aplicável, modelo/número de série da etiqueta ou
+/// número/série/data de emissão da nota fiscal (incremento de garantia). A
+/// regra determinística de qual item do checklist é marcado como atendido
+/// vive no domínio/serviço que consome este resultado — o adaptador nunca
+/// decide isso sozinho.
 /// </summary>
 public sealed record TriagemAttachmentVisionPayload(
     ETriagemAttachmentVisionTipo Tipo,
     bool Legivel,
     string? Modelo,
     string? NumeroSerie,
-    double Confianca);
+    double Confianca,
+    string? NumeroNotaFiscal = null,
+    string? SerieNotaFiscal = null,
+    DateTimeOffset? DataEmissaoNotaFiscal = null);
 
 /// <summary>
 /// Resultado de uma chamada a <see cref="ITriagemAttachmentVisionClient"/>.

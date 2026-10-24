@@ -660,6 +660,9 @@ namespace Atua.Api.Infrastructure.Persistence.Migrations
                     b.Property<DateTimeOffset>("CreatedAtUtc")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<DateTimeOffset?>("DataEmissaoNotaFiscal")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<string>("DescricaoDefeito")
                         .HasMaxLength(4000)
                         .HasColumnType("character varying(4000)");
@@ -693,9 +696,17 @@ namespace Atua.Api.Infrastructure.Persistence.Migrations
                     b.Property<bool>("NotaFiscalLegivel")
                         .HasColumnType("boolean");
 
+                    b.Property<string>("NumeroNotaFiscal")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
                     b.Property<string>("PontoReferencia")
                         .HasMaxLength(1000)
                         .HasColumnType("character varying(1000)");
+
+                    b.Property<string>("SerieNotaFiscal")
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
 
                     b.Property<string>("Status")
                         .IsRequired()
@@ -937,6 +948,17 @@ namespace Atua.Api.Infrastructure.Persistence.Migrations
                     b.Property<string>("VisionModelo")
                         .HasMaxLength(128)
                         .HasColumnType("character varying(128)");
+
+                    b.Property<DateTimeOffset?>("VisionNotaFiscalDataEmissao")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("VisionNotaFiscalNumero")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("VisionNotaFiscalSerie")
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
 
                     b.Property<string>("VisionNumeroSerie")
                         .HasMaxLength(128)
