@@ -10,7 +10,7 @@ namespace Atua.Api.Tests;
 /// são mantidas em uma lista única (sem tracking real de EF Core), mas as
 /// mutações aplicadas pelo caso de uso via
 /// <see cref="TriagemInboundMedia.RegistrarClassificacaoVisao"/> são sobre
-/// as mesmas instâncias devolvidas por <see cref="FindImageMediaAsync"/>.
+/// as mesmas instâncias devolvidas por <see cref="FindClassifiableMediaAsync"/>.
 /// </summary>
 internal sealed class FakeTriagemAttachmentVisionRepository : ITriagemAttachmentVisionRepository
 {
@@ -20,11 +20,15 @@ internal sealed class FakeTriagemAttachmentVisionRepository : ITriagemAttachment
 
     public void Add(TriagemInboundMedia item) => media.Add(item);
 
-    public Task<IReadOnlyList<TriagemInboundMedia>> FindImageMediaAsync(Guid triagemId, CancellationToken cancellationToken)
+    public Task<IReadOnlyList<TriagemInboundMedia>> FindClassifiableMediaAsync(Guid triagemId, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         IReadOnlyList<TriagemInboundMedia> result =
-            media.Where(item => item.TriagemId == triagemId && item.MediaKind == ETriagemInboundMediaKind.Image).ToList();
+            media.Where(item => item.TriagemId == triagemId
+                && (item.MediaKind == ETriagemInboundMediaKind.Image
+                    || (item.MediaKind == ETriagemInboundMediaKind.Document && item.ContentType == "application/pdf"))
+                && (item.Outcome == ETriagemInboundMediaOutcome.ColetaIniciada
+                    || item.Outcome == ETriagemInboundMediaOutcome.Armazenada)).ToList();
         return Task.FromResult(result);
     }
 

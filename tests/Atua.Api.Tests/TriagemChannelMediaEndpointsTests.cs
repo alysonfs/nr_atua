@@ -38,6 +38,88 @@ public class TriagemChannelMediaEndpointsTests
 
     private const string SenderPhone = "5511999991234";
 
+    [Theory]
+    [InlineData("image/jpeg", ETriagemAttachmentVisionTipo.Outro, true, false)]
+    [InlineData("image/jpeg", ETriagemAttachmentVisionTipo.NotaFiscal, true, true)]
+    [InlineData("image/jpeg", ETriagemAttachmentVisionTipo.NotaFiscal, false, false)]
+    [InlineData("application/pdf", ETriagemAttachmentVisionTipo.NotaFiscal, true, true)]
+    [InlineData("application/pdf", ETriagemAttachmentVisionTipo.NotaFiscal, false, false)]
+    [InlineData("application/pdf", ETriagemAttachmentVisionTipo.Outro, true, false)]
+    public async Task IngestMedia_Elegivel_ClassificaERespondeSemDuplicar(
+        string contentType, ETriagemAttachmentVisionTipo tipo, bool legivel, bool notaFiscalAtendida)
+    {
+        var tenantId = Guid.NewGuid();
+        var vision = new FakeTriagemAttachmentVisionClient();
+        vision.EnqueueResult(TriagemAttachmentVisionResult.Success(
+            new TriagemAttachmentVisionPayload(tipo, legivel, null, null, 0.95),
+            new TriagemLlmUsageInfo("visao-teste", 150, 10, TimeSpan.FromMilliseconds(50))));
+        var (app, databaseName, storage) = await CreateApplicationAsync(tenantId, vision);
+        await using var appDisposable = app;
+        var seed = await SeedContactStartedTriageAsync(databaseName, "+" + SenderPhone, tenantId);
+        var client = CreateClient(app, tenantId, seed.IntegrationId,
+            ServiceCredentialAuthenticationHandler.ChannelMediaIngestScope);
+        var bytes = BuildSyntheticMediaBytes(contentType);
+        var metadata = CreatePdfMetadata("anexo-turno", "anexo-turno-idem") with
+        {
+            MediaKind = contentType == "application/pdf" ? "document" : "image",
+            ContentType = contentType,
+            SizeBytes = bytes.LongLength,
+            Sha256 = Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(bytes)),
+            Caption = "Mostra onde está pingando",
+        };
+
+        var response = await client.PostAsync("/api/internal/triagens/canal/midias",
+            BuildMultipartContent(metadata, bytes));
+        var replay = await client.PostAsync("/api/internal/triagens/canal/midias",
+            BuildMultipartContent(metadata, bytes));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, replay.StatusCode);
+        Assert.Single(storage.Objects);
+        Assert.Single(vision.Requests);
+        await using var context = CreateContext(databaseName);
+        var stored = await context.TriagemInboundMedia.SingleAsync();
+        Assert.Equal(stored.Id, vision.Requests[0].MediaId);
+        Assert.NotNull(stored.VisionClassifiedAtUtc);
+        var triagem = await context.Triagens.SingleAsync();
+        Assert.Equal(notaFiscalAtendida, triagem.NotaFiscalLegivel);
+        Assert.Equal(ETriagemStatus.EmColeta, triagem.Status);
+        Assert.Single(await context.TriagemChannelCommands
+            .Where(command => command.Kind == ETriagemChannelCommandKind.RespostaLlm).ToListAsync());
+        Assert.Equal(2, await context.TriagemLlmUsages.CountAsync());
+        Assert.Empty(await context.TriagemInboundMessages.ToListAsync());
+        var conversation = await new TriagemLlmConversationContextRepository(context)
+            .LoadAsync(tenantId, seed.TriagemId, seed.WorkOrderId, CancellationToken.None);
+        Assert.Contains(conversation.HistoricoConversa, turn =>
+            turn.Role == ETriagemLlmConversationRole.Consumidor
+            && turn.Texto.Contains("[Anexo recebido:")
+            && turn.Texto.Contains(metadata.Caption!));
+    }
+
+    [Fact]
+    public async Task IngestMedia_FalhaDaVisao_ContinuaConversaSemValidarNotaFiscal()
+    {
+        var tenantId = Guid.NewGuid();
+        var vision = new FakeTriagemAttachmentVisionClient();
+        vision.EnqueueResult(TriagemAttachmentVisionResult.Unavailable("documento inválido ou indisponibilidade"));
+        var (app, databaseName, _) = await CreateApplicationAsync(tenantId, vision);
+        await using var appDisposable = app;
+        var seed = await SeedContactStartedTriageAsync(databaseName, "+" + SenderPhone, tenantId);
+        var client = CreateClient(app, tenantId, seed.IntegrationId,
+            ServiceCredentialAuthenticationHandler.ChannelMediaIngestScope);
+
+        var response = await client.PostAsync("/api/internal/triagens/canal/midias",
+            BuildMultipartContent(CreatePdfMetadata("pdf-invalido", "idem-pdf-invalido")));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        await using var context = CreateContext(databaseName);
+        Assert.False((await context.Triagens.SingleAsync()).NotaFiscalLegivel);
+        Assert.Null((await context.TriagemInboundMedia.SingleAsync()).VisionClassifiedAtUtc);
+        Assert.Single(await context.TriagemChannelCommands
+            .Where(command => command.Kind == ETriagemChannelCommandKind.RespostaLlm).ToListAsync());
+        Assert.Equal(2, await context.TriagemLlmUsages.CountAsync());
+    }
+
     [Fact]
     public async Task IngestMedia_UmaTriagemEmContatoIniciado_ArmazenaEIniciaColeta()
     {
@@ -113,9 +195,11 @@ public class TriagemChannelMediaEndpointsTests
     [Fact]
     public async Task IngestMedia_TriagemForaDeContatoIniciadoOuEmColeta_ArmazenaSemTransicionar()
     {
-        var (app, databaseName, storage) = await CreateApplicationAsync();
+        var tenantId = Guid.NewGuid();
+        var vision = new FakeTriagemAttachmentVisionClient();
+        var (app, databaseName, storage) = await CreateApplicationAsync(tenantId, vision);
         await using var appDisposable = app;
-        var seed = await SeedContactStartedTriageAsync(databaseName, "+5511999991234");
+        var seed = await SeedContactStartedTriageAsync(databaseName, "+5511999991234", tenantId);
         await using (var seedContext = CreateContext(databaseName))
         {
             var triagem = await seedContext.Triagens.SingleAsync(t => t.Id == seed.TriagemId);
@@ -140,6 +224,8 @@ public class TriagemChannelMediaEndpointsTests
         Assert.Equal(ETriagemStatus.Expirada,
             (await context.Triagens.SingleAsync(t => t.Id == seed.TriagemId)).Status);
         Assert.Single(storage.Objects);
+        Assert.Empty(vision.Requests);
+        Assert.Empty(await context.TriagemLlmUsages.ToListAsync());
     }
 
     [Fact]
@@ -414,7 +500,7 @@ public class TriagemChannelMediaEndpointsTests
     // -------------------------------------------------------------------
 
     private static async Task<(WebApplication App, string DatabaseName, FakeTriagemInboundMediaStorage Storage)>
-        CreateApplicationAsync()
+        CreateApplicationAsync(Guid? eligibleTenantId = null, FakeTriagemAttachmentVisionClient? visionClient = null)
     {
         var builder = WebApplication.CreateBuilder();
         builder.WebHost.UseTestServer();
@@ -442,17 +528,19 @@ public class TriagemChannelMediaEndpointsTests
         builder.Services.AddSingleton<ITriagemLlmClient, FakeTriagemLlmClient>();
         builder.Services.AddSingleton<ITriagemLlmResponseVerifier, TriagemLlmResponseVerifier>();
         builder.Services.AddScoped<ITriagemLlmUsageRepository, TriagemLlmUsageRepository>();
-        // Classificação de visão de anexos (decisão do PO): registrada, mas
-        // inerte nestes testes de ingestão de mídia (não exercitam o loop
-        // conversacional). Reaproveita o mesmo storage fake singleton acima.
-        builder.Services.AddSingleton<ITriagemAttachmentVisionClient, FakeTriagemAttachmentVisionClient>();
+        builder.Services.AddSingleton<ITriagemAttachmentVisionClient>(
+            visionClient ?? new FakeTriagemAttachmentVisionClient());
         builder.Services.AddScoped<ITriagemAttachmentVisionRepository, TriagemAttachmentVisionRepository>();
         builder.Services.AddScoped<IClassifyTriagemAttachmentsUseCase, ClassifyTriagemAttachmentsUseCase>();
-        builder.Services.AddSingleton<ITriagemLlmConversationContextRepository,
-            FakeTriagemLlmConversationContextRepository>();
+        builder.Services.AddScoped<ITriagemLlmConversationContextRepository, TriagemLlmConversationContextRepository>();
         builder.Services.AddSingleton<ITriagemLlmRetryDelay, FakeTriagemLlmRetryDelay>();
         builder.Services.AddSingleton(
-            Microsoft.Extensions.Options.Options.Create(new TriagemLlmConversationOptions()));
+            Microsoft.Extensions.Options.Options.Create(new TriagemLlmConversationOptions
+            {
+                ConversationEnabled = eligibleTenantId is not null,
+                AllowedTenantIds = eligibleTenantId is { } tenantId ? [tenantId] : [],
+                AllowedPhones = [SenderPhone],
+            }));
         builder.Services.AddSingleton(
             Microsoft.Extensions.Options.Options.Create(new TriagemChannelOptions { LeaseSeconds = 60 }));
         builder.Services.AddAuthentication("Test")
@@ -573,6 +661,7 @@ public class TriagemChannelMediaEndpointsTests
     private static byte[] BuildSyntheticMediaBytes(string contentType) => contentType switch
     {
         "application/pdf" => BuildPdfBytes(16),
+        "image/jpeg" => [0xFF, 0xD8, 0xFF, 0xD9],
         "audio/ogg" => Encoding.ASCII.GetBytes("OggS\0\0\0\0"),
         "video/mp4" => [0, 0, 0, 0, (byte)'f', (byte)'t', (byte)'y', (byte)'p', (byte)'i', (byte)'s', (byte)'o', (byte)'m'],
         _ => throw new ArgumentOutOfRangeException(nameof(contentType), contentType, "Tipo de mídia sintética não suportado."),

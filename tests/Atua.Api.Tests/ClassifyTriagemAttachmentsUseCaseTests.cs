@@ -29,7 +29,7 @@ public class ClassifyTriagemAttachmentsUseCaseTests
         FakeTriagemAttachmentVisionClient VisionClient,
         FakeTriagemLlmUsageRepository UsageRepository);
 
-    private static Fixture CreateFixture()
+    private static Fixture CreateFixture(int maxCalls = 20)
     {
         var mediaRepository = new FakeTriagemAttachmentVisionRepository();
         var storage = new FakeTriagemInboundMediaStorage();
@@ -41,6 +41,10 @@ public class ClassifyTriagemAttachmentsUseCaseTests
             storage,
             visionClient,
             usageRepository,
+            Microsoft.Extensions.Options.Options.Create(new TriagemLlmConversationOptions
+            {
+                MaxLlmCallsPerTriagem = maxCalls,
+            }),
             new FakeTimeProvider(Now),
             NullLogger<ClassifyTriagemAttachmentsUseCase>.Instance);
 
@@ -71,6 +75,48 @@ public class ClassifyTriagemAttachmentsUseCaseTests
         new(ETriagemAttachmentVisionTipo.Etiqueta, Legivel: true, modelo, serie, Confianca: 0.9);
 
     private static TriagemLlmUsageInfo Usage() => new("modelo-visao-teste", 50, 10, TimeSpan.FromMilliseconds(200));
+
+    [Fact]
+    public async Task ClassifyPendingAsync_PdfAcimaDoLimite_FicaPendenteSemCusto()
+    {
+        var fixture = CreateFixture();
+        var tenantId = Guid.NewGuid();
+        var triagemId = Guid.NewGuid();
+        var triagem = CriarTriagemEmColeta(tenantId, triagemId);
+        var media = CriarMidiaImagem(tenantId, triagemId, ETriagemInboundMediaKind.Document,
+            "application/pdf", ClassifyTriagemAttachmentsUseCase.MaxPdfBytes + 1);
+        fixture.MediaRepository.Add(media);
+
+        await fixture.UseCase.ClassifyPendingAsync(tenantId, triagem, CancellationToken.None);
+
+        Assert.Empty(fixture.VisionClient.Requests);
+        Assert.Empty(fixture.UsageRepository.Records);
+        Assert.Null(media.VisionClassifiedAtUtc);
+        Assert.False(triagem.NotaFiscalLegivel);
+    }
+
+    [Fact]
+    public async Task ClassifyPendingAsync_VariosAnexos_RespeitaOrcamentoEReservaResposta()
+    {
+        var fixture = CreateFixture(maxCalls: 2);
+        var tenantId = Guid.NewGuid();
+        var triagemId = Guid.NewGuid();
+        var triagem = CriarTriagemEmColeta(tenantId, triagemId);
+        for (var index = 0; index < 2; index++)
+        {
+            var media = CriarMidiaImagem(tenantId, triagemId, ETriagemInboundMediaKind.Document, "application/pdf");
+            fixture.MediaRepository.Add(media);
+            await fixture.Storage.PutIfAbsentAsync(new TriagemInboundMediaStorageKey(tenantId, media.Id),
+                new MemoryStream([1, 2, 3]), "application/pdf", 3, CancellationToken.None);
+        }
+        fixture.VisionClient.EnqueueResult(TriagemAttachmentVisionResult.Success(NotaFiscalLegivel(), Usage()));
+
+        await fixture.UseCase.ClassifyPendingAsync(tenantId, triagem, CancellationToken.None);
+
+        Assert.Single(fixture.VisionClient.Requests);
+        Assert.Single(fixture.UsageRepository.Records);
+        Assert.True(triagem.NotaFiscalLegivel);
+    }
 
     [Fact]
     public async Task ClassifyPendingAsync_NotaFiscalLegivel_MarcaItemDoChecklist()

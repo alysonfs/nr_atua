@@ -94,7 +94,11 @@ public class TriagemLlmConversationServiceTests
     [Fact]
     public async Task ConductAsync_FluxoFeliz_AplicaItensAtendidosEALiberaAoPoolQuandoChecklistCompleto()
     {
-        var fixture = CreateFixture(seedChecklist: SeedEtiquetaEMidia);
+        var fixture = CreateFixture(seedChecklist: triagem =>
+        {
+            SeedEtiquetaEMidia(triagem);
+            triagem.RegistrarNotaFiscalLegivel(Now);
+        });
         fixture.LlmClient.EnqueueResult(TriagemLlmResult.Success(
             new TriagemLlmSuccessPayload(
                 "Obrigado! Recebemos todas as informações necessárias para seguir com a sua triagem.",
@@ -124,6 +128,26 @@ public class TriagemLlmConversationServiceTests
 
         Assert.Single(fixture.UsageRepository.Records);
         Assert.Equal(ETriagemLlmOutcome.Success, fixture.UsageRepository.Records[0].Outcome);
+    }
+
+    [Fact]
+    public async Task ConductAsync_NotaFiscalPropostaSomentePorTexto_NaoValidaDocumento()
+    {
+        var fixture = CreateFixture();
+        fixture.LlmClient.EnqueueResult(TriagemLlmResult.Success(
+            new TriagemLlmSuccessPayload(
+                "Pode enviar a nota fiscal?",
+                new TriagemLlmCamposEstruturados(null, null, null, null),
+                [new TriagemLlmItemAtendido(ETriagemChecklistItem.NotaFiscal, "Já enviei a nota fiscal")],
+                new TriagemLlmSinalDesvio(false, null)),
+            new TriagemLlmUsageInfo("teste", 10, 5, TimeSpan.Zero)));
+
+        await fixture.Service.ConductAsync(fixture.TenantId, fixture.TriagemId, Guid.NewGuid(),
+            "+5584994241248", CancellationToken.None);
+
+        var triagem = await fixture.TriagemRepository.FindByIdAsync(fixture.TriagemId, CancellationToken.None);
+        Assert.False(triagem!.NotaFiscalLegivel);
+        Assert.Equal(ETriagemStatus.EmColeta, triagem.Status);
     }
 
     [Fact]
