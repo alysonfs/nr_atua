@@ -137,6 +137,90 @@ A conferência humana pelo operador no painel C2 continua obrigatória antes
 de qualquer decisão que dependa desses dados; a marcação automática do
 checklist acelera a triagem, mas não substitui essa conferência.
 
+### 3.1 Dados da nota fiscal e estimativa de garantia
+
+Quando a visão computacional classifica um anexo como nota fiscal legível,
+ela também tenta extrair **número**, **série** e **data de emissão** do
+documento (mesma chamada ao Bedrock da classificação; nenhuma chamada
+extra). Esses três campos são probabilísticos, sujeitos ao mesmo tipo de
+erro descrito acima, e não substituem conferência humana.
+
+- Os três campos ficam persistidos tanto no anexo
+  (`TriagemInboundMedia.VisionNotaFiscalNumero/Serie/DataEmissao`) quanto,
+  quando aplicados pela regra determinística do checklist (§3), na própria
+  triagem (`Triagem.NumeroNotaFiscal/SerieNotaFiscal/DataEmissaoNotaFiscal`).
+  Isso preserva o padrão existente de "a LLM só propõe, a API decide": a
+  extração é um dado, não um status.
+- **Só a data de emissão é usada para calcular um indicador de garantia.**
+  Número e série são só exibidos para conferência do operador; não entram
+  em nenhuma regra automática.
+
+**Estimativa de garantia (`warrantyEstimate`) — decisão do PO (ajuste
+posterior à primeira versão deste documento):** a API **nunca persiste**
+um status de garantia. O único dado persistido é a data de emissão da nota
+fiscal (o fato). A cada leitura dos endpoints de detalhe (pool e OS), a API
+calcula na hora um indicador provisório comparando a data de emissão com a
+data atual, usando um prazo padrão único e global, configurável em
+`TriagemLlm:GarantiaPadraoMeses` (padrão: 12 meses). O indicador tem o
+formato:
+
+```json
+"warrantyEstimate": {
+  "status": "ProvavelmenteNaGarantia",
+  "baseDate": "2026-01-15T00:00:00+00:00",
+  "defaultMonths": 12
+}
+```
+
+- `status`: um de `"ProvavelmenteNaGarantia"`, `"ProvavelmenteForaDaGarantia"`
+  ou `"Indeterminado"` (quando não há data de emissão conhecida). O nome do
+  campo deixa explícito que é uma estimativa, não uma decisão fiscal ou
+  contratual.
+- `baseDate`: a data de emissão usada no cálculo (pode ser `null` quando
+  indeterminado).
+- `defaultMonths`: o prazo padrão aplicado nesse cálculo (hoje sempre o
+  valor global de `TriagemLlm:GarantiaPadraoMeses`).
+
+Essa estimativa é **provisória e global** por decisão do PO: hoje não existe
+prazo de garantia por produto nem por empresa/fabricante no domínio. Quando
+esse cadastro existir, o cálculo deverá passar a usar o prazo específico do
+produto/empresa da OS em vez do valor global de configuração — por isso o
+status nunca é persistido, só recalculado a partir da data de emissão
+guardada. O painel deve tratar esse campo como apoio à decisão do
+atendente, nunca como confirmação de garantia.
+
+`warrantyEstimate` aparece no detalhe do pool (`GET` de detalhe de triagem)
+e no detalhe da OS. **Não aparece na listagem do pool**, por ser um cálculo
+mais custoso e por decisão de escopo do PO.
+
+### 3.2 Custo de IA por triagem
+
+A tabela `triagem_llm_usage` já registra cada chamada (§5). A partir desta
+implementação, a API agrega esse histórico por triagem e expõe o total
+(reaproveitando o mesmo cálculo de custo em USD por modelo já usado na
+página de custo de IA por tenant, `TriagemLlmPricingCatalog`/ADR-048) em:
+
+- **listagem do pool** (`GET` lista): campo `llmUsage` por item;
+- **detalhe do pool**: campo `llmUsage`;
+- **detalhe da OS**: campo `llmUsage`, junto com `triagemId`,
+  `triagemStartedAtUtc` e `triagemFinishedAtUtc`.
+
+Formato (igual nos três lugares):
+
+```json
+"llmUsage": {
+  "calls": 14,
+  "inputTokens": 18234,
+  "outputTokens": 912,
+  "estimatedCostUsd": 0.034512
+}
+```
+
+Quando a triagem não tem nenhuma chamada registrada (ou, no detalhe da OS,
+quando a OS não tem triagem associada), o valor é zerado
+(`calls: 0, inputTokens: 0, outputTokens: 0, estimatedCostUsd: 0`), nunca
+omitido ou nulo.
+
 ## 4. Guardrails e interrupção
 
 - Limite de tentativas inválidas por item: 3, conforme a arquitetura §7.
