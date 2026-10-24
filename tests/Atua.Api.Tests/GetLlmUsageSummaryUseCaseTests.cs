@@ -269,6 +269,40 @@ public class GetLlmUsageSummaryUseCaseTests
         Assert.Equal(30, result.To.DayNumber - result.From.DayNumber + 1);
     }
 
+    [Fact]
+    public async Task Execute_EnviaLimitesUtcParaPostgresPreservandoDiaLocal()
+    {
+        await using var context = CreateContext(Guid.NewGuid().ToString());
+        var userId = Guid.CreateVersion7();
+        await SeedTenantWithMembershipAsync(context, userId);
+        var aggregateQuery = new UtcRangeCheckingAggregateQuery();
+        var useCase = new GetLlmUsageSummaryUseCase(context, aggregateQuery,
+            new TriagemLlmPricingCatalog(), new FakeTimeProvider(Now));
+
+        var result = await useCase.ExecuteAsync(new LlmUsageSummaryQuery(userId,
+            new DateOnly(2026, 10, 23), new DateOnly(2026, 10, 23)), CancellationToken.None);
+
+        Assert.Equal(ELlmUsageSummaryOutcome.Success, result.Outcome);
+        Assert.True(aggregateQuery.Executed);
+    }
+
+    private sealed class UtcRangeCheckingAggregateQuery : ITriagemLlmUsageAggregateQuery
+    {
+        public bool Executed { get; private set; }
+
+        public Task<IReadOnlyList<TriagemLlmUsageAggregateRow>> ExecuteAsync(
+            IReadOnlyCollection<Guid> tenantIds, DateTimeOffset fromUtcInclusive,
+            DateTimeOffset toUtcExclusive, CancellationToken cancellationToken)
+        {
+            Executed = true;
+            Assert.Equal(TimeSpan.Zero, fromUtcInclusive.Offset);
+            Assert.Equal(TimeSpan.Zero, toUtcExclusive.Offset);
+            Assert.Equal(new DateTimeOffset(2026, 10, 23, 3, 0, 0, TimeSpan.Zero), fromUtcInclusive);
+            Assert.Equal(new DateTimeOffset(2026, 10, 24, 3, 0, 0, TimeSpan.Zero), toUtcExclusive);
+            return Task.FromResult<IReadOnlyList<TriagemLlmUsageAggregateRow>>([]);
+        }
+    }
+
     // -------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------
