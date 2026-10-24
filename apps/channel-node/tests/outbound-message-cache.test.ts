@@ -193,3 +193,27 @@ test('production adapter configures getMessage, preserves retry across socket re
     cache.clear()
   }
 })
+
+test('falls back to recovery only when the original is not cached', async () => {
+  const { cache, events } = createCache()
+  const recovered = proto.Message.fromObject({ extendedTextMessage: { text: 'recovered' } })
+  const calls: string[] = []
+  cache.setRecovery(async (key) => {
+    calls.push(key.id ?? '')
+    return key.id === 'KNOWN' ? recovered : undefined
+  })
+
+  assert.equal(await cache.getMessage({ id: 'KNOWN', remoteJid: recipient, fromMe: true }), recovered)
+  assert.equal(await cache.getMessage({ id: 'UNKNOWN', remoteJid: recipient, fromMe: true }), undefined)
+  assert.equal(await cache.getMessage({ id: 'KNOWN', remoteJid: recipient, fromMe: false }), undefined)
+  assert.deepEqual(calls, ['KNOWN', 'UNKNOWN'])
+  assert.ok(events.some((entry) => entry.event === 'whatsapp_retry_message_recovered'))
+})
+
+test('recovery failures never throw into the SDK', async () => {
+  const { cache, events } = createCache()
+  cache.setRecovery(async () => { throw new Error('api down') })
+
+  assert.equal(await cache.getMessage({ id: 'KNOWN', remoteJid: recipient, fromMe: true }), undefined)
+  assert.ok(events.some((entry) => entry.event === 'whatsapp_retry_recovery_failed'))
+})

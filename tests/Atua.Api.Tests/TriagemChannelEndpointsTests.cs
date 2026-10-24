@@ -577,6 +577,193 @@ public class TriagemChannelEndpointsTests
     }
     // -------------------------------------------------------------------
 
+    // -------------------------------------------------------------------
+    // Retransmissão (recuperação reativa de getMessage — Opção A, sem
+    // migration, reaproveitando o escopo de claim)
+    // -------------------------------------------------------------------
+
+    [Fact]
+    public async Task Retransmission_ComandoConcluidoNaJanela_Retorna200ComConteudoEDeTelefone()
+    {
+        var (app, databaseName) = await CreateApplicationWithRealCommandRepositoryAsync();
+        await using var appDisposable = app;
+        var seed = await SeedCompletedCommandAsync(databaseName, Now.AddMinutes(-10));
+        var client = CreateClient(app, seed.Seed.TenantId, seed.Seed.IntegrationId,
+            ServiceCredentialAuthenticationHandler.ChannelCommandClaimScope);
+
+        var response = await client.PostAsJsonAsync("/api/internal/triagens/canal/retransmissao",
+            new ChannelRetransmissionRequest(seed.MessageId));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var body = await response.Content.ReadFromJsonAsync<ChannelRetransmissionResponse>();
+        Assert.NotNull(body);
+        Assert.Equal("conteúdo renderizado", body!.Text);
+        Assert.Equal("+5511999999999", body.RecipientPhone);
+    }
+
+    [Fact]
+    public async Task Retransmission_SemClaims_Retorna401()
+    {
+        var (app, databaseName) = await CreateApplicationWithRealCommandRepositoryAsync();
+        await using var appDisposable = app;
+        var seed = await SeedCompletedCommandAsync(databaseName, Now.AddMinutes(-10));
+        var client = app.GetTestClient();
+        client.DefaultRequestHeaders.Add("Test-Scope",
+            ServiceCredentialAuthenticationHandler.ChannelCommandClaimScope);
+
+        var response = await client.PostAsJsonAsync("/api/internal/triagens/canal/retransmissao",
+            new ChannelRetransmissionRequest(seed.MessageId));
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Retransmission_EscopoDiferenteDoClaim_Retorna403()
+    {
+        var (app, databaseName) = await CreateApplicationWithRealCommandRepositoryAsync();
+        await using var appDisposable = app;
+        var seed = await SeedCompletedCommandAsync(databaseName, Now.AddMinutes(-10));
+        var client = CreateClient(app, seed.Seed.TenantId, seed.Seed.IntegrationId,
+            ServiceCredentialAuthenticationHandler.ChannelCommandCompleteScope);
+
+        var response = await client.PostAsJsonAsync("/api/internal/triagens/canal/retransmissao",
+            new ChannelRetransmissionRequest(seed.MessageId));
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("nao-e-hex")]
+    [InlineData("abc")]
+    [InlineData("ba7816bf8f01cfea414140de5dae2223")] // minúsculo — formato exigido é maiúsculo
+    [InlineData("BA7816BF8F01CFEA414140DE5DAE22231")] // 33 caracteres
+    public async Task Retransmission_MessageIdForaDoFormatoHex32_Retorna400(string? messageId)
+    {
+        var (app, databaseName) = await CreateApplicationWithRealCommandRepositoryAsync();
+        await using var appDisposable = app;
+        var seed = await SeedCompletedCommandAsync(databaseName, Now.AddMinutes(-10));
+        var client = CreateClient(app, seed.Seed.TenantId, seed.Seed.IntegrationId,
+            ServiceCredentialAuthenticationHandler.ChannelCommandClaimScope);
+
+        var response = await client.PostAsJsonAsync("/api/internal/triagens/canal/retransmissao",
+            new ChannelRetransmissionRequest(messageId));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Retransmission_MessageIdHexValidoMasInexistente_Retorna404()
+    {
+        var (app, databaseName) = await CreateApplicationWithRealCommandRepositoryAsync();
+        await using var appDisposable = app;
+        var seed = await SeedCompletedCommandAsync(databaseName, Now.AddMinutes(-10));
+        var client = CreateClient(app, seed.Seed.TenantId, seed.Seed.IntegrationId,
+            ServiceCredentialAuthenticationHandler.ChannelCommandClaimScope);
+
+        var response = await client.PostAsJsonAsync("/api/internal/triagens/canal/retransmissao",
+            new ChannelRetransmissionRequest("00000000000000000000000000000000".Substring(0, 32)));
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Retransmission_ComandoDeOutraTenant_Retorna404()
+    {
+        var (app, databaseName) = await CreateApplicationWithRealCommandRepositoryAsync();
+        await using var appDisposable = app;
+        var seed = await SeedCompletedCommandAsync(databaseName, Now.AddMinutes(-10));
+        var client = CreateClient(app, Guid.NewGuid(), seed.Seed.IntegrationId,
+            ServiceCredentialAuthenticationHandler.ChannelCommandClaimScope);
+
+        var response = await client.PostAsJsonAsync("/api/internal/triagens/canal/retransmissao",
+            new ChannelRetransmissionRequest(seed.MessageId));
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Retransmission_ComandoDeOutraIntegracao_Retorna404()
+    {
+        var (app, databaseName) = await CreateApplicationWithRealCommandRepositoryAsync();
+        await using var appDisposable = app;
+        var seed = await SeedCompletedCommandAsync(databaseName, Now.AddMinutes(-10));
+        var client = CreateClient(app, seed.Seed.TenantId, Guid.NewGuid(),
+            ServiceCredentialAuthenticationHandler.ChannelCommandClaimScope);
+
+        var response = await client.PostAsJsonAsync("/api/internal/triagens/canal/retransmissao",
+            new ChannelRetransmissionRequest(seed.MessageId));
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Retransmission_ComandoConcluidoForaDaJanelaDeUmaHora_Retorna404()
+    {
+        var (app, databaseName) = await CreateApplicationWithRealCommandRepositoryAsync();
+        await using var appDisposable = app;
+        var seed = await SeedCompletedCommandAsync(databaseName, Now.AddHours(-1).AddMinutes(-1));
+        var client = CreateClient(app, seed.Seed.TenantId, seed.Seed.IntegrationId,
+            ServiceCredentialAuthenticationHandler.ChannelCommandClaimScope);
+
+        var response = await client.PostAsJsonAsync("/api/internal/triagens/canal/retransmissao",
+            new ChannelRetransmissionRequest(seed.MessageId));
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Retransmission_ComandoAindaNaoConcluido_Retorna404()
+    {
+        var (app, databaseName) = await CreateApplicationWithRealCommandRepositoryAsync();
+        await using var appDisposable = app;
+        var seed = await SeedClaimedCommandAsync(databaseName);
+        var client = CreateClient(app, seed.TenantId, seed.IntegrationId,
+            ServiceCredentialAuthenticationHandler.ChannelCommandClaimScope);
+
+        await using var context = CreateContext(databaseName);
+        var claimedCommand = await context.TriagemChannelCommands.SingleAsync(c => c.Id == seed.CommandId);
+        var messageId = TriagemChannelCommandService.MessageIdFor(claimedCommand.IdempotencyKey);
+
+        var response = await client.PostAsJsonAsync("/api/internal/triagens/canal/retransmissao",
+            new ChannelRetransmissionRequest(messageId));
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    /// <summary>
+    /// Semeia uma triagem e um comando concluído com sucesso (Completed),
+    /// com <c>CompletedAtUtc</c> explícito — usado para testar a janela de
+    /// retransmissão (baseada em CompletedAtUtc, não CreatedAtUtc, já que a
+    /// fila pode atrasar a criação em relação ao envio real).
+    /// </summary>
+    private static async Task<(Seed Seed, string MessageId)> SeedCompletedCommandAsync(
+        string databaseName, DateTimeOffset completedAtUtc)
+    {
+        await using var context = CreateContext(databaseName);
+        var tenantId = Guid.NewGuid();
+        var integrationId = Guid.NewGuid();
+        var workOrderId = Guid.NewGuid();
+        var triagemId = Guid.NewGuid();
+        var key = new TriagemIdempotencyKey(tenantId, integrationId, $"OS-{triagemId:N}");
+        var triagem = new Triagem(triagemId, tenantId, integrationId, workOrderId, Now);
+        triagem.MarcarContatoIniciado(Now);
+        var command = new TriagemChannelCommand(Guid.NewGuid(), tenantId, integrationId, triagemId, workOrderId,
+            "template-version-id", 1,
+            "conteúdo renderizado", key.ToString(), Guid.NewGuid(), Now, recipientPhone: "+5511999999999");
+        command.Claim(Now, Now.AddSeconds(60));
+        command.MarkCompletedSuccess(completedAtUtc);
+        context.Add(triagem);
+        context.Entry(triagem).Property(TriagemPersistenceSchema.WorkOrderProviderIdShadowPropertyName)
+            .CurrentValue = key.WorkOrderProviderId;
+        context.Add(command);
+        await context.SaveChangesAsync();
+
+        var messageId = TriagemChannelCommandService.MessageIdFor(command.IdempotencyKey);
+        return (new Seed(tenantId, integrationId, triagemId, workOrderId, command.Id), messageId);
+    }
+
     private static async Task<(WebApplication App, string DatabaseName, FakeTriagemChannelCommandRepository CommandRepository)>
         CreateApplicationWithFakeCommandRepositoryAsync()
     {

@@ -11,6 +11,7 @@ import makeWASocket, {
   type ConnectionState,
   type WAMessage,
   type UserFacingSocketConfig,
+  jidNormalizedUser,
   normalizeMessageContent,
   proto,
   type WAMessageUpdate,
@@ -27,7 +28,7 @@ import type {
   WhatsAppSessionStateEvent,
   WhatsAppSessionStateReceiver,
 } from './contracts.js'
-import { PermanentChannelSendError } from './phone.js'
+import { normalizeWhatsAppJid, PermanentChannelSendError } from './phone.js'
 import { collectBufferWithLimit, MAX_INBOUND_MEDIA_BYTES, MediaTooLargeError } from './media-download-limit.js'
 import { OutboundMessageCache } from './outbound-message-cache.js'
 
@@ -64,6 +65,11 @@ export interface BaileysSessionDependencies {
   downloadMedia?: (message: WAMessage) => Promise<Buffer>
   /** Instante atual — injetável para tornar `atUtc` determinístico nos testes. */
   now?: () => Date
+  /**
+   * Busca na API o texto de uma mensagem enviada na última hora, apenas para
+   * atender pedido de retransmissão quando o original não está mais em memória.
+   */
+  recoverOutboundText?: (messageId: string) => Promise<{ text: string; recipientPhone: string } | null>
 }
 
 export class BaileysSession implements WhatsAppMessageSender, WhatsAppMessageReceiver, WhatsAppSessionStateReceiver {
@@ -96,6 +102,10 @@ export class BaileysSession implements WhatsAppMessageSender, WhatsAppMessageRec
     this.logger = logger
     this.loadAuthState = dependencies.loadAuthState ?? useMultiFileAuthState
     this.outboundMessages = new OutboundMessageCache(logger)
+    const recoverOutboundText = dependencies.recoverOutboundText
+    if (recoverOutboundText !== undefined) {
+      this.outboundMessages.setRecovery((key) => this.recoverOutboundMessage(key, recoverOutboundText))
+    }
     this.createSocket = dependencies.createSocket ??
       ((auth) => createBaileysSocket(auth, logger, this.outboundMessages))
     this.wait = dependencies.wait ?? delay
@@ -106,6 +116,33 @@ export class BaileysSession implements WhatsAppMessageSender, WhatsAppMessageRec
   onSessionState(listener: (event: WhatsAppSessionStateEvent) => void): () => void {
     this.sessionStateListeners.add(listener)
     return () => this.sessionStateListeners.delete(listener)
+  }
+
+  private async recoverOutboundMessage(
+    key: proto.IMessageKey,
+    recoverOutboundText: NonNullable<BaileysSessionDependencies['recoverOutboundText']>,
+  ): Promise<proto.IMessage | undefined> {
+    if (typeof key.id !== 'string' || !/^[A-F0-9]{32}$/.test(key.id) || !key.remoteJid) {
+      return undefined
+    }
+    const recovered = await recoverOutboundText(key.id)
+    if (recovered === null) {
+      return undefined
+    }
+
+    // Only answer the retry for the original recipient (phone JID or its LID alias).
+    const remoteJid = jidNormalizedUser(key.remoteJid)
+    const phoneJid = normalizeWhatsAppJid(recovered.recipientPhone)
+    let allowed = remoteJid === phoneJid
+    if (!allowed && remoteJid.endsWith('@lid') && this.socket !== undefined) {
+      const recipient = await this.socket.resolveRecipient(phoneJid)
+      allowed = [recipient.jid, ...recipient.aliases].map((jid) => jidNormalizedUser(jid)).includes(remoteJid)
+    }
+    if (!allowed) {
+      this.logger.warn('whatsapp_retry_recovery_recipient_mismatch')
+      return undefined
+    }
+    return proto.Message.fromObject({ extendedTextMessage: { text: recovered.text } })
   }
 
   /** Nunca loga o conteúdo de `event.qr` — apenas repassa aos listeners. */
@@ -371,6 +408,7 @@ export class BaileysSession implements WhatsAppMessageSender, WhatsAppMessageRec
       }
 
       if (isFatalDisconnect(statusCode)) {
+        this.logger.error('whatsapp_disconnected_fatal', { statusCode: statusCode ?? 0 })
         throw new SessionFatalError('A sessão WhatsApp exige intervenção para autenticar novamente.')
       }
 
@@ -393,6 +431,7 @@ export class BaileysSession implements WhatsAppMessageSender, WhatsAppMessageRec
     const hasPairedSession = auth.state.creds.registered || Boolean(auth.state.creds.me?.id)
     // Pairing is possible when the QR is printed locally or delivered to the Office (ADR-049).
     if (!hasPairedSession && !this.printQr && this.sessionStateListeners.size === 0) {
+      this.logger.error('whatsapp_session_unpaired_fatal', { hasPairedSession, printQr: this.printQr })
       throw new SessionFatalError(
         'Não há sessão WhatsApp válida. Configure ChannelWorker__PrintQr=true ou ChannelWorker__SessionReportServiceToken para parear.',
       )

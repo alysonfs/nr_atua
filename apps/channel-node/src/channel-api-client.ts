@@ -12,6 +12,7 @@ const completePath = '/api/internal/triagens/canal/complete'
 const messageIngestPath = '/api/internal/triagens/canal/mensagens'
 const mediaIngestPath = '/api/internal/triagens/canal/midias'
 const sessionReportPath = '/api/internal/channel/session'
+const retransmissionPath = '/api/internal/triagens/canal/retransmissao'
 
 export class ChannelApiError extends Error {
   readonly operation: 'claim' | 'complete' | 'ingest' | 'ingestMedia' | 'reportSession'
@@ -124,6 +125,43 @@ export class ChannelApiClient implements ChannelApi {
     }
 
     await response.body?.cancel()
+  }
+
+  /** Returns null when the message is unknown or outside the API retransmission window. */
+  async recoverRetransmission(
+    messageId: string,
+    signal: AbortSignal,
+  ): Promise<{ text: string; recipientPhone: string } | null> {
+    let response: Response
+    try {
+      response = await this.fetcher(new URL(retransmissionPath, this.baseUrl), {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${this.claimToken}`,
+          'content-type': 'application/json',
+          accept: 'application/json',
+        },
+        body: JSON.stringify({ messageId }),
+        signal,
+      })
+    } catch {
+      throw new ChannelApiError('claim', null)
+    }
+
+    if (response.status === 404) {
+      await response.body?.cancel()
+      return null
+    }
+    if (response.status !== 200) {
+      throw new ChannelApiError('claim', response.status)
+    }
+
+    const body: unknown = await response.json()
+    if (!isRecord(body) || typeof body.text !== 'string' || body.text === '' ||
+      typeof body.recipientPhone !== 'string' || body.recipientPhone === '') {
+      throw new Error('A API retornou uma retransmissão inválida.')
+    }
+    return { text: body.text, recipientPhone: body.recipientPhone }
   }
 
   async claim(signal: AbortSignal): Promise<ClaimedChannelCommand | null> {

@@ -520,6 +520,40 @@ test('a logged-out session fails without reconnecting', async () => {
   }
 })
 
+test('a fatal disconnect logs the WhatsApp status code before throwing, without leaking message content', async () => {
+  const events: Array<{ event: string; fields?: Record<string, string | number | boolean> }> = []
+  const captureLogger: SafeLogger = {
+    info: (event, fields) => events.push({ event, fields }),
+    warn: (event, fields) => events.push({ event, fields }),
+    error: (event, fields) => events.push({ event, fields }),
+  }
+  const harness = await createHarness({}, captureLogger)
+
+  try {
+    const socket = await harness.waitForSocket(1)
+    socket.emitConnectionUpdate({
+      connection: 'close',
+      lastDisconnect: {
+        error: Object.assign(new Error('session replaced on another device'), {
+          output: { statusCode: DisconnectReason.connectionReplaced },
+        }),
+        date: new Date(),
+      },
+    })
+
+    await assert.rejects(harness.task, SessionFatalError)
+
+    const fatalEvent = events.find(({ event }) => event === 'whatsapp_disconnected_fatal')
+    assert.ok(fatalEvent, 'expected whatsapp_disconnected_fatal to be logged')
+    assert.equal(fatalEvent?.fields?.statusCode, DisconnectReason.connectionReplaced)
+
+    const serializedEvents = JSON.stringify(events)
+    assert.equal(serializedEvents.includes('session replaced on another device'), false)
+  } finally {
+    await harness.dispose()
+  }
+})
+
 test('send timeout rejects and shutdown closes the socket', async () => {
   const harness = await createHarness()
 
@@ -698,10 +732,11 @@ test('graceful shutdown waits for pending credential persistence', async () => {
 async function runWithoutQr(
   me: { id: string } | undefined,
   reportsSessionState = false,
+  sessionLogger: SafeLogger = logger,
 ): Promise<{ sockets: FakeSocket[]; outcome: Promise<unknown>; dispose(): Promise<void> }> {
   const directory = await mkdtemp(join(tmpdir(), 'atua-baileys-session-'))
   const sockets: FakeSocket[] = []
-  const session = new BaileysSession(directory, false, logger, {
+  const session = new BaileysSession(directory, false, sessionLogger, {
     loadAuthState: async (path) => {
       const auth = await useMultiFileAuthState(path)
       auth.state.creds.registered = false
@@ -747,11 +782,22 @@ test('a QR-paired session connects without printing a QR code', async () => {
 })
 
 test('an unpaired session without QR fails with a fatal session error', async () => {
-  const run = await runWithoutQr(undefined)
+  const events: Array<{ event: string; fields?: Record<string, string | number | boolean> }> = []
+  const captureLogger: SafeLogger = {
+    info: (event, fields) => events.push({ event, fields }),
+    warn: (event, fields) => events.push({ event, fields }),
+    error: (event, fields) => events.push({ event, fields }),
+  }
+  const run = await runWithoutQr(undefined, false, captureLogger)
 
   try {
     assert.ok((await run.outcome) instanceof SessionFatalError)
     assert.equal(run.sockets.length, 0)
+
+    const fatalEvent = events.find(({ event }) => event === 'whatsapp_session_unpaired_fatal')
+    assert.ok(fatalEvent, 'expected whatsapp_session_unpaired_fatal to be logged')
+    assert.equal(fatalEvent?.fields?.hasPairedSession, false)
+    assert.equal(fatalEvent?.fields?.printQr, false)
   } finally {
     await run.dispose()
   }

@@ -28,7 +28,9 @@ async function main(): Promise<void> {
     fetch,
     config.sessionReportServiceToken,
   )
-  const session = new BaileysSession(config.sessionPath, config.printQr, consoleLogger)
+  const session = new BaileysSession(config.sessionPath, config.printQr, consoleLogger, {
+    recoverOutboundText: (messageId) => api.recoverRetransmission(messageId, AbortSignal.timeout(5_000)),
+  })
   const worker = new ChannelWorker(
     api,
     session,

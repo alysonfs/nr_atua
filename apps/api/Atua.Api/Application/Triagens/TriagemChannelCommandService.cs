@@ -47,6 +47,51 @@ public sealed class TriagemChannelCommandService(
     }
 
     // -----------------------------------------------------------------------
+    // Retransmissão
+    // -----------------------------------------------------------------------
+
+    public static readonly TimeSpan RetransmissionWindow = TimeSpan.FromHours(1);
+
+    /// <summary>
+    /// Recupera o texto de um comando concluído com sucesso na última hora
+    /// cujo id de mensagem WhatsApp (derivado da chave de idempotência, como
+    /// no canal) corresponde a <paramref name="messageId"/>. Não cria nem
+    /// reabre comandos; serve apenas ao pedido de retransmissão do aparelho.
+    /// </summary>
+    public async Task<TriagemChannelCommand?> FindForRetransmissionAsync(Guid tenantId, Guid integrationId,
+        string messageId, CancellationToken cancellationToken)
+    {
+        var since = timeProvider.GetUtcNow() - RetransmissionWindow;
+        var commands = await commandRepository.ListCompletedSinceAsync(tenantId, integrationId, since,
+            cancellationToken);
+        var match = commands.FirstOrDefault(command =>
+            string.Equals(MessageIdFor(command.IdempotencyKey), messageId, StringComparison.Ordinal));
+
+        // Nunca loga messageId, IdempotencyKey, telefone ou conteúdo — apenas o
+        // identificador interno (seguro) do comando, quando houver correspondência.
+        if (match is not null)
+        {
+            logger.LogInformation(
+                "[TRIAGEM-CHANNEL] Retransmissão reidratada via API. CommandId={CommandId}", match.Id);
+        }
+        else
+        {
+            logger.LogInformation(
+                "[TRIAGEM-CHANNEL] Retransmissão sem correspondência elegível na janela de {WindowMinutes} min " +
+                "(candidatos avaliados: {CandidateCount}).", RetransmissionWindow.TotalMinutes, commands.Count);
+        }
+
+        return match;
+    }
+
+    /// <summary>Mesma derivação de <c>messageIdForIdempotencyKey</c> do canal.</summary>
+    public static string MessageIdFor(string idempotencyKey)
+    {
+        var hash = System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(idempotencyKey));
+        return Convert.ToHexString(hash)[..32];
+    }
+
+    // -----------------------------------------------------------------------
     // Complete
     // -----------------------------------------------------------------------
 

@@ -15,9 +15,15 @@ interface CachedMessage {
 export class OutboundMessageCache {
   private readonly messages = new Map<string, CachedMessage>()
   private readonly logger: SafeLogger
+  private recovery: ((key: proto.IMessageKey) => Promise<proto.IMessage | undefined>) | undefined
 
   constructor(logger: SafeLogger) {
     this.logger = logger
+  }
+
+  /** Fallback used only when the original is not in memory (e.g. after a process restart). */
+  setRecovery(recovery: (key: proto.IMessageKey) => Promise<proto.IMessage | undefined>): void {
+    this.recovery = recovery
   }
 
   async send(
@@ -75,7 +81,7 @@ export class OutboundMessageCache {
   readonly getMessage = async (key: proto.IMessageKey): Promise<proto.IMessage | undefined> => {
     const entry = key.id === undefined || key.id === null ? undefined : this.messages.get(key.id)
     if (entry === undefined || key.id === undefined || key.id === null) {
-      return this.unavailable('not_cached')
+      return this.recover(key)
     }
     if (key.fromMe === false || !entry.recipients.has(jidNormalizedUser(key.remoteJid ?? ''))) {
       return this.unavailable('recipient_mismatch')
@@ -105,6 +111,25 @@ export class OutboundMessageCache {
     entry.settle(undefined)
     if (this.messages.get(messageId) === entry) {
       this.messages.delete(messageId)
+    }
+  }
+
+  private async recover(key: proto.IMessageKey): Promise<proto.IMessage | undefined> {
+    if (this.recovery === undefined || key.fromMe === false || typeof key.id !== 'string') {
+      return this.unavailable('not_cached')
+    }
+    try {
+      const message = await this.recovery(key)
+      if (message === undefined) {
+        return this.unavailable('not_recoverable')
+      }
+      this.logger.info('whatsapp_retry_message_recovered', { messageId: key.id })
+      return message
+    } catch (error) {
+      this.logger.warn('whatsapp_retry_recovery_failed', {
+        errorType: error instanceof Error ? error.name : 'UnknownError',
+      })
+      return undefined
     }
   }
 

@@ -1,3 +1,4 @@
+using Atua.Api.Application.Triagens;
 using Atua.Api.Application.Triagens.Contracts;
 using Atua.Api.Domain.Triagens;
 
@@ -48,6 +49,24 @@ internal sealed class FakeTriagemChannelCommandRepository : ITriagemChannelComma
 
             next.Claim(now, now.Add(leaseDuration));
             return Task.FromResult<TriagemChannelCommand?>(next);
+        }
+    }
+
+    public Task<IReadOnlyList<TriagemChannelCommand>> ListCompletedSinceAsync(Guid tenantId, Guid integrationId,
+        DateTimeOffset completedSinceUtc, CancellationToken cancellationToken)
+    {
+        lock (_lock)
+        {
+            // Replica a ordenação por recência + limite (256) do repositório real
+            // (TriagemChannelCommandRepository.MaxRetransmissionCandidates).
+            IReadOnlyList<TriagemChannelCommand> result = _commands
+                .Where(command => command.TenantId == tenantId && command.IntegrationId == integrationId
+                    && command.Status == ETriagemChannelCommandStatus.Completed
+                    && command.CompletedAtUtc >= completedSinceUtc)
+                .OrderByDescending(command => command.CompletedAtUtc)
+                .Take(TriagemChannelCommandRepository.MaxRetransmissionCandidates)
+                .ToList();
+            return Task.FromResult(result);
         }
     }
 

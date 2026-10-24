@@ -1072,3 +1072,19 @@ pendentes. O status atualizado está na seção 11.
   mensagem inicial e resposta da IA legíveis no …0065.
 - Pendente: concluir as duas conduções, validar no Office e limpar com
   autorização.
+
+## Recuperação de retransmissão após reinício do Channel (2026-10-24)
+
+- Incidente: mensagem com ACK do servidor e sem confirmação de entrega; o Channel reiniciou e
+  perdeu o original em memória, e os pedidos de retransmissão do aparelho receberam "original
+  indisponível" (cliente vendo "Aguardando mensagem").
+- Correção: quando o original não está em memória, o Channel consulta
+  `POST /api/internal/triagens/canal/retransmissao` (credencial de claim, sem novo segredo).
+  A API devolve o texto somente de comando `Completed` da mesma tenant/integração concluído
+  na última hora, casando o id WhatsApp derivado da chave de idempotência. O Channel só
+  responde ao WhatsApp se o solicitante for o destinatário original (JID do telefone ou seu
+  alias LID). Sem novo armazenamento e sem reenvio de backlog; só atende pedido do aparelho.
+- Limitação: mensagens fora da janela de 1 hora (como a das 15h36) não são recuperadas.
+- Logs: `whatsapp_retry_message_recovered`, `whatsapp_retry_recovery_failed`,
+  `whatsapp_retry_recovery_recipient_mismatch`, `whatsapp_disconnected_fatal`,
+  `whatsapp_session_unpaired_fatal`.

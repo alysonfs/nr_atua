@@ -40,6 +40,14 @@ public interface ITriagemChannelCommandRepository
     void Add(TriagemChannelCommand command);
 
     /// <summary>
+    /// Lista comandos concluídos com sucesso da tenant/integração desde
+    /// <paramref name="completedSinceUtc"/> — usada somente para atender
+    /// pedidos de retransmissão do WhatsApp após reinício do canal.
+    /// </summary>
+    Task<IReadOnlyList<TriagemChannelCommand>> ListCompletedSinceAsync(Guid tenantId, Guid integrationId,
+        DateTimeOffset completedSinceUtc, CancellationToken cancellationToken);
+
+    /// <summary>
     /// Verifica se já existe um comando com a chave de idempotência
     /// informada (plano M2 — idempotência por mensagem inbound). Usado
     /// antes de chamar a LLM, para não repetir a chamada quando o mesmo

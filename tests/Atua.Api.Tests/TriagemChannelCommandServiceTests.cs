@@ -139,6 +139,57 @@ public class TriagemChannelCommandServiceTests
     // Complete — Success
     // -----------------------------------------------------------------------
 
+    // -----------------------------------------------------------------------
+    // Retransmissão
+    // -----------------------------------------------------------------------
+
+    [Fact]
+    public void MessageIdFor_SegueADerivacaoDoCanal()
+    {
+        // sha256("abc") em hex maiúsculo, 32 primeiros caracteres (messageIdForIdempotencyKey no Channel).
+        Assert.Equal("BA7816BF8F01CFEA414140DE5DAE2223", TriagemChannelCommandService.MessageIdFor("abc"));
+    }
+
+    [Fact]
+    public async Task FindForRetransmissionAsync_ComandoConcluidoNaJanela_RetornaComando()
+    {
+        var (service, commandRepository, triagemRepository) = CreateService();
+        var tenantId = Guid.NewGuid();
+        var integrationId = Guid.NewGuid();
+        var (_, command) = await SeedTriagemComComandoAsync(triagemRepository, commandRepository, tenantId,
+            integrationId, Now);
+        await service.ClaimAsync(tenantId, integrationId, CancellationToken.None);
+        await service.CompleteAsync(command.Id, tenantId, integrationId, command.ClaimedAtUtc!.Value,
+            ETriagemChannelSendOutcome.Success, null, null, CancellationToken.None);
+        var messageId = TriagemChannelCommandService.MessageIdFor(command.IdempotencyKey);
+
+        var found = await service.FindForRetransmissionAsync(tenantId, integrationId, messageId,
+            CancellationToken.None);
+        var otherTenant = await service.FindForRetransmissionAsync(Guid.NewGuid(), integrationId, messageId,
+            CancellationToken.None);
+        var (laterService, _, _) = CreateService(Now.AddHours(1).AddMinutes(1));
+
+        Assert.Equal(command.Id, found?.Id);
+        Assert.Null(otherTenant);
+        Assert.Null(await laterService.FindForRetransmissionAsync(tenantId, integrationId, messageId,
+            CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task FindForRetransmissionAsync_ComandoNaoConcluido_RetornaNull()
+    {
+        var (service, commandRepository, triagemRepository) = CreateService();
+        var tenantId = Guid.NewGuid();
+        var integrationId = Guid.NewGuid();
+        var (_, command) = await SeedTriagemComComandoAsync(triagemRepository, commandRepository, tenantId,
+            integrationId, Now);
+
+        var found = await service.FindForRetransmissionAsync(tenantId, integrationId,
+            TriagemChannelCommandService.MessageIdFor(command.IdempotencyKey), CancellationToken.None);
+
+        Assert.Null(found);
+    }
+
     [Fact]
     public async Task CompleteAsync_Success_MoveTriagemParaContatoIniciadoEComandoParaCompleted()
     {

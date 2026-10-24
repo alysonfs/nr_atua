@@ -42,6 +42,20 @@ public static class TriagemChannelEndpoints
             .Produces(StatusCodes.Status204NoContent)
             .Produces(StatusCodes.Status401Unauthorized);
 
+        endpoints.MapPost("/api/internal/triagens/canal/retransmissao", RetransmissionAsync)
+            .RequireAuthorization("ChannelCommandClaim")
+            .WithName("GetTriagemChannelRetransmission")
+            .WithSummary("Recupera o texto de uma mensagem enviada na última hora para retransmissão.")
+            .WithDescription(
+                "Usado somente quando o aparelho do destinatário pede retransmissão e o canal perdeu o " +
+                "original da memória (reinício). Restrito à tenant/integração da credencial e a comandos " +
+                "concluídos com sucesso na última hora. Não cria, reabre nem reenvia comandos; o canal " +
+                "valida o destinatário antes de responder ao WhatsApp.")
+            .Produces<ChannelRetransmissionResponse>(StatusCodes.Status200OK)
+            .Produces(StatusCodes.Status400BadRequest)
+            .Produces(StatusCodes.Status401Unauthorized)
+            .Produces(StatusCodes.Status404NotFound);
+
         endpoints.MapPost("/api/internal/triagens/canal/complete", CompleteAsync)
             .RequireAuthorization("ChannelCommandComplete")
             .WithName("CompleteTriagemChannelCommand")
@@ -126,6 +140,42 @@ public static class TriagemChannelEndpoints
             command.ClaimExpiresAtUtc!.Value,
             command.RenderedContent,
             command.RecipientPhone));
+    }
+
+    // -----------------------------------------------------------------------
+    // Retransmissão
+    // -----------------------------------------------------------------------
+
+    private static readonly System.Text.RegularExpressions.Regex MessageIdPattern =
+        new("^[A-F0-9]{32}$", System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    private static async Task<Results<Ok<ChannelRetransmissionResponse>, NotFound, BadRequest,
+        UnauthorizedHttpResult>> RetransmissionAsync(
+        ChannelRetransmissionRequest request,
+        ClaimsPrincipal user,
+        TriagemChannelCommandService service,
+        CancellationToken cancellationToken)
+    {
+        var tenantId = GetGuidClaim(user, "tenant_id");
+        var integrationId = GetGuidClaim(user, "integration_id");
+        if (tenantId is null || integrationId is null)
+        {
+            return TypedResults.Unauthorized();
+        }
+
+        if (request.MessageId is null || !MessageIdPattern.IsMatch(request.MessageId))
+        {
+            return TypedResults.BadRequest();
+        }
+
+        var command = await service.FindForRetransmissionAsync(tenantId.Value, integrationId.Value,
+            request.MessageId, cancellationToken);
+        if (command is null || string.IsNullOrWhiteSpace(command.RecipientPhone))
+        {
+            return TypedResults.NotFound();
+        }
+
+        return TypedResults.Ok(new ChannelRetransmissionResponse(command.RenderedContent, command.RecipientPhone));
     }
 
     // -----------------------------------------------------------------------
@@ -553,3 +603,7 @@ public sealed record IngestTriagemChannelMediaResponse(
     string Outcome,
     Guid? TriagemId,
     int CandidateCount);
+
+public sealed record ChannelRetransmissionRequest(string? MessageId);
+
+public sealed record ChannelRetransmissionResponse(string Text, string RecipientPhone);

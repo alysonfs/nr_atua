@@ -43,6 +43,25 @@ public sealed class TriagemChannelCommandRepository(AtuaDbContext dbContext) : I
 
     public void Add(TriagemChannelCommand command) => dbContext.Set<TriagemChannelCommand>().Add(command);
 
+    /// <summary>
+    /// Limite de candidatos por chamada — mesma ordem de grandeza da
+    /// capacidade do cache em memória do canal (<c>MAX_OUTBOUND_RETRY_MESSAGES</c>,
+    /// 256), para delimitar o custo da varredura por hash sem depender de um
+    /// índice dedicado (opção A, sem migration).
+    /// </summary>
+    public const int MaxRetransmissionCandidates = 256;
+
+    public async Task<IReadOnlyList<TriagemChannelCommand>> ListCompletedSinceAsync(Guid tenantId,
+        Guid integrationId, DateTimeOffset completedSinceUtc, CancellationToken cancellationToken) =>
+        await dbContext.Set<TriagemChannelCommand>()
+            .AsNoTracking()
+            .Where(command => command.TenantId == tenantId && command.IntegrationId == integrationId
+                && command.Status == ETriagemChannelCommandStatus.Completed
+                && command.CompletedAtUtc >= completedSinceUtc)
+            .OrderByDescending(command => command.CompletedAtUtc)
+            .Take(MaxRetransmissionCandidates)
+            .ToListAsync(cancellationToken);
+
     public Task<bool> ExistsByIdempotencyKeyAsync(string idempotencyKey, CancellationToken cancellationToken) =>
         dbContext.Set<TriagemChannelCommand>()
             .AnyAsync(command => command.IdempotencyKey == idempotencyKey, cancellationToken);
