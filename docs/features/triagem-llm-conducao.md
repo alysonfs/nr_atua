@@ -152,6 +152,34 @@ checklist acelera a triagem, mas não substitui essa conferência.
 - Quando a triagem chega a `ASSUMIDA_POR_OPERADOR`, `EXPIRADA` ou
   `FALHA_DE_CONTATO`, a API não chama mais a LLM.
 
+### 4.1 Aviso de "imagem em análise"
+
+Quando o turno tem um anexo (imagem ou PDF) ainda pendente de classificação
+de visão, o processamento completo (visão + conversa da LLM) pode levar
+alguns segundos. Para o consumidor não ficar sem retorno nesse intervalo:
+
+- A API inicia o processamento do turno e corre uma corrida contra um
+  limite configurável (`TriagemLlmConversationOptions.ProcessingNoticeDelayMs`,
+  padrão 2000 ms).
+- Se o processamento não terminar dentro do limite, a API persiste
+  imediatamente — em um escopo de DI separado, para não compartilhar o
+  mesmo `DbContext` em paralelo com o turno em andamento — um
+  `TriagemChannelCommand` de aviso (`ETriagemChannelCommandKind.AvisoProcessamento`)
+  com um texto curto e cordial, sorteado entre algumas opções aprovadas
+  pelo `responseVerifier` (ex.: "Recebi sua imagem, estou analisando 🔎"),
+  sem prometer resultado.
+- A API sempre aguarda a conclusão do processamento completo antes de
+  retornar ao chamador do turno — o aviso é apenas uma mensagem
+  intermediária, nunca substitui a resposta da LLM.
+- O aviso tem `idempotencyKey` própria e determinística
+  (`triagem-processing-notice:{inboundMessageId}`), para que reentregas do
+  mesmo evento nunca o dupliquem.
+- O aviso não chama a LLM e não conta no orçamento de chamadas (§5).
+- Não é enviado quando: não há anexo pendente de classificação no turno, a
+  triagem está fora da allowlist de teste (`TriagemTestSafeguard`), é uma
+  reentrega do mesmo evento (idempotência do turno já impede reprocessar),
+  ou o processamento termina dentro do limite configurado.
+
 ## 5. Auditoria, custo e LGPD
 
 - Toda chamada registra triagem, versão do roteiro, fornecedor e modelo,
