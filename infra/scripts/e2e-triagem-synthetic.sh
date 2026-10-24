@@ -209,6 +209,7 @@ DELETE FROM triagem_channel_media
 WHERE "TriagemId" IN (SELECT "Id" FROM e2e_triagem_ids)
    OR "CandidateTriagemIds" && ARRAY(SELECT "Id" FROM e2e_triagem_ids)::uuid[];
 DELETE FROM triagem_channel_commands WHERE "WorkOrderId" IN (SELECT "Id" FROM e2e_ids);
+DELETE FROM triagem_llm_usage WHERE "TriagemId" IN (SELECT "Id" FROM e2e_triagem_ids);
 DELETE FROM triagens WHERE "Id" IN (SELECT "Id" FROM e2e_triagem_ids);
 DELETE FROM triagem_trigger_outbox WHERE "WorkOrderId" IN (SELECT "Id" FROM e2e_ids);
 DELETE FROM work_order_histories WHERE "WorkOrderId" IN (SELECT "Id" FROM e2e_ids);
