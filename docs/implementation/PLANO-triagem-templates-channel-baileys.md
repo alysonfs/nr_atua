@@ -512,9 +512,14 @@ com duas barreiras e telefone de destino fixo no código:
   mensagem.
 - API — `TriagemTestSafeguard.FixedRecipientPhone`: o snapshot do telefone do
   comando de canal usa sempre o número de teste, ignorando o telefone da OS.
-- Channel Node — `src/test-safeguard.ts`: qualquer destinatário diferente do
-  número de teste é concluído como `PermanentFailure`
+  Desde 2026-10-24 (decisão do PO, testes simultâneos), a lista
+  `AllowedRecipientPhones` tem 2 números: o comando usa o telefone da OS
+  quando ele está na lista; senão, o número fixo. A IA também tem os 2 em
+  `TriagemLlm__AllowedPhones` (CDK e, pontualmente, `/etc/atua-api.env`).
+- Channel Node — `src/test-safeguard.ts`: qualquer destinatário fora da mesma
+  lista é concluído como `PermanentFailure`
   (`TEST_RECIPIENT_NOT_ALLOWED`) sem envio.
+- Script E2E: `E2E_TEST_PHONE` só aceita números dessa lista.
 
 Remoção (obrigatória antes de qualquer uso real):
 
@@ -1053,3 +1058,17 @@ pendentes. O status atualizado está na seção 11.
   `EmColeta` com texto e foto; após `release-to-pool`, a aba "Pool" mostrou a
   conversa e a foto. Sem "Assumir" e sem campo de mensagem.
 - Cleanup autorizado: linhas e 1 objeto S3 removidos; `status` = 0 linhas.
+
+### E2E simultâneo com 2 números (2026-10-24)
+
+- Trava ampliada para 2 destinatários (commit `67ee937`); API e Channel
+  republicados com a sessão preservada.
+- `E2E-20261024161117` (…1248): comando `Completed` em 16:11:39 UTC, 0
+  retentativas, triagem `ContatoIniciado`.
+- `E2E-20261024161150` (…0065): comando `Completed` em 16:11:58 UTC; o
+  cliente respondeu e a IA enviou `RespostaLlm` em 16:12:10 UTC; triagem
+  `EmColeta`.
+- O PO confirmou nos aparelhos: 1 mensagem inicial legível no …1248;
+  mensagem inicial e resposta da IA legíveis no …0065.
+- Pendente: concluir as duas conduções, validar no Office e limpar com
+  autorização.
