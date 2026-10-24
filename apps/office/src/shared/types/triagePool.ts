@@ -120,6 +120,7 @@ export interface TriagemPoolAttachment {
   receivedAtUtc: string
   url: string
   urlExpiresAtUtc: string
+  contentPath?: string
 }
 
 export interface TriagemPoolConversationEntry {

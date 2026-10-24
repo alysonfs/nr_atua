@@ -102,6 +102,7 @@ async function request<TResponse>(
   path: string,
   init: RequestInit = {},
   isRetryAfterRefresh = false,
+  responseType: 'json' | 'arrayBuffer' = 'json',
 ): Promise<TResponse | null> {
   const token = accessTokenProvider?.() ?? null
   const headers = new Headers(init.headers)
@@ -128,8 +129,12 @@ async function request<TResponse>(
   ) {
     const refreshed = await sessionRefreshHandler()
     if (refreshed) {
-      return request<TResponse>(path, init, true)
+      return request<TResponse>(path, init, true, responseType)
     }
+  }
+
+  if (response.ok && responseType === 'arrayBuffer') {
+    return await response.arrayBuffer() as TResponse
   }
 
   const isJson = response.headers.get('content-type')?.includes('application/json')
@@ -144,6 +149,8 @@ async function request<TResponse>(
 }
 
 export const apiClient = {
+  getArrayBuffer: (path: string, signal?: AbortSignal) =>
+    request<ArrayBuffer>(path, { method: 'GET', signal }, false, 'arrayBuffer'),
   get: <TResponse>(path: string) => request<TResponse>(path, { method: 'GET' }),
   post: <TResponse>(path: string, body?: unknown) =>
     request<TResponse>(path, { method: 'POST', body: body ? JSON.stringify(body) : undefined }),

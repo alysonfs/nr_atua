@@ -7,15 +7,19 @@
  * - Zoom +/- e "ajustar à tela" na imagem.
  * - Navegação anterior/próximo entre imagens.
  * - Fechamento por Esc, botão e clique fora (overlay).
- * - PDFs exibidos via <object> com link "abrir em nova aba".
+ * - PDFs com miniatura e renderização local, com link "abrir em nova aba".
  * - Anexos sem zoom (áudio/vídeo/documento não-PDF) não ganham o botão.
  */
 
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { AttachmentsSection } from '../../components/AttachmentsSection'
 import type { TriagemPoolAttachment } from '../../../../shared/types/triagePool'
+
+vi.mock('../../components/PdfPreview', () => ({
+  PdfPreview: ({ thumbnail }: { thumbnail?: boolean }) => <canvas aria-label={thumbnail ? 'Miniatura PDF' : 'Página PDF'} />,
+}))
 
 const imageAttachment: TriagemPoolAttachment = {
   mediaId: 'media-1',
@@ -40,6 +44,7 @@ const pdfAttachment: TriagemPoolAttachment = {
   mediaId: 'media-3',
   mediaKind: 'Document',
   contentType: 'application/pdf',
+  contentPath: '/api/tenants/test/triage-pool/test/attachments/media-3/content',
   isVoiceNote: false,
   durationSeconds: null,
   caption: 'Nota fiscal.pdf',
@@ -155,20 +160,28 @@ describe('AttachmentsSection — preview modal', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 
-  it('renders a PDF in an object element with an "open in new tab" link', async () => {
+  it('renders a PDF thumbnail and a local PDF preview with an "open in new tab" link', async () => {
     const user = userEvent.setup()
     render(<AttachmentsSection attachments={[pdfAttachment]} />)
 
     await user.click(screen.getByRole('button', { name: /ampliar anexo/i }))
 
     const dialog = screen.getByRole('dialog', { name: /visualização do documento/i })
-    const object = dialog.querySelector('object[type="application/pdf"]')
-    expect(object).not.toBeNull()
-    expect(object).toHaveAttribute('data', pdfAttachment.url)
+    expect(screen.getByLabelText('Miniatura PDF')).toBeInTheDocument()
+    expect(within(dialog).getByLabelText('Página PDF')).toBeInTheDocument()
+    expect(dialog.querySelector('object')).toBeNull()
 
     const link = screen.getByRole('link', { name: /abrir em nova aba/i })
     expect(link).toHaveAttribute('href', pdfAttachment.url)
     expect(link).toHaveAttribute('target', '_blank')
+  })
+
+  it('previews an image sent as a document using its MIME type', async () => {
+    const user = userEvent.setup()
+    render(<AttachmentsSection attachments={[{ ...imageAttachment, mediaKind: 'Document' }]} />)
+    expect(screen.getByAltText('Foto do defeito')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /ampliar anexo/i }))
+    expect(within(screen.getByRole('dialog')).getByAltText('Foto do defeito')).toBeInTheDocument()
   })
 })
 

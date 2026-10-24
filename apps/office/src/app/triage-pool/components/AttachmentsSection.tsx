@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { PreviewOpen } from '@icon-park/react'
 import type { TriagemPoolAttachment } from '../../../shared/types/triagePool'
 import { AttachmentPreviewModal } from './AttachmentPreviewModal'
+import { PdfPreview } from './PdfPreview'
 
 interface AttachmentItemProps {
   attachment: TriagemPoolAttachment
@@ -11,10 +12,8 @@ interface AttachmentItemProps {
 
 /**
  * Um anexo do pool (C2): imagem em miniatura, áudio/vídeo com player nativo
- * ou link para os demais tipos. A URL é pré-assinada e temporária — a role
- * da EC2 ainda não tem `s3:GetObject` em produção (ver épico, seção 6), então
- * o carregamento pode falhar; trata com mensagem amigável em vez de erro
- * quebrado de mídia.
+ * ou link para os demais tipos. PDFs são renderizados localmente a partir
+ * da rota autenticada da API, sem depender de plugins do navegador.
  *
  * Imagens e PDFs (`contentType === 'application/pdf'`) ganham um botão de
  * zoom que abre `AttachmentPreviewModal` na própria página.
@@ -31,7 +30,7 @@ function AttachmentItem({ attachment, onPreview }: AttachmentItemProps) {
     )
   }
 
-  if (attachment.mediaKind === 'Image') {
+  if (attachment.mediaKind === 'Image' || attachment.contentType.toLowerCase().startsWith('image/')) {
     return (
       <div className="group relative">
         <img
@@ -68,10 +67,15 @@ function AttachmentItem({ attachment, onPreview }: AttachmentItemProps) {
     )
   }
 
-  const isPdf = attachment.contentType === 'application/pdf'
+  const isPdf = attachment.contentType.split(';')[0].trim().toLowerCase() === 'application/pdf'
 
   return (
     <div className="flex items-center gap-2">
+      {isPdf && (
+        <button type="button" onClick={() => onPreview(attachment)} aria-label={t('triagePoolDetail.attachments.zoomAria')}>
+          <PdfPreview key={attachment.contentPath} contentPath={attachment.contentPath} thumbnail />
+        </button>
+      )}
       <a
         href={attachment.url}
         target="_blank"
@@ -84,7 +88,7 @@ function AttachmentItem({ attachment, onPreview }: AttachmentItemProps) {
         <button
           type="button"
           onClick={() => onPreview(attachment)}
-          aria-label={t('triagePoolDetail.attachments.zoomAria')}
+          aria-label={t('triagePoolDetail.attachments.preview.pdfTitle')}
           className="rounded-md p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-800"
         >
           <PreviewOpen theme="outline" size={16} />
@@ -103,7 +107,8 @@ export function AttachmentsSection({ attachments }: AttachmentsSectionProps) {
   const { t } = useTranslation()
   const [previewAttachment, setPreviewAttachment] = useState<TriagemPoolAttachment | null>(null)
 
-  const imageAttachments = attachments.filter((attachment) => attachment.mediaKind === 'Image')
+  const imageAttachments = attachments.filter((attachment) =>
+    attachment.mediaKind === 'Image' || attachment.contentType.toLowerCase().startsWith('image/'))
 
   return (
     <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">

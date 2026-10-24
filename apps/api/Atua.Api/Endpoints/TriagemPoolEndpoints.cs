@@ -22,6 +22,15 @@ public static class TriagemPoolEndpoints
         endpoints.MapGet($"{BaseRoute}/{{triagemId:guid}}", GetDetailAsync)
             .RequireAuthorization("BrowserSession");
 
+        endpoints.MapGet($"{BaseRoute}/{{triagemId:guid}}/attachments/{{mediaId:guid}}/content", GetAttachmentContentAsync)
+            .RequireAuthorization("BrowserSession")
+            .WithSummary("Lê um anexo da triagem com a mesma autorização do detalhe.")
+            .Produces(StatusCodes.Status200OK, contentType: "application/octet-stream")
+            .Produces(StatusCodes.Status401Unauthorized)
+            .Produces(StatusCodes.Status403Forbidden)
+            .Produces(StatusCodes.Status404NotFound)
+            .Produces(StatusCodes.Status503ServiceUnavailable);
+
         endpoints.MapPost($"{BaseRoute}/{{triagemId:guid}}/assume", AssumeAsync)
             .RequireAuthorization("BrowserSession");
     }
@@ -68,11 +77,44 @@ public static class TriagemPoolEndpoints
 
         return result.Outcome switch
         {
-            ETriagemPoolDetailOutcome.Success => Results.Ok(ToResponse(result.Detail!)),
+            ETriagemPoolDetailOutcome.Success => Results.Ok(ToResponse(tenantId, result.Detail!)),
             ETriagemPoolDetailOutcome.Forbidden => Results.Forbid(),
             ETriagemPoolDetailOutcome.NotFound => Results.NotFound(new { error = "triagem_not_found" }),
             _ => Results.Problem(statusCode: StatusCodes.Status500InternalServerError),
         };
+    }
+
+    private static async Task<IResult> GetAttachmentContentAsync(Guid tenantId, Guid triagemId, Guid mediaId,
+        ClaimsPrincipal user, IGetTriagemPoolDetailUseCase useCase, ITriagemInboundMediaStorage storage,
+        HttpContext httpContext, ILoggerFactory loggerFactory, CancellationToken cancellationToken)
+    {
+        var userId = GetUserId(user);
+        if (userId is null) return Results.Unauthorized();
+
+        var result = await useCase.ExecuteAsync(tenantId, triagemId, userId.Value, cancellationToken);
+        if (result.Outcome == ETriagemPoolDetailOutcome.Forbidden) return Results.Forbid();
+        if (result.Outcome != ETriagemPoolDetailOutcome.Success ||
+            !result.Detail!.Attachments.Any(attachment => attachment.MediaId == mediaId))
+        {
+            return Results.NotFound(new { error = "attachment_not_found" });
+        }
+
+        try
+        {
+            var content = await storage.GetAsync(new TriagemInboundMediaStorageKey(tenantId, mediaId), cancellationToken);
+            if (content is null) return Results.NotFound(new { error = "attachment_not_found" });
+
+            httpContext.Response.Headers.CacheControl = "private, no-store";
+            httpContext.Response.Headers.XContentTypeOptions = "nosniff";
+            return Results.File(content.Content, "application/octet-stream", fileDownloadName: $"{mediaId:D}");
+        }
+        catch (TriagemInboundMediaStorageException exception)
+        {
+            loggerFactory.CreateLogger("TriagemPoolAttachments")
+                .LogError(exception, "Falha ao ler anexo {MediaId} da triagem {TriagemId}", mediaId, triagemId);
+            return Results.Problem(statusCode: StatusCodes.Status503ServiceUnavailable,
+                title: "attachment_storage_unavailable");
+        }
     }
 
     private static async Task<IResult> AssumeAsync(Guid tenantId, Guid triagemId, ClaimsPrincipal user,
@@ -143,7 +185,7 @@ public static class TriagemPoolEndpoints
                     item.LlmUsage.EstimatedCostUsd)))
             .ToArray());
 
-    private static TriagemPoolDetailResponse ToResponse(TriagemPoolDetailView detail) =>
+    private static TriagemPoolDetailResponse ToResponse(Guid tenantId, TriagemPoolDetailView detail) =>
         new(
             detail.TriagemId,
             detail.Status.ToString(),
@@ -182,7 +224,8 @@ public static class TriagemPoolEndpoints
             detail.Attachments.Select(attachment => new TriagemPoolAttachmentResponse(
                     attachment.MediaId, attachment.MediaKind.ToString(), attachment.ContentType,
                     attachment.IsVoiceNote, attachment.DurationSeconds, attachment.Caption,
-                    attachment.ReceivedAtUtc, attachment.Url.ToString(), attachment.UrlExpiresAtUtc))
+                    attachment.ReceivedAtUtc, attachment.Url.ToString(), attachment.UrlExpiresAtUtc,
+                    $"/api/tenants/{tenantId:D}/triage-pool/{detail.TriagemId:D}/attachments/{attachment.MediaId:D}/content"))
                 .ToArray(),
             detail.Conversation.Select(entry => new TriagemPoolConversationEntryResponse(
                     entry.AtUtc, entry.Sender, entry.Kind, entry.Text, entry.AttachmentMediaId))
@@ -256,7 +299,8 @@ public sealed record TriagemPoolAttachmentResponse(
     string? Caption,
     DateTimeOffset ReceivedAtUtc,
     string Url,
-    DateTimeOffset UrlExpiresAtUtc);
+    DateTimeOffset UrlExpiresAtUtc,
+    string? ContentPath = null);
 
 public sealed record TriagemPoolConversationEntryResponse(
     DateTimeOffset AtUtc,

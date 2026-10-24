@@ -53,11 +53,10 @@ public interface ITriagemInboundMediaStorage
         CancellationToken cancellationToken);
 
     /// <summary>
-    /// Lê o binário do objeto — usada exclusivamente pela classificação de
-    /// visão computacional de anexos de imagem (decisão do PO), que precisa
-    /// dos bytes para montar o bloco de imagem da Converse API. Nunca usada
-    /// para expor o binário a um chamador externo (isso é
-    /// <see cref="CreatePresignedReadUrlAsync"/>). Retorna <c>null</c>
+    /// Lê o binário do objeto — usada pela classificação de
+    /// visão computacional de anexos e pela leitura autenticada do Office,
+    /// que verifica acesso ao tenant, à triagem e ao anexo antes da leitura.
+    /// Retorna <c>null</c>
     /// quando o objeto não existe (idempotência/expurgo concorrente) — não é
     /// um erro.
     /// </summary>

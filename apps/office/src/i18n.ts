@@ -482,6 +482,8 @@ const ptBR = {
       preview: {
         imageTitle: 'Visualização da imagem',
         pdfTitle: 'Visualização do documento',
+        loading: 'Carregando documento...',
+        pdfPage: 'Página {{page}} do PDF',
         pdfFallback: 'Não foi possível exibir o PDF embutido. Use "Abrir em nova aba".',
         zoomIn: 'Aumentar zoom',
         zoomOut: 'Diminuir zoom',
@@ -1138,6 +1140,8 @@ const enUS = {
       preview: {
         imageTitle: 'Image preview',
         pdfTitle: 'Document preview',
+        loading: 'Loading document...',
+        pdfPage: 'PDF page {{page}}',
         pdfFallback: 'Unable to display the embedded PDF. Use "Open in new tab".',
         zoomIn: 'Zoom in',
         zoomOut: 'Zoom out',
@@ -1733,6 +1737,8 @@ const esAR = {
       preview: {
         imageTitle: 'Vista previa de la imagen',
         pdfTitle: 'Vista previa del documento',
+        loading: 'Cargando documento...',
+        pdfPage: 'Página {{page}} del PDF',
         pdfFallback: 'No fue posible mostrar el PDF incrustado. Usá "Abrir en una nueva pestaña".',
         zoomIn: 'Aumentar zoom',
         zoomOut: 'Disminuir zoom',

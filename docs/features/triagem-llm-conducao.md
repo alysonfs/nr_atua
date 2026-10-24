@@ -193,6 +193,25 @@ atendente, nunca como confirmação de garantia.
 e no detalhe da OS. **Não aparece na listagem do pool**, por ser um cálculo
 mais custoso e por decisão de escopo do PO.
 
+### Visualização de anexos no Office
+
+PDFs têm miniatura da primeira página e visualização no modal com zoom e
+paginação, renderizados localmente com PDF.js. O Office não depende de
+plugins de PDF do navegador nem envia documentos a visualizadores externos.
+Imagens enviadas como documento também são reconhecidas pelo MIME para
+miniatura e zoom.
+
+O detalhe fornece `attachments[].contentPath`, uma rota autenticada
+`GET /api/tenants/{tenantId}/triage-pool/{triagemId}/attachments/{mediaId}/content`.
+Ela reutiliza a autorização do detalhe da triagem e verifica se o anexo
+pertence àquela triagem antes de ler o armazenamento. O binário retorna
+com `Cache-Control: private, no-store` e `X-Content-Type-Options: nosniff`.
+O cliente usa o mesmo token em memória e renovação de sessão das demais
+consultas. Isso dispensa CORS no bucket e evita depender da validade de uma
+URL pré-assinada aberta há muito tempo. Links temporários para abrir em nova
+aba continuam disponíveis. Falhas de leitura/renderização ficam visíveis,
+sem modal vazio.
+
 ### 3.2 Custo de IA por triagem
 
 A tabela `triagem_llm_usage` já registra cada chamada (§5). A partir desta

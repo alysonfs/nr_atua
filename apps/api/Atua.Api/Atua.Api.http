@@ -2,6 +2,17 @@
 @Atua.Api.ServiceCredentialToken = {{serviceCredentialToken}}
 @tenantId = 00000000-0000-0000-0000-000000000000
 @triagemId = 00000000-0000-0000-0000-000000000000
+@mediaId = 00000000-0000-0000-0000-000000000000
+
+### Leitura autenticada do anexo (usar token da sessão do Office)
+GET {{Atua.Api_HostAddress}}/api/tenants/{{tenantId}}/triage-pool/{{triagemId}}/attachments/{{mediaId}}/content
+Authorization: Bearer {{browserAccessToken}}
+
+### Anexo inexistente ou fora da triagem autorizada: 404
+GET {{Atua.Api_HostAddress}}/api/tenants/{{tenantId}}/triage-pool/{{triagemId}}/attachments/00000000-0000-0000-0000-000000000001/content
+Authorization: Bearer {{browserAccessToken}}
+
+###
 
 GET {{Atua.Api_HostAddress}}/weatherforecast/
 Accept: application/json

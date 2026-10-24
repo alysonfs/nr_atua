@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { Close, Left, Right, ZoomIn, ZoomOut, FullScreen } from '@icon-park/react'
 import { Dialog } from '../../../shared/components/ui/Dialog'
 import type { TriagemPoolAttachment } from '../../../shared/types/triagePool'
+import { PdfPreview } from './PdfPreview'
 
 const MIN_SCALE = 1
 const MAX_SCALE = 3
@@ -27,9 +28,7 @@ interface AttachmentPreviewModalProps {
  * - Imagens: zoom +/- (até 3x) ou "ajustar à tela" (volta a 1x), navegação
  *   anterior/próximo entre as demais imagens da triagem (teclado ou botão),
  *   e `alt` descritivo.
- * - PDFs (`contentType === 'application/pdf'`): exibidos via `<object>` com
- *   a URL pré-assinada, com fallback e link "abrir em nova aba" (a mesma
- *   URL pode não renderizar embutida em todos os navegadores/políticas).
+ * - PDFs são renderizados localmente, sem visualizador nativo do navegador.
  * - Fecha com Esc, clique fora do painel (ver `Dialog`) ou botão de fechar.
  */
 export function AttachmentPreviewModal({ attachment, images, onNavigate, onClose }: AttachmentPreviewModalProps) {
@@ -44,8 +43,8 @@ export function AttachmentPreviewModal({ attachment, images, onNavigate, onClose
     setScale(MIN_SCALE)
   }
 
-  const isPdf = attachment?.contentType === 'application/pdf'
-  const isImage = attachment?.mediaKind === 'Image'
+  const isPdf = attachment?.contentType.split(';')[0].trim().toLowerCase() === 'application/pdf'
+  const isImage = attachment?.mediaKind === 'Image' || attachment?.contentType.toLowerCase().startsWith('image/')
 
   const currentIndex = attachment ? images.findIndex((img) => img.mediaId === attachment.mediaId) : -1
   const hasMultipleImages = isImage && images.length > 1 && currentIndex >= 0
@@ -115,6 +114,9 @@ export function AttachmentPreviewModal({ attachment, images, onNavigate, onClose
           <img
             src={attachment.url}
             alt={attachment.caption ?? t('triagePoolDetail.attachments.imageAlt')}
+            onError={event => {
+              event.currentTarget.alt = t('triagePoolDetail.attachments.loadError')
+            }}
             style={{ transform: `scale(${scale})`, transformOrigin: 'center center' }}
             className="max-h-full max-w-full object-contain transition-transform"
           />
@@ -133,14 +135,12 @@ export function AttachmentPreviewModal({ attachment, images, onNavigate, onClose
 
       {isPdf && (
         <div className="flex h-[70vh] flex-col gap-2 p-4">
-          <object data={attachment.url} type="application/pdf" className="h-full w-full flex-1 rounded-md border border-slate-200">
-            <p className="p-4 text-sm text-slate-600">{t('triagePoolDetail.attachments.preview.pdfFallback')}</p>
-          </object>
+          <PdfPreview key={attachment.mediaId} contentPath={attachment.contentPath} scale={scale} />
         </div>
       )}
 
       <footer className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 px-4 py-3">
-        {isImage ? (
+        {isImage || isPdf ? (
           <div className="flex items-center gap-2">
             <button
               type="button"
