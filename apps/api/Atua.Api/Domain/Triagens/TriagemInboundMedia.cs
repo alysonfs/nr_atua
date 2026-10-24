@@ -96,4 +96,50 @@ public sealed class TriagemInboundMedia
     public string? StorageKey { get; private set; }
 
     public DateTimeOffset CreatedAtUtc { get; private set; }
+
+    // ------------------------------------------------------------------
+    // Classificação de visão computacional (decisão do PO: nota fiscal e
+    // etiqueta validadas automaticamente via Bedrock). Aplicada somente a
+    // imagens (ver <see cref="ETriagemInboundMediaKind.Image"/>) dentro do
+    // limite de tamanho do Bedrock. <see cref="VisionClassifiedAtUtc"/> é o
+    // marcador de idempotência: uma vez definido, esta mídia nunca é
+    // reenviada ao classificador — falha do provedor NÃO define este campo,
+    // deixando o item pendente para nova tentativa em turno futuro.
+    // ------------------------------------------------------------------
+
+    public ETriagemAttachmentVisionTipo? VisionTipoDetectado { get; private set; }
+
+    public bool? VisionLegivel { get; private set; }
+
+    public string? VisionModelo { get; private set; }
+
+    public string? VisionNumeroSerie { get; private set; }
+
+    public double? VisionConfianca { get; private set; }
+
+    /// <summary>Presente somente após uma classificação concluída com sucesso pelo fornecedor — marcador de idempotência.</summary>
+    public DateTimeOffset? VisionClassifiedAtUtc { get; private set; }
+
+    /// <summary>
+    /// Registra o resultado de uma classificação de visão computacional bem
+    /// sucedida (`triagem-llm-conducao.md` — incremento de visão). Chamado
+    /// uma única vez por mídia: chamadas subsequentes não devem ocorrer,
+    /// pois o chamador consulta apenas mídias com
+    /// <see cref="VisionClassifiedAtUtc"/> nulo.
+    /// </summary>
+    public void RegistrarClassificacaoVisao(
+        ETriagemAttachmentVisionTipo tipo,
+        bool legivel,
+        string? modelo,
+        string? numeroSerie,
+        double confianca,
+        DateTimeOffset now)
+    {
+        VisionTipoDetectado = tipo;
+        VisionLegivel = legivel;
+        VisionModelo = string.IsNullOrWhiteSpace(modelo) ? null : modelo.Trim();
+        VisionNumeroSerie = string.IsNullOrWhiteSpace(numeroSerie) ? null : numeroSerie.Trim();
+        VisionConfianca = confianca;
+        VisionClassifiedAtUtc = now;
+    }
 }

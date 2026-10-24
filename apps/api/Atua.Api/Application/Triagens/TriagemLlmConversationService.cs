@@ -23,11 +23,16 @@ namespace Atua.Api.Application.Triagens;
 /// Pendência conhecida (reportada ao orchestrator/software-architect): o
 /// contrato <see cref="TriagemLlmItemAtendido"/> (M1) carrega apenas um
 /// texto de evidência — insuficiente para os dois campos estruturados que
-/// a Etiqueta (modelo + série) e a MidiaDefeito (foto/vídeo) exigem. Por
-/// isso, esta implementação aplica automaticamente via LLM apenas os cinco
-/// demais itens do checklist (DescricaoDefeito, NotaFiscal, Endereco,
-/// PontoReferencia, Localizacao); Etiqueta e MidiaDefeito continuam
-/// exigindo evolução futura do contrato ou coleta assistida.
+/// a Etiqueta (modelo + série) exige. Por isso, a LLM conversacional só
+/// aplica automaticamente itens de texto livre (DescricaoDefeito, Endereco,
+/// PontoReferencia, Localizacao, e eventualmente NotaFiscal quando o
+/// próprio consumidor a confirma em texto). NotaFiscal e Etiqueta também
+/// passaram a ser conferidas automaticamente por
+/// <see cref="IClassifyTriagemAttachmentsUseCase"/> (decisão do PO:
+/// adiantar a visão computacional no Bedrock) a cada turno, antes desta
+/// chamada — regra determinística, nunca decidida pela própria LLM
+/// conversacional. MidiaDefeito (foto/vídeo do defeito) é opcional e nunca
+/// bloqueia <see cref="Triagem.ChecklistMinimoCompleto"/>.
 /// </summary>
 public sealed class TriagemLlmConversationService(
     ITriagemRepository triagemRepository,
@@ -37,6 +42,7 @@ public sealed class TriagemLlmConversationService(
     ITriagemLlmUsageRepository usageRepository,
     ITriagemLlmResponseVerifier responseVerifier,
     ITriagemLlmRetryDelay retryDelay,
+    IClassifyTriagemAttachmentsUseCase attachmentVisionUseCase,
     IOptions<TriagemLlmConversationOptions> options,
     TimeProvider timeProvider,
     ILogger<TriagemLlmConversationService> logger)
@@ -93,6 +99,14 @@ public sealed class TriagemLlmConversationService(
         }
 
         var now = timeProvider.GetUtcNow();
+
+        // Classificação de visão computacional (decisão do PO): roda antes
+        // da chamada de conversa do mesmo turno, idempotente por mídia, e
+        // conta no mesmo orçamento de chamadas verificado logo abaixo.
+        // Falha do provedor nunca interrompe o turno — o item fica
+        // pendente, e o fato (ou a ausência dele) é informado ao prompt via
+        // `contextRepository`.
+        await attachmentVisionUseCase.ClassifyPendingAsync(tenantId, triagem, cancellationToken);
 
         var callCount = await usageRepository.CountCallsAsync(triagemId, cancellationToken);
         if (callCount >= options.Value.MaxLlmCallsPerTriagem)

@@ -64,12 +64,22 @@ public static class TriagemLlmSystemPromptBuilder
             "`sinalDesvio`, não tente resolver sozinha.");
         builder.AppendLine("- Áudio: a transcrição automática ainda não existe (fase 1). Agradeça o áudio, " +
             "informe que ele foi recebido para o técnico e peça o essencial em texto.");
-        builder.AppendLine("- Vídeo: trate como anexo de mídia do defeito. Se não conseguir interpretar o " +
-            "conteúdo, peça a descrição em texto ou fotos adicionais.");
-        builder.AppendLine("- Imagem e vídeo: você NÃO vê o conteúdo dos anexos nesta fase, só sabe que " +
-            "chegaram. Nunca diga que viu, analisou ou confirmou o que há na imagem. Agradeça o envio, " +
-            "diga que o técnico vai conferir e, se o cliente perguntar se é a foto certa, explique o que " +
-            "a foto precisa mostrar (ex.: etiqueta com modelo e número de série legíveis).");
+        builder.AppendLine("- Anexos em geral: você NÃO vê o conteúdo dos anexos (imagem, vídeo, áudio ou " +
+            "documento) — apenas sabe que chegaram e, quando aplicável, recebe o FATO já apurado por um " +
+            "sistema determinístico (ver regras específicas abaixo). Nunca diga que viu, analisou ou " +
+            "conferiu o conteúdo de um anexo além desse fato.");
+        builder.AppendLine("- Vídeo: trate como anexo de mídia do defeito. Foto ou vídeo do defeito é " +
+            "OPCIONAL — não é obrigatório pedir nem insistir; se o cliente já descreveu o defeito em " +
+            "texto, não é necessário cobrar o envio de mídia. Você NÃO vê o conteúdo de vídeos — nunca " +
+            "diga que viu, analisou ou confirmou o que há no vídeo.");
+        builder.AppendLine("- Imagem de nota fiscal e de etiqueta: já são conferidas automaticamente por um " +
+            "sistema de visão computacional antes desta mensagem — você recebe apenas o FATO do resultado " +
+            "(legível/ilegível), nunca a imagem em si. Nunca diga que você mesma viu, analisou ou conferiu " +
+            "a imagem; apenas reaja ao fato informado (ex.: agradeça quando legível, ou peça uma nova foto " +
+            "mais nítida — bem iluminada, sem corte, mostrando todo o texto — quando ilegível).");
+        builder.AppendLine("- Outras imagens (ex.: foto do defeito): você NÃO vê o conteúdo, só sabe que " +
+            "chegaram. Nunca diga que viu, analisou ou confirmou o que há na imagem. Agradeça o envio e " +
+            "diga que o técnico vai conferir.");
         builder.AppendLine("- Detalhes do defeito: colete o que ajuda o técnico a chegar preparado (sintoma, " +
             "código de erro no visor, quando acontece, se é constante ou intermitente). Pergunte apenas " +
             "o que ainda não foi dito e que tenha relação direta com o produto e com o que o cliente " +
@@ -99,11 +109,14 @@ public static class TriagemLlmSystemPromptBuilder
 
         if (request.AnexosRecebidos.Count > 0)
         {
-            builder.AppendLine("## Anexos recebidos nesta janela (apenas metadados, sem conteúdo)");
+            builder.AppendLine("## Anexos recebidos nesta janela (apenas metadados/fatos, sem conteúdo)");
             foreach (var anexo in request.AnexosRecebidos)
             {
                 var candidato = anexo.ChecklistItemCandidato is { } item ? $", possivelmente: {item}" : "";
-                builder.AppendLine($"- {anexo.Kind}{candidato}");
+                var fato = anexo.VisionFato is { } vf
+                    ? $" — classificado automaticamente como {vf.Tipo}, {(vf.Legivel ? "legível" : "ILEGÍVEL (peça nova foto)")}"
+                    : "";
+                builder.AppendLine($"- {anexo.Kind}{candidato}{fato}");
             }
             builder.AppendLine();
         }

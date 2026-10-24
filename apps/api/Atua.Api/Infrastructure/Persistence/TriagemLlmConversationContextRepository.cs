@@ -61,8 +61,24 @@ public sealed class TriagemLlmConversationContextRepository(AtuaDbContext dbCont
             .Where(media => media.TriagemId == triagemId)
             .OrderByDescending(media => media.ReceivedAtUtc)
             .Take(AttachmentWindowSize)
-            .Select(media => new TriagemLlmAttachmentMetadata(media.Id, media.MediaKind, null))
+            .Select(media => new
+            {
+                media.Id,
+                media.MediaKind,
+                media.VisionTipoDetectado,
+                media.VisionLegivel,
+            })
             .ToListAsync(cancellationToken);
+
+        var anexosMetadata = anexos
+            .Select(media => new TriagemLlmAttachmentMetadata(
+                media.Id,
+                media.MediaKind,
+                ChecklistItemCandidato: null,
+                VisionFato: media.VisionTipoDetectado is { } tipo && media.VisionLegivel is { } legivel
+                    ? new TriagemLlmAttachmentVisionFato(tipo, legivel)
+                    : null))
+            .ToList();
 
         return new TriagemLlmConversationContext(
             tenant?.Name ?? "",
@@ -70,6 +86,6 @@ public sealed class TriagemLlmConversationContextRepository(AtuaDbContext dbCont
             workOrder?.ProductBrand,
             jaApresentouIdentidade,
             historico,
-            anexos);
+            anexosMetadata);
     }
 }

@@ -280,13 +280,20 @@ if (triagemLlmEnabled)
         return new AmazonBedrockRuntimeClient(Amazon.RegionEndpoint.GetBySystemName(region));
     });
     builder.Services.AddScoped<ITriagemLlmClient, BedrockTriagemLlmClient>();
+    // Mesma flag/modelo do adaptador conversacional — classificação de
+    // visão de anexos é apenas mais uma chamada de LLM da triagem (decisão
+    // do PO: adiantar a conferência automática de nota fiscal/etiqueta).
+    builder.Services.AddScoped<ITriagemAttachmentVisionClient, BedrockTriagemAttachmentVisionClient>();
 }
 else
 {
     builder.Services.AddSingleton<ITriagemLlmClient, FakeTriagemLlmClient>();
+    builder.Services.AddSingleton<ITriagemAttachmentVisionClient, FakeTriagemAttachmentVisionClient>();
 }
 builder.Services.AddSingleton<ITriagemLlmResponseVerifier, TriagemLlmResponseVerifier>();
 builder.Services.AddScoped<ITriagemLlmUsageRepository, TriagemLlmUsageRepository>();
+builder.Services.AddScoped<ITriagemAttachmentVisionRepository, TriagemAttachmentVisionRepository>();
+builder.Services.AddScoped<IClassifyTriagemAttachmentsUseCase, ClassifyTriagemAttachmentsUseCase>();
 
 // Relatório de consumo/custo de LLM por tenant para o Office (ADR-048,
 // pendência "Relatório de consumo por tenant no Office"). Preço por modelo

@@ -121,7 +121,7 @@ public sealed class GetTriagemPoolDetailUseCase(
             !string.IsNullOrWhiteSpace(triagem.EtiquetaModelo) && !string.IsNullOrWhiteSpace(triagem.EtiquetaSerie)
                 ? $"Modelo {triagem.EtiquetaModelo} / Série {triagem.EtiquetaSerie}"
                 : null),
-        new TriagemPoolChecklistItemView(ETriagemChecklistItem.MidiaDefeito, Required: true,
+        new TriagemPoolChecklistItemView(ETriagemChecklistItem.MidiaDefeito, Required: false,
             triagem.MidiaDefeitoTipo is not null, triagem.MidiaDefeitoTipo?.ToString()),
         new TriagemPoolChecklistItemView(ETriagemChecklistItem.Endereco, Required: true,
             !string.IsNullOrWhiteSpace(triagem.EnderecoCompleto), triagem.EnderecoCompleto),

@@ -754,6 +754,16 @@ public sealed class AtuaDbContext(DbContextOptions<AtuaDbContext> options) : DbC
         builder.Property(media => media.ExpiresAtUtc).IsRequired();
         builder.Property(media => media.CreatedAtUtc).IsRequired();
 
+        // Classificação de visão computacional (decisão do PO — conferência
+        // automática de nota fiscal/etiqueta via Bedrock). Todas nulas
+        // enquanto a mídia não é imagem ou ainda não foi classificada.
+        builder.Property(media => media.VisionTipoDetectado).HasConversion<string>().HasMaxLength(16);
+        builder.Property(media => media.VisionLegivel);
+        builder.Property(media => media.VisionModelo).HasMaxLength(128);
+        builder.Property(media => media.VisionNumeroSerie).HasMaxLength(128);
+        builder.Property(media => media.VisionConfianca);
+        builder.Property(media => media.VisionClassifiedAtUtc);
+
         builder.HasIndex(media => new { media.TenantId, media.ChannelIdempotencyKey })
             .IsUnique()
             .HasDatabaseName(TriagemInboundMediaPersistenceSchema.IdempotencyUniqueIndexName);

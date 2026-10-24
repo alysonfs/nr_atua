@@ -97,23 +97,24 @@ public sealed class Triagem
 
     /// <summary>
     /// Checklist mínimo rígido completo: descrição, nota fiscal legível,
-    /// etiqueta legível (modelo e série), ao menos uma foto OU vídeo do
-    /// defeito, e endereço completo. Itens opcionais não entram no cálculo.
+    /// etiqueta legível (modelo e série) e endereço completo. Foto/vídeo do
+    /// defeito é opcional (decisão do PO — não bloqueia a suficiência, mesmo
+    /// princípio já aplicado a <see cref="PontoReferencia"/> e
+    /// <see cref="Localizacao"/>) e não entra no cálculo.
     /// </summary>
     public bool ChecklistMinimoCompleto =>
         !string.IsNullOrWhiteSpace(DescricaoDefeito)
         && NotaFiscalLegivel
         && !string.IsNullOrWhiteSpace(EtiquetaModelo)
         && !string.IsNullOrWhiteSpace(EtiquetaSerie)
-        && MidiaDefeitoTipo is not null
         && !string.IsNullOrWhiteSpace(EnderecoCompleto);
 
     /// <summary>Quantidade total de itens do checklist mínimo rígido (épico, pool, coluna "itens completos/total").</summary>
-    public const int ChecklistItensMinimosTotal = 5;
+    public const int ChecklistItensMinimosTotal = 4;
 
     /// <summary>
     /// Quantidade de itens do checklist mínimo rígido já preenchidos — cada
-    /// um dos cinco itens de <see cref="ChecklistMinimoCompleto"/> conta
+    /// um dos quatro itens de <see cref="ChecklistMinimoCompleto"/> conta
     /// no máximo 1, independentemente de quantas tentativas/mensagens o
     /// preencheram.
     /// </summary>
@@ -121,7 +122,6 @@ public sealed class Triagem
         (string.IsNullOrWhiteSpace(DescricaoDefeito) ? 0 : 1)
         + (NotaFiscalLegivel ? 1 : 0)
         + (!string.IsNullOrWhiteSpace(EtiquetaModelo) && !string.IsNullOrWhiteSpace(EtiquetaSerie) ? 1 : 0)
-        + (MidiaDefeitoTipo is not null ? 1 : 0)
         + (!string.IsNullOrWhiteSpace(EnderecoCompleto) ? 1 : 0);
 
     // ------------------------------------------------------------------

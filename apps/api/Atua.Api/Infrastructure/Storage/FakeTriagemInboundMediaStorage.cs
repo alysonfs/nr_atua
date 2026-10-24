@@ -67,4 +67,31 @@ public sealed class FakeTriagemInboundMediaStorage : ITriagemInboundMediaStorage
         CancellationToken cancellationToken) =>
         Task.FromResult(new Uri(
             $"https://fake-triagem-inbound-media.local/{key.Value}?expiresInSeconds={(int)expiresIn.TotalSeconds}"));
+
+    /// <summary>
+    /// Chaves para as quais <see cref="GetAsync"/> deve lançar
+    /// <see cref="TriagemInboundMediaStorageUnavailableException"/> — usado
+    /// por testes da classificação de visão para simular falha transitória
+    /// de storage sem depender de AWS real.
+    /// </summary>
+    public HashSet<string> FailGetForKeys { get; } = [];
+
+    public Task<TriagemInboundMediaContent?> GetAsync(
+        TriagemInboundMediaStorageKey key,
+        CancellationToken cancellationToken)
+    {
+        if (FailGetForKeys.Contains(key.Value))
+        {
+            throw new TriagemInboundMediaStorageUnavailableException(
+                $"Falha simulada ao ler a chave '{key.Value}'.");
+        }
+
+        if (!objects.TryGetValue(key.Value, out var stored))
+        {
+            return Task.FromResult<TriagemInboundMediaContent?>(null);
+        }
+
+        return Task.FromResult<TriagemInboundMediaContent?>(
+            new TriagemInboundMediaContent(stored.Content, stored.ContentType, stored.Content.LongLength));
+    }
 }

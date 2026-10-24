@@ -29,13 +29,26 @@ public sealed record TriagemLlmChecklistItemState(ETriagemChecklistItem Item, bo
 public sealed record TriagemLlmConversationTurn(ETriagemLlmConversationRole Role, string Texto);
 
 /// <summary>
+/// Fato objetivo da classificação de visão computacional de um anexo de
+/// imagem (decisão do PO), informado à LLM como dado pronto — nunca como
+/// algo que a própria LLM "viu". Presente apenas quando a mídia já foi
+/// classificada (<see cref="ETriagemAttachmentVisionTipo"/>); ausente para
+/// vídeo/áudio/documento e para imagens ainda não classificadas (tamanho
+/// acima do limite do Bedrock ou falha do fornecedor).
+/// </summary>
+public sealed record TriagemLlmAttachmentVisionFato(ETriagemAttachmentVisionTipo Tipo, bool Legivel);
+
+/// <summary>
 /// Metadados de um anexo recebido — nunca o binário. Usado para a LLM saber
 /// que uma imagem/vídeo chegou e de que tipo é, sem enviar conteúdo.
+/// <see cref="VisionFato"/> carrega o único fato sobre o conteúdo que a LLM
+/// recebe para imagens de nota fiscal/etiqueta já classificadas.
 /// </summary>
 public sealed record TriagemLlmAttachmentMetadata(
     Guid MediaId,
     ETriagemInboundMediaKind Kind,
-    ETriagemChecklistItem? ChecklistItemCandidato);
+    ETriagemChecklistItem? ChecklistItemCandidato,
+    TriagemLlmAttachmentVisionFato? VisionFato = null);
 
 /// <summary>
 /// Entrada mínima da LLM (`triagem-llm-conducao.md` §2): checklist

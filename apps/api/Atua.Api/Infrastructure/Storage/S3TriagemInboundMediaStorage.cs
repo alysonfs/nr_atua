@@ -125,6 +125,39 @@ public sealed class S3TriagemInboundMediaStorage(IAmazonS3 s3Client, TriagemInbo
         return Task.FromResult(new Uri(url));
     }
 
+    public async Task<TriagemInboundMediaContent?> GetAsync(
+        TriagemInboundMediaStorageKey key,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var response = await s3Client.GetObjectAsync(
+                new GetObjectRequest { BucketName = options.BucketName, Key = key.Value }, cancellationToken);
+            using var buffer = new MemoryStream();
+            await response.ResponseStream.CopyToAsync(buffer, cancellationToken);
+            return new TriagemInboundMediaContent(buffer.ToArray(), response.Headers.ContentType, response.ContentLength);
+        }
+        catch (AmazonS3Exception exception) when (exception.StatusCode == HttpStatusCode.NotFound)
+        {
+            return null;
+        }
+        catch (AmazonS3Exception exception) when (IsTransient(exception))
+        {
+            throw new TriagemInboundMediaStorageUnavailableException(
+                "Falha transitória ao ler a mídia inbound em S3.", exception);
+        }
+        catch (AmazonS3Exception exception)
+        {
+            throw new TriagemInboundMediaStoragePermanentException(
+                "Falha ao ler a mídia inbound em S3.", exception);
+        }
+        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException && !cancellationToken.IsCancellationRequested)
+        {
+            throw new TriagemInboundMediaStorageUnavailableException(
+                "Falha transitória de conectividade ao ler a mídia inbound em S3.", exception);
+        }
+    }
+
     private static bool IsTransient(AmazonS3Exception exception) =>
         exception.StatusCode is HttpStatusCode.InternalServerError
             or HttpStatusCode.ServiceUnavailable

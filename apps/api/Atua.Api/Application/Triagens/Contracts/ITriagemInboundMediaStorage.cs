@@ -51,7 +51,23 @@ public interface ITriagemInboundMediaStorage
         TriagemInboundMediaStorageKey key,
         TimeSpan expiresIn,
         CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Lê o binário do objeto — usada exclusivamente pela classificação de
+    /// visão computacional de anexos de imagem (decisão do PO), que precisa
+    /// dos bytes para montar o bloco de imagem da Converse API. Nunca usada
+    /// para expor o binário a um chamador externo (isso é
+    /// <see cref="CreatePresignedReadUrlAsync"/>). Retorna <c>null</c>
+    /// quando o objeto não existe (idempotência/expurgo concorrente) — não é
+    /// um erro.
+    /// </summary>
+    Task<TriagemInboundMediaContent?> GetAsync(
+        TriagemInboundMediaStorageKey key,
+        CancellationToken cancellationToken);
 }
+
+/// <summary>Binário e metadados técnicos de um objeto lido do armazenamento de mídia inbound.</summary>
+public sealed record TriagemInboundMediaContent(byte[] Content, string ContentType, long SizeBytes);
 
 /// <summary>Chave determinística do objeto S3 — sem telefone/IDs do consumidor (decisão do `software-architect`).</summary>
 public sealed record TriagemInboundMediaStorageKey(Guid TenantId, Guid MediaId)

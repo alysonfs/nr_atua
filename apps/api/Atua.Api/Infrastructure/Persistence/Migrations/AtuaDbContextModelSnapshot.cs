@@ -922,6 +922,27 @@ namespace Atua.Api.Infrastructure.Persistence.Migrations
                     b.Property<Guid?>("TriagemId")
                         .HasColumnType("uuid");
 
+                    b.Property<DateTimeOffset?>("VisionClassifiedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<double?>("VisionConfianca")
+                        .HasColumnType("double precision");
+
+                    b.Property<bool?>("VisionLegivel")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("VisionModelo")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<string>("VisionNumeroSerie")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<string>("VisionTipoDetectado")
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
                     b.HasKey("Id");
 
                     b.HasIndex("CandidateTriagemIds");
