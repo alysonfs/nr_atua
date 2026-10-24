@@ -442,6 +442,12 @@ public class TriagemChannelMediaEndpointsTests
         builder.Services.AddSingleton<ITriagemLlmClient, FakeTriagemLlmClient>();
         builder.Services.AddSingleton<ITriagemLlmResponseVerifier, TriagemLlmResponseVerifier>();
         builder.Services.AddScoped<ITriagemLlmUsageRepository, TriagemLlmUsageRepository>();
+        // Classificação de visão de anexos (decisão do PO): registrada, mas
+        // inerte nestes testes de ingestão de mídia (não exercitam o loop
+        // conversacional). Reaproveita o mesmo storage fake singleton acima.
+        builder.Services.AddSingleton<ITriagemAttachmentVisionClient, FakeTriagemAttachmentVisionClient>();
+        builder.Services.AddScoped<ITriagemAttachmentVisionRepository, TriagemAttachmentVisionRepository>();
+        builder.Services.AddScoped<IClassifyTriagemAttachmentsUseCase, ClassifyTriagemAttachmentsUseCase>();
         builder.Services.AddSingleton<ITriagemLlmConversationContextRepository,
             FakeTriagemLlmConversationContextRepository>();
         builder.Services.AddSingleton<ITriagemLlmRetryDelay, FakeTriagemLlmRetryDelay>();

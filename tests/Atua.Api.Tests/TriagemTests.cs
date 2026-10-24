@@ -111,6 +111,29 @@ public class TriagemTests
         Assert.Equal(ETriagemStatus.InformacoesSuficientes, triagem.Status);
     }
 
+    [Fact]
+    public void MidiaDefeitoAusente_NaoBloqueiaSuficiencia_ELiberaAoPool()
+    {
+        // Vídeo/foto do defeito é opcional (template "não é obrigatório"):
+        // o checklist mínimo deve se completar e a triagem deve chegar ao
+        // pool mesmo sem RegistrarMidiaDefeito ter sido chamado.
+        var triagem = CriarTriagemEmColeta();
+        triagem.RegistrarDescricaoDefeito("Não gela e faz barulho.", Now);
+        triagem.RegistrarNotaFiscalLegivel(Now);
+        triagem.RegistrarEtiquetaLegivel("ABC123", "SN-998877", Now);
+        triagem.RegistrarEndereco("Rua das Flores, 123, Natal/RN", Now);
+        // Mídia do defeito nunca é registrada.
+
+        Assert.Null(triagem.MidiaDefeitoTipo);
+        Assert.True(triagem.ChecklistMinimoCompleto);
+
+        triagem.MarcarInformacoesSuficientes(Now);
+        Assert.Equal(ETriagemStatus.InformacoesSuficientes, triagem.Status);
+
+        triagem.LiberarAoPool(Now);
+        Assert.Equal(ETriagemStatus.LiberadaAoPool, triagem.Status);
+    }
+
     // -----------------------------------------------------------------------
     // Expiração e falha de contato
     // -----------------------------------------------------------------------

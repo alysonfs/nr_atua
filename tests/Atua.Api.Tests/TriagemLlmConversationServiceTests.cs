@@ -27,6 +27,7 @@ public class TriagemLlmConversationServiceTests
         FakeTriagemLlmUsageRepository UsageRepository,
         FakeTriagemLlmClient LlmClient,
         FakeTriagemLlmRetryDelay RetryDelay,
+        FakeClassifyTriagemAttachmentsUseCase AttachmentVisionUseCase,
         Guid TenantId,
         Guid IntegrationId,
         Guid TriagemId,
@@ -58,6 +59,7 @@ public class TriagemLlmConversationServiceTests
         var llmClient = new FakeTriagemLlmClient();
         var contextRepository = new FakeTriagemLlmConversationContextRepository();
         var retryDelay = new FakeTriagemLlmRetryDelay();
+        var attachmentVisionUseCase = new FakeClassifyTriagemAttachmentsUseCase();
         var effectiveOptions = optionsFactory?.Invoke(tenantId) ?? new TriagemLlmConversationOptions
         {
             ConversationEnabled = true,
@@ -73,12 +75,13 @@ public class TriagemLlmConversationServiceTests
             usageRepository,
             new TriagemLlmResponseVerifier(),
             retryDelay,
+            attachmentVisionUseCase,
             Options.Create(effectiveOptions),
             new FakeTimeProvider(Now),
             NullLogger<TriagemLlmConversationService>.Instance);
 
         return new Fixture(service, triagemRepository, commandRepository, usageRepository, llmClient, retryDelay,
-            tenantId, integrationId, triagemId, workOrderId);
+            attachmentVisionUseCase, tenantId, integrationId, triagemId, workOrderId);
     }
 
     /// <summary>Marca os dois itens que o contrato M1 não permite marcar automaticamente via LLM (pendência documentada).</summary>
@@ -121,6 +124,29 @@ public class TriagemLlmConversationServiceTests
 
         Assert.Single(fixture.UsageRepository.Records);
         Assert.Equal(ETriagemLlmOutcome.Success, fixture.UsageRepository.Records[0].Outcome);
+    }
+
+    [Fact]
+    public async Task ConductAsync_ChamaClassificacaoDeAnexosDeImagemAntesDaConversa()
+    {
+        // Decisão do PO (adiantar a visão computacional no Bedrock): a cada
+        // turno elegível, ClassifyTriagemAttachmentsUseCase é chamado antes
+        // da chamada de conversa — nunca pulado, independente do resultado.
+        var fixture = CreateFixture();
+        fixture.LlmClient.EnqueueResult(TriagemLlmResult.Success(
+            new TriagemLlmSuccessPayload(
+                "Certo, vamos continuar.",
+                new TriagemLlmCamposEstruturados(null, null, null, null),
+                [],
+                new TriagemLlmSinalDesvio(Detectado: false, Motivo: null)),
+            new TriagemLlmUsageInfo("modelo-teste", 10, 10, TimeSpan.FromMilliseconds(100))));
+
+        await fixture.Service.ConductAsync(fixture.TenantId, fixture.TriagemId, Guid.NewGuid(),
+            "+5584994241248", CancellationToken.None);
+
+        var call = Assert.Single(fixture.AttachmentVisionUseCase.Calls);
+        Assert.Equal(fixture.TenantId, call.TenantId);
+        Assert.Equal(fixture.TriagemId, call.TriagemId);
     }
 
     [Fact]

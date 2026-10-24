@@ -9,6 +9,7 @@ using Atua.Api.Endpoints;
 using Atua.Api.Infrastructure.Llm;
 using Atua.Api.Infrastructure.Persistence;
 using Atua.Api.Infrastructure.Security;
+using Atua.Api.Infrastructure.Storage;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -614,6 +615,13 @@ public class TriagemChannelEndpointsTests
         builder.Services.AddSingleton<ITriagemLlmClient, FakeTriagemLlmClient>();
         builder.Services.AddSingleton<ITriagemLlmResponseVerifier, TriagemLlmResponseVerifier>();
         builder.Services.AddScoped<ITriagemLlmUsageRepository, TriagemLlmUsageRepository>();
+        // Classificação de visão de anexos (decisão do PO): registrada, mas
+        // inerte nestes testes (nenhuma mídia de imagem é seedada) — mesmo
+        // padrão de registro inerte usado acima para o loop conversacional.
+        builder.Services.AddSingleton<ITriagemAttachmentVisionClient, FakeTriagemAttachmentVisionClient>();
+        builder.Services.AddSingleton<ITriagemInboundMediaStorage, FakeTriagemInboundMediaStorage>();
+        builder.Services.AddScoped<ITriagemAttachmentVisionRepository, TriagemAttachmentVisionRepository>();
+        builder.Services.AddScoped<IClassifyTriagemAttachmentsUseCase, ClassifyTriagemAttachmentsUseCase>();
         builder.Services.AddSingleton<ITriagemLlmConversationContextRepository,
             FakeTriagemLlmConversationContextRepository>();
         builder.Services.AddSingleton<ITriagemLlmRetryDelay, FakeTriagemLlmRetryDelay>();
