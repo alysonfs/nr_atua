@@ -64,7 +64,7 @@ inválida. O texto sem validação nunca é enviado ao consumidor.
 |---|---|---|
 | Descrição do defeito | Sim | Texto ou transcrição com sintoma identificável |
 | Vídeo/foto do defeito | Não | Mídia opcional — nunca bloqueia a suficiência; não é interpretada pela LLM nem por visão computacional |
-| Foto da nota fiscal | Sim | Imagem recebida e classificada como legível pela visão computacional no Bedrock (regra determinística) |
+| Nota fiscal (imagem ou PDF) | Sim | Anexo recebido e classificado como nota fiscal legível no Bedrock (regra determinística); texto do consumidor não valida o documento |
 | Foto da etiqueta (modelo e série) | Sim | Imagem recebida e classificada como legível, com modelo e número de série extraídos pela visão computacional no Bedrock (regra determinística) |
 | Endereço completo | Sim | Logradouro, número, bairro e cidade identificados |
 | Ponto de referência | Não | Texto recebido |
@@ -76,7 +76,7 @@ itens obrigatórios estão atendidos. A marcação da LLM é um insumo, e a
 decisão é da API. O operador confere o resultado no painel C2.
 
 Decisão do PO (adiantar a visão computacional no Bedrock): quando uma mídia
-de imagem (jpeg/png/webp) chega numa triagem elegível, ela é classificada
+de imagem (jpeg/png/webp) ou um PDF chega numa triagem elegível, ela é classificada
 automaticamente — antes da chamada de conversa do mesmo turno — como nota
 fiscal, etiqueta ou outra imagem, com legibilidade e, no caso da etiqueta,
 modelo e número de série. Quem decide marcar os itens `NotaFiscal` e
@@ -86,8 +86,35 @@ tamanho do Bedrock (~3,75 MiB) ou com falha do fornecedor ficam pendentes
 — sem quebrar o fluxo nem levar a triagem a `AGUARDANDO_INTERVENCAO` só por
 isso — e são retentadas em um turno futuro. Quando a imagem é classificada
 como ilegível, a LLM recebe apenas esse fato (nunca a imagem) e pede uma
-nova foto mais nítida. Vídeo, áudio e documento nunca são enviados ao
-classificador — o vídeo/foto do defeito é opcional e nunca interpretado.
+nova foto mais nítida. Vídeo e áudio nunca são enviados ao
+classificador; documentos PDF são enviados nativamente ao Converse com
+citações habilitadas para leitura visual, inclusive de páginas digitalizadas.
+O limite adotado para PDF é 4.500.000 bytes (o limite de ingestão/armazenamento
+continua 16 MiB). PDF inválido, protegido ou rejeitado pelo fornecedor não
+valida nota fiscal; o item permanece pendente e a conversa continua.
+Não há verificação de autenticidade ou consulta fiscal.
+
+Texto **e mídia armazenada** acionam o mesmo loop conversacional quando a
+triagem está em coleta e dentro da allowlist. O evento de mídia e sua
+legenda entram no histórico recente como turno do consumidor, sem criar um
+evento adicional de mensagem de texto. A chave da resposta usa o ID interno
+persistido da mídia: reentregas idênticas não repetem classificação ou
+resposta já gerada. A foto do defeito pode ser classificada como `Outro`;
+isso não interrompe a conversa nem satisfaz nota fiscal/etiqueta. Vídeo e
+áudio não são interpretados.
+
+Chamadas de visão entram no mesmo custo por tenant e orçamento da triagem,
+reservando ao menos uma chamada para a resposta conversacional do turno.
+
+Validação técnica em 24/10/2026: usando o adaptador real e o perfil global
+Haiku 4.5 escolhido pelo PO, uma nota sintética em PNG e a mesma imagem
+embutida em PDF (sem camada de texto) foram classificadas como `NotaFiscal`
+legível. A chamada PNG consumiu 2.924 tokens de entrada e 76 de saída;
+a PDF, 3.463 e 76. Custo estimado conjunto: USD 0,007147, fora do ledger
+de tenants por serem probes sintéticos sem triagem persistida. Isso valida
+o caminho técnico de imagem/PDF digitalizado, não a autenticidade da nota
+nem a entrega WhatsApp. O adaptador usa AWS SDK BedrockRuntime 4.0.100
+para expor a configuração de citações de documentos do Converse.
 
 Ressalva de confiabilidade (smoke test manual pós-implementação, etiqueta
 sintética): a classificação de tipo/legibilidade e a extração de modelo e
