@@ -24,6 +24,12 @@ source "$SCRIPT_DIR/lib-pg-conn.sh"
 PREFIX="E2E-"
 TENANT_ID="${E2E_TENANT_ID:-01a0888b-acd8-773b-93b7-7362973d7ea8}"
 TEST_PHONE="${E2E_TEST_PHONE:-5584994241248}"
+# Mesma lista da trava da API (TriagemTestSafeguard) e do Channel (test-safeguard.ts).
+ALLOWED_TEST_PHONES="5584994241248 5584991050065"
+case " $ALLOWED_TEST_PHONES " in
+  *" ${TEST_PHONE#+} "*) TEST_PHONE="${TEST_PHONE#+}" ;;
+  *) echo "Erro: E2E_TEST_PHONE fora da lista de destinatários de teste autorizados." >&2; exit 1 ;;
+esac
 MONGO_SECRET_ID="${MONGO_SECRET_ID:-atua/mongodb-atlas}"
 AWS_REGION="${AWS_REGION:-sa-east-1}"
 

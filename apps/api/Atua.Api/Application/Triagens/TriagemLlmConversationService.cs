@@ -149,8 +149,8 @@ public sealed class TriagemLlmConversationService(
                 return;
 
             case ETriagemLlmOutcome.Success:
-                await HandleSuccessAsync(tenantId, triagemId, idempotencyKey, triagem, result.Payload!, now,
-                    cancellationToken);
+                await HandleSuccessAsync(tenantId, triagemId, idempotencyKey, triagem, result.Payload!, consumerPhone,
+                    now, cancellationToken);
                 return;
 
             default:
@@ -198,7 +198,8 @@ public sealed class TriagemLlmConversationService(
     }
 
     private async Task HandleSuccessAsync(Guid tenantId, Guid triagemId, string idempotencyKey, Triagem triagem,
-        TriagemLlmSuccessPayload payload, DateTimeOffset now, CancellationToken cancellationToken)
+        TriagemLlmSuccessPayload payload, string consumerPhone, DateTimeOffset now,
+        CancellationToken cancellationToken)
     {
         ApplyItensAtendidos(triagem, payload.ItensAtendidos, now);
 
@@ -250,7 +251,7 @@ public sealed class TriagemLlmConversationService(
             idempotencyKey: idempotencyKey,
             correlationId: Guid.CreateVersion7(),
             now: now,
-            recipientPhone: TriagemTestSafeguard.FixedRecipientPhone,
+            recipientPhone: TriagemTestSafeguard.ResolveRecipientPhone(consumerPhone),
             kind: ETriagemChannelCommandKind.RespostaLlm);
 
         commandRepository.Add(command);

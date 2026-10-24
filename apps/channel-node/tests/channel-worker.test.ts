@@ -143,7 +143,7 @@ test('an invalid recipient is a permanent failure and is never sent', async () =
   }])
 })
 
-test('temporary E2E safeguard blocks any recipient other than the fixed test phone', async () => {
+test('temporary E2E safeguard blocks any recipient outside the authorized test phones', async () => {
   const api = new FakeApi()
   api.claimed = { ...command, recipientPhone: '+5511999991234' }
   const sender = new FakeSender()
@@ -157,6 +157,18 @@ test('temporary E2E safeguard blocks any recipient other than the fixed test pho
     outcome: 'PermanentFailure',
     errorCode: 'TEST_RECIPIENT_NOT_ALLOWED',
   }])
+})
+
+test('temporary E2E safeguard allows the second authorized test phone', async () => {
+  const api = new FakeApi()
+  api.claimed = { ...command, recipientPhone: '+5584991050065' }
+  const sender = new FakeSender()
+  const worker = createWorker(api, sender)
+
+  await worker.runCycle(new AbortController().signal)
+
+  assert.equal(sender.sent.length, 1)
+  assert.equal(sender.sent[0]?.jid, normalizeWhatsAppJid('+5584991050065'))
 })
 
 test('a send timeout is transient and a retry keeps the stable message ID', async () => {

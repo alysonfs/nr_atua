@@ -64,12 +64,30 @@ public class StartTriagemUseCaseTests
         Assert.Equal(FakeTriagemMessageTemplateResolver.TemplateVersionId.ToString(), command.TemplateId);
         Assert.Equal(1, command.TemplateVersion);
         Assert.Equal("Mensagem renderizada para OS-1", command.RenderedContent);
-        // TEMPORÁRIO (TriagemTestSafeguard): o destinatário é sempre o telefone
-        // fixo do E2E, nunca o telefone real da OS.
+        // TEMPORÁRIO (TriagemTestSafeguard): telefone da OS fora da lista
+        // autorizada cai no telefone fixo do E2E, nunca no telefone real.
         Assert.Equal(TriagemTestSafeguard.FixedRecipientPhone, command.RecipientPhone);
         Assert.Equal(new TriagemIdempotencyKey(tenantId, integrationId, "OS-1").ToString(), command.IdempotencyKey);
         Assert.Equal(ETriagemChannelCommandStatus.Pending, command.Status);
         Assert.NotEqual(Guid.Empty, command.CorrelationId);
+    }
+
+    [Theory]
+    [InlineData("5584991050065")]
+    [InlineData("558491050065")]
+    public async Task OsComTelefoneDeTesteAutorizado_UsaOTelefoneDaOsComoDestinatario(string contactPhone)
+    {
+        var repository = new FakeTriagemRepository();
+        var workOrderQuery = new FakeTriagemEligibleWorkOrderQuery();
+        var tenantId = Guid.NewGuid();
+        var integrationId = Guid.NewGuid();
+        workOrderQuery.Seed(tenantId, integrationId, "OS-2", Guid.NewGuid(), "assigned", contactPhone);
+        var useCase = CreateUseCase(repository, workOrderQuery);
+
+        var result = await useCase.ExecuteAsync(tenantId, integrationId, "OS-2", CancellationToken.None);
+
+        Assert.True(repository.ChannelCommandsByTriagemId.TryGetValue(result.TriagemId!.Value, out var command));
+        Assert.Equal("+5584991050065", command!.RecipientPhone);
     }
 
     [Fact]

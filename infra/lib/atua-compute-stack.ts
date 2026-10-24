@@ -795,6 +795,7 @@ export class AtuaComputeStack extends cdk.Stack {
       'TriagemLlm__ConversationEnabled=true',
       'TriagemLlm__AllowedTenantIds__0=01a0888b-acd8-773b-93b7-7362973d7ea8',
       'TriagemLlm__AllowedPhones__0=+5584994241248',
+      'TriagemLlm__AllowedPhones__1=+5584991050065',
       'TriagemLlm__MaxLlmCallsPerTriagem=20',
       'TriagemLlm__MaxProviderRetries=2',
       'TriagemLlm__RetryBackoffBaseMs=1000',

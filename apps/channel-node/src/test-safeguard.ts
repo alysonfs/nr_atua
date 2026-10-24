@@ -5,8 +5,11 @@ import { normalizeWhatsAppJid } from './phone.js'
 // "Trava temporária do E2E"). Remover após o E2E ser validado.
 export const FIXED_TEST_RECIPIENT_PHONE = '+5584994241248'
 
-const allowedRecipientJid = normalizeWhatsAppJid(FIXED_TEST_RECIPIENT_PHONE)
+// Destinatários de teste autorizados pelo PO; espelha TriagemTestSafeguard da API.
+export const ALLOWED_TEST_RECIPIENT_PHONES = [FIXED_TEST_RECIPIENT_PHONE, '+5584991050065'] as const
+
+const allowedRecipientJids = new Set(ALLOWED_TEST_RECIPIENT_PHONES.map(normalizeWhatsAppJid))
 
 export function isAllowedTestRecipient(recipientJid: string): boolean {
-  return recipientJid === allowedRecipientJid
+  return allowedRecipientJids.has(recipientJid)
 }
