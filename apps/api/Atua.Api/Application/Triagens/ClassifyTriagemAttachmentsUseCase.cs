@@ -1,12 +1,13 @@
 using Atua.Api.Application.Triagens.Contracts;
 using Atua.Api.Domain.Triagens;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Atua.Api.Application.Triagens;
 
 /// <summary>
 /// Caso de uso que classifica, via visão computacional no Bedrock, os
-/// anexos de imagem ainda não classificados de uma triagem (decisão do PO
+/// anexos de imagem ou PDF ainda não classificados de uma triagem (decisão do PO
 /// de adiantar a conferência automática de nota fiscal e etiqueta via
 /// WhatsApp), e aplica a regra determinística de checklist resultante.
 /// Chamado por <see cref="TriagemLlmConversationService"/> a cada turno,
@@ -27,6 +28,7 @@ public sealed class ClassifyTriagemAttachmentsUseCase(
     ITriagemInboundMediaStorage mediaStorage,
     ITriagemAttachmentVisionClient visionClient,
     ITriagemLlmUsageRepository usageRepository,
+    IOptions<TriagemLlmConversationOptions> options,
     TimeProvider timeProvider,
     ILogger<ClassifyTriagemAttachmentsUseCase> logger) : IClassifyTriagemAttachmentsUseCase
 {
@@ -36,6 +38,7 @@ public sealed class ClassifyTriagemAttachmentsUseCase(
     /// modelo — o item correspondente do checklist fica pendente.
     /// </summary>
     internal const long MaxImageBytes = 3_932_160;
+    internal const long MaxPdfBytes = 4_500_000;
 
     /// <summary>Content types de imagem aceitos pela Converse API — os únicos efetivamente enviados ao classificador.</summary>
     private static readonly HashSet<string> SupportedImageContentTypes =
@@ -43,7 +46,7 @@ public sealed class ClassifyTriagemAttachmentsUseCase(
 
     public async Task ClassifyPendingAsync(Guid tenantId, Triagem triagem, CancellationToken cancellationToken)
     {
-        var imagens = await mediaRepository.FindImageMediaAsync(triagem.Id, cancellationToken);
+        var imagens = await mediaRepository.FindClassifiableMediaAsync(triagem.Id, cancellationToken);
         if (imagens.Count == 0)
         {
             return;
@@ -54,6 +57,16 @@ public sealed class ClassifyTriagemAttachmentsUseCase(
 
         foreach (var media in imagens.Where(media => media.VisionClassifiedAtUtc is null))
         {
+            // Reserva uma chamada para responder ao consumidor neste turno.
+            if (await usageRepository.CountCallsAsync(triagem.Id, cancellationToken)
+                >= options.Value.MaxLlmCallsPerTriagem - 1)
+            {
+                logger.LogWarning(
+                    "[TRIAGEM-VISION] Limite de chamadas de visão atingido; reservando resposta. TriagemId={TriagemId}",
+                    triagem.Id);
+                break;
+            }
+
             if (!(await TryClassifyOneAsync(tenantId, triagem.Id, media, now, cancellationToken)))
             {
                 continue;
@@ -74,18 +87,17 @@ public sealed class ClassifyTriagemAttachmentsUseCase(
     private async Task<bool> TryClassifyOneAsync(Guid tenantId, Guid triagemId, TriagemInboundMedia media,
         DateTimeOffset now, CancellationToken cancellationToken)
     {
-        if (media.StorageKey is null || !SupportedImageContentTypes.Contains(media.ContentType))
+        var isPdf = media.MediaKind == ETriagemInboundMediaKind.Document
+            && string.Equals(media.ContentType, "application/pdf", StringComparison.OrdinalIgnoreCase);
+        if (media.StorageKey is null || (!isPdf && !SupportedImageContentTypes.Contains(media.ContentType)))
         {
-            // Vídeo/áudio/documento nunca chegam aqui (filtrado na query por
-            // MediaKind == Image), mas um contentType de imagem não
-            // suportado pela Converse API (ex.: image/gif) fica pendente.
             return false;
         }
 
-        if (media.SizeBytes > MaxImageBytes)
+        if (media.SizeBytes > (isPdf ? MaxPdfBytes : MaxImageBytes))
         {
             logger.LogInformation(
-                "[TRIAGEM-VISION] Imagem {MediaId} ({SizeBytes} bytes) excede o limite do Bedrock — não classificada, item fica pendente.",
+                "[TRIAGEM-VISION] Anexo {MediaId} ({SizeBytes} bytes) excede o limite do Bedrock — não classificado, item fica pendente.",
                 media.Id, media.SizeBytes);
             return false;
         }
@@ -105,7 +117,9 @@ public sealed class ClassifyTriagemAttachmentsUseCase(
 
         if (content is null)
         {
-            // Objeto ausente (expurgo concorrente ou corrida de ingestão) — nada a classificar.
+            logger.LogWarning(
+                "[TRIAGEM-VISION] Objeto da mídia {MediaId} ausente no armazenamento — item fica pendente.",
+                media.Id);
             return false;
         }
 

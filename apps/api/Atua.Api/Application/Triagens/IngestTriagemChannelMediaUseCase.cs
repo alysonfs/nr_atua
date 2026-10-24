@@ -14,6 +14,7 @@ namespace Atua.Api.Application.Triagens;
 /// </summary>
 public sealed class IngestTriagemChannelMediaUseCase(
     ITriagemInboundMediaRepository repository,
+    TriagemLlmConversationService llmConversationService,
     ILogger<IngestTriagemChannelMediaUseCase> logger) : IIngestTriagemChannelMediaUseCase
 {
     // Decisão do PO (2026-10-21): limite máximo de 16 MiB por arquivo.
@@ -43,10 +44,11 @@ public sealed class IngestTriagemChannelMediaUseCase(
                 return new TriagemInboundMediaUseCaseResult(null, IsIdempotencyConflict: true);
             }
 
-            return new TriagemInboundMediaUseCaseResult(
-                new TriagemInboundMediaResult(
-                    existing.ChannelMessageId, existing.Outcome, existing.TriagemId, existing.CandidateCount),
-                IsIdempotencyConflict: false);
+            var existingResult = new TriagemInboundMediaResult(
+                existing.ChannelMessageId, existing.Outcome, existing.TriagemId, existing.CandidateCount,
+                existing.MediaId);
+            await ConductConversationAsync(command, existingResult, cancellationToken);
+            return new TriagemInboundMediaUseCaseResult(existingResult, IsIdempotencyConflict: false);
         }
 
         var ignoredOutcome = GetIgnoredOutcome(command);
@@ -92,7 +94,19 @@ public sealed class IngestTriagemChannelMediaUseCase(
                 result.Outcome);
         }
 
+        await ConductConversationAsync(command, result, cancellationToken);
         return new TriagemInboundMediaUseCaseResult(result, IsIdempotencyConflict: false);
+    }
+
+    private async Task ConductConversationAsync(TriagemInboundMediaCommand command,
+        TriagemInboundMediaResult result, CancellationToken cancellationToken)
+    {
+        if ((result.Outcome is ETriagemInboundMediaOutcome.ColetaIniciada or ETriagemInboundMediaOutcome.Armazenada)
+            && result.TriagemId is { } triagemId)
+        {
+            await llmConversationService.ConductAsync(
+                command.TenantId, triagemId, result.MediaId, command.SenderPhone, cancellationToken);
+        }
     }
 
     private static ETriagemInboundMediaOutcome? GetIgnoredOutcome(TriagemInboundMediaCommand command)

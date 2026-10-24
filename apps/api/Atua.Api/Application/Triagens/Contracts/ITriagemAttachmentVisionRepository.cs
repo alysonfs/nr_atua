@@ -12,14 +12,14 @@ namespace Atua.Api.Application.Triagens.Contracts;
 public interface ITriagemAttachmentVisionRepository
 {
     /// <summary>
-    /// Mídias de imagem já armazenadas (<see cref="ETriagemInboundMediaOutcome.ColetaIniciada"/>
+    /// Imagens e documentos PDF já armazenados (<see cref="ETriagemInboundMediaOutcome.ColetaIniciada"/>
     /// ou <see cref="ETriagemInboundMediaOutcome.Armazenada"/>) desta
     /// triagem — inclui tanto as ainda não classificadas quanto as já
     /// classificadas em turnos anteriores (necessário para reaplicar a
     /// regra determinística do checklist a cada turno, de forma idempotente).
     /// Entidades tracked pelo mesmo <c>DbContext</c> scoped do chamador.
     /// </summary>
-    Task<IReadOnlyList<TriagemInboundMedia>> FindImageMediaAsync(Guid triagemId, CancellationToken cancellationToken);
+    Task<IReadOnlyList<TriagemInboundMedia>> FindClassifiableMediaAsync(Guid triagemId, CancellationToken cancellationToken);
 
     /// <summary>Persiste classificações aplicadas em memória via <see cref="TriagemInboundMedia.RegistrarClassificacaoVisao"/>.</summary>
     Task SaveChangesAsync(CancellationToken cancellationToken);

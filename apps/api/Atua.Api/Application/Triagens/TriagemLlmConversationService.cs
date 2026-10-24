@@ -25,11 +25,9 @@ namespace Atua.Api.Application.Triagens;
 /// texto de evidência — insuficiente para os dois campos estruturados que
 /// a Etiqueta (modelo + série) exige. Por isso, a LLM conversacional só
 /// aplica automaticamente itens de texto livre (DescricaoDefeito, Endereco,
-/// PontoReferencia, Localizacao, e eventualmente NotaFiscal quando o
-/// próprio consumidor a confirma em texto). NotaFiscal e Etiqueta também
-/// passaram a ser conferidas automaticamente por
+/// PontoReferencia e Localizacao). NotaFiscal e Etiqueta são conferidas por
 /// <see cref="IClassifyTriagemAttachmentsUseCase"/> (decisão do PO:
-/// adiantar a visão computacional no Bedrock) a cada turno, antes desta
+/// adiantar a visão computacional no Bedrock) a cada turno de texto ou mídia, antes desta
 /// chamada — regra determinística, nunca decidida pela própria LLM
 /// conversacional. MidiaDefeito (foto/vídeo do defeito) é opcional e nunca
 /// bloqueia <see cref="Triagem.ChecklistMinimoCompleto"/>.
@@ -305,7 +303,8 @@ public sealed class TriagemLlmConversationService(
                     triagem.RegistrarDescricaoDefeito(item.Evidencia, now);
                     break;
                 case ETriagemChecklistItem.NotaFiscal:
-                    triagem.RegistrarNotaFiscalLegivel(now);
+                    // Apenas a classificação do anexo comprova legibilidade;
+                    // a proposta textual da conversa não valida documentos.
                     break;
                 case ETriagemChecklistItem.Endereco:
                     triagem.RegistrarEndereco(item.Evidencia, now);

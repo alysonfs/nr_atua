@@ -17,7 +17,7 @@ public sealed class FakeTriagemAttachmentVisionClient : ITriagemAttachmentVision
     /// <summary>Programa o próximo resultado a ser devolvido por <see cref="ClassificarAsync"/>, em ordem FIFO.</summary>
     public void EnqueueResult(TriagemAttachmentVisionResult result) => queuedResults.Enqueue(result);
 
-    /// <summary>Requisições efetivamente recebidas — usado por testes para verificar que vídeo/documento nunca chegam aqui.</summary>
+    /// <summary>Requisições efetivamente recebidas nos testes, sem chamadas de rede.</summary>
     public List<TriagemAttachmentVisionRequest> Requests { get; } = [];
 
     public Task<TriagemAttachmentVisionResult> ClassificarAsync(

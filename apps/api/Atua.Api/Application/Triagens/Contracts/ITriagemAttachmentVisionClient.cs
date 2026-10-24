@@ -6,8 +6,8 @@ namespace Atua.Api.Application.Triagens.Contracts;
 /// Contrato que não depende de fornecedor para a classificação de visão
 /// computacional de anexos de imagem da triagem (decisão do PO de adiantar
 /// a conferência automática de nota fiscal e etiqueta via WhatsApp, antes
-/// do motor JEV completo). Aplicado somente a imagens — nunca a vídeo,
-/// áudio ou documento; o vídeo do defeito é opcional e nunca interpretado
+/// do motor JEV completo). Aplicado a imagens e PDF — nunca a vídeo ou
+/// áudio; o vídeo do defeito é opcional e nunca interpretado
 /// nesta fase.
 ///
 /// Reaproveita <see cref="ETriagemLlmOutcome"/> e <see cref="TriagemLlmUsageInfo"/>
@@ -23,14 +23,14 @@ public interface ITriagemAttachmentVisionClient
 }
 
 /// <summary>
-/// Entrada da classificação: os bytes da imagem (lidos do armazenamento
+/// Entrada da classificação: os bytes do anexo (lidos do armazenamento
 /// durável — nunca persistidos fora dele) e o tipo de conteúdo declarado.
 /// </summary>
 public sealed record TriagemAttachmentVisionRequest(
     Guid TenantId,
     Guid TriagemId,
     Guid MediaId,
-    byte[] ImageBytes,
+    byte[] ContentBytes,
     string ContentType);
 
 /// <summary>

@@ -225,14 +225,16 @@ public sealed class TriagemInboundMediaRepository(
             media.TriagemId is null ? media.CandidateTriagemIds.Length : 1,
             media.ContentType,
             media.SizeBytes,
-            media.Sha256);
+            media.Sha256,
+            media.Id);
 
     private static TriagemInboundMediaResult ToResult(TriagemInboundMedia media) =>
         new(
             media.ChannelMessageId,
             media.Outcome,
             media.TriagemId,
-            media.TriagemId is null ? media.CandidateTriagemIds.Length : 1);
+            media.TriagemId is null ? media.CandidateTriagemIds.Length : 1,
+            media.Id);
 
     private static bool IsIdempotencyUniqueViolation(DbUpdateException exception) =>
         exception.InnerException is PostgresException postgresException

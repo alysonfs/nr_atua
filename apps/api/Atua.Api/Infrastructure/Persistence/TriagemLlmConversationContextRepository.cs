@@ -47,16 +47,6 @@ public sealed class TriagemLlmConversationContextRepository(AtuaDbContext dbCont
             .Select(command => new { command.RenderedContent, command.CreatedAtUtc })
             .ToListAsync(cancellationToken);
 
-        var historico = mensagens
-            .Select(message => (Turno: new TriagemLlmConversationTurn(
-                ETriagemLlmConversationRole.Consumidor, message.Text!), message.ReceivedAtUtc))
-            .Concat(comandos.Select(command => (Turno: new TriagemLlmConversationTurn(
-                ETriagemLlmConversationRole.Assistente, command.RenderedContent), ReceivedAtUtc: command.CreatedAtUtc)))
-            .OrderBy(entry => entry.ReceivedAtUtc)
-            .TakeLast(HistoryWindowSize)
-            .Select(entry => entry.Turno)
-            .ToList();
-
         var anexos = await dbContext.TriagemInboundMedia.AsNoTracking()
             .Where(media => media.TriagemId == triagemId)
             .OrderByDescending(media => media.ReceivedAtUtc)
@@ -67,8 +57,25 @@ public sealed class TriagemLlmConversationContextRepository(AtuaDbContext dbCont
                 media.MediaKind,
                 media.VisionTipoDetectado,
                 media.VisionLegivel,
+                media.Caption,
+                media.ReceivedAtUtc,
             })
             .ToListAsync(cancellationToken);
+
+        var historico = mensagens
+            .Select(message => (Turno: new TriagemLlmConversationTurn(
+                ETriagemLlmConversationRole.Consumidor, message.Text!), message.ReceivedAtUtc))
+            .Concat(comandos.Select(command => (Turno: new TriagemLlmConversationTurn(
+                ETriagemLlmConversationRole.Assistente, command.RenderedContent), ReceivedAtUtc: command.CreatedAtUtc)))
+            .Concat(anexos.Select(media => (Turno: new TriagemLlmConversationTurn(
+                ETriagemLlmConversationRole.Consumidor,
+                $"[Anexo recebido: {media.MediaKind}]"
+                    + (string.IsNullOrWhiteSpace(media.Caption) ? "" : $" Legenda: {media.Caption}")),
+                media.ReceivedAtUtc)))
+            .OrderBy(entry => entry.ReceivedAtUtc)
+            .TakeLast(HistoryWindowSize)
+            .Select(entry => entry.Turno)
+            .ToList();
 
         var anexosMetadata = anexos
             .Select(media => new TriagemLlmAttachmentMetadata(

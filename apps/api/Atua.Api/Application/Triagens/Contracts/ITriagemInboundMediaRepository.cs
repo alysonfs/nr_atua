@@ -68,13 +68,15 @@ public sealed record TriagemInboundMediaExistingRecord(
     int CandidateCount,
     string ContentType,
     long SizeBytes,
-    string? Sha256);
+    string? Sha256,
+    Guid MediaId);
 
 public sealed record TriagemInboundMediaResult(
     string ChannelMessageId,
     ETriagemInboundMediaOutcome Outcome,
     Guid? TriagemId,
-    int CandidateCount);
+    int CandidateCount,
+    Guid MediaId);
 
 /// <summary>Mesma chave idempotente já associada a conteúdo diferente — nunca ocorre com retentativa legítima do Channel.</summary>
 public sealed class TriagemInboundMediaIdempotencyConflictException(string channelIdempotencyKey)

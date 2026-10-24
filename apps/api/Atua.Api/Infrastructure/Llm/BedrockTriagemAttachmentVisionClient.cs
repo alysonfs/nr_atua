@@ -10,7 +10,7 @@ namespace Atua.Api.Infrastructure.Llm;
 /// <summary>
 /// Adaptador Bedrock de <see cref="ITriagemAttachmentVisionClient"/>
 /// (decisão do PO: adiantar a conferência automática de nota fiscal e
-/// etiqueta via WhatsApp), via Converse API com um bloco de imagem e tool
+/// etiqueta via WhatsApp), via Converse API com imagem ou documento PDF e tool
 /// use forçado — mesmo padrão de <see cref="BedrockTriagemLlmClient"/>,
 /// reaproveitando o mesmo modelo/região/timeout configurados em
 /// <see cref="TriagemLlmOptions"/> (é a mesma LLM, só que com uma chamada
@@ -18,9 +18,7 @@ namespace Atua.Api.Infrastructure.Llm;
 /// qualquer falha do fornecedor vira <c>ProviderUnavailable</c>, e
 /// qualquer saída fora do esquema vira <c>InvalidOutput</c>.
 ///
-/// Esta classe nunca é exercitada com uma chamada real à AWS nos testes
-/// desta sessão — cobertura de comportamento é feita com
-/// <see cref="FakeTriagemAttachmentVisionClient"/>.
+/// Testes automatizados usam o SDK simulado, sem chamadas à AWS.
 /// </summary>
 public sealed class BedrockTriagemAttachmentVisionClient(
     IAmazonBedrockRuntime bedrockClient,
@@ -32,9 +30,35 @@ public sealed class BedrockTriagemAttachmentVisionClient(
     {
         var opts = options.Value;
 
-        if (!TryMapImageFormat(request.ContentType, out var format))
+        var isPdf = string.Equals(request.ContentType, "application/pdf", StringComparison.OrdinalIgnoreCase);
+        if (!isPdf && !TryMapImageFormat(request.ContentType, out _))
         {
-            return TriagemAttachmentVisionResult.Invalid($"content type de imagem não suportado: {request.ContentType}");
+            logger.LogWarning("Tipo de anexo não suportado. MediaId={MediaId}", request.MediaId);
+            return TriagemAttachmentVisionResult.Invalid("tipo de anexo não suportado");
+        }
+
+        using var source = new MemoryStream(request.ContentBytes, writable: false);
+        ContentBlock attachment;
+        if (isPdf)
+        {
+            attachment = new ContentBlock
+            {
+                Document = new DocumentBlock
+                {
+                    Name = "anexo triagem",
+                    Format = DocumentFormat.Pdf,
+                    Source = new DocumentSource { Bytes = source },
+                    Citations = new CitationsConfig { Enabled = true },
+                },
+            };
+        }
+        else
+        {
+            TryMapImageFormat(request.ContentType, out var format);
+            attachment = new ContentBlock
+            {
+                Image = new ImageBlock { Format = format, Source = new ImageSource { Bytes = source } },
+            };
         }
 
         var converseRequest = new ConverseRequest
@@ -48,15 +72,8 @@ public sealed class BedrockTriagemAttachmentVisionClient(
                     Role = ConversationRole.User,
                     Content =
                     [
-                        new ContentBlock
-                        {
-                            Image = new ImageBlock
-                            {
-                                Format = format,
-                                Source = new ImageSource { Bytes = new MemoryStream(request.ImageBytes) },
-                            },
-                        },
-                        new ContentBlock { Text = "Classifique esta imagem conforme as instruções do sistema." },
+                        attachment,
+                        new ContentBlock { Text = "Classifique este anexo conforme as instruções do sistema." },
                     ],
                 },
             ],

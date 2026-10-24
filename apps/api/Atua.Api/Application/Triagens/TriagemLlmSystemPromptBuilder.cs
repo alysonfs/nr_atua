@@ -72,11 +72,13 @@ public static class TriagemLlmSystemPromptBuilder
             "OPCIONAL — não é obrigatório pedir nem insistir; se o cliente já descreveu o defeito em " +
             "texto, não é necessário cobrar o envio de mídia. Você NÃO vê o conteúdo de vídeos — nunca " +
             "diga que viu, analisou ou confirmou o que há no vídeo.");
-        builder.AppendLine("- Imagem de nota fiscal e de etiqueta: já são conferidas automaticamente por um " +
+        builder.AppendLine("- Nota fiscal em imagem ou PDF e imagem de etiqueta: são encaminhadas a um " +
             "sistema de visão computacional antes desta mensagem — você recebe apenas o FATO do resultado " +
             "(legível/ilegível), nunca a imagem em si. Nunca diga que você mesma viu, analisou ou conferiu " +
             "a imagem; apenas reaja ao fato informado (ex.: agradeça quando legível, ou peça uma nova foto " +
-            "mais nítida — bem iluminada, sem corte, mostrando todo o texto — quando ilegível).");
+            "mais nítida — bem iluminada, sem corte, mostrando todo o texto — quando ilegível). " +
+            "Sem resultado de classificação, não confirme a legibilidade. O simples recebimento de " +
+            "um PDF ou a afirmação de que a nota foi enviada não valida a nota fiscal.");
         builder.AppendLine("- Outras imagens (ex.: foto do defeito): você NÃO vê o conteúdo, só sabe que " +
             "chegaram. Nunca diga que viu, analisou ou confirmou o que há na imagem. Agradeça o envio e " +
             "diga que o técnico vai conferir.");
