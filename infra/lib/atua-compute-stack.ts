@@ -787,6 +787,17 @@ export class AtuaComputeStack extends cdk.Stack {
       // ausente na inicializacao (ver Atua.Api/Program.cs).
       'Email__SenderAddress=noreply@atua-mvp.local',
       `TriagemInboundMedia__BucketName=${mediaTriagemBucketName}`,
+      // Triagem conduzida por LLM (ADR-048): ligada apenas para o tenant e o
+      // telefone de teste até a liberação para clientes reais.
+      'TriagemLlm__Enabled=true',
+      'TriagemLlm__Region=sa-east-1',
+      `TriagemLlm__ModelId=global.${triagemLlmModelId}`,
+      'TriagemLlm__ConversationEnabled=true',
+      'TriagemLlm__AllowedTenantIds__0=01a0888b-acd8-773b-93b7-7362973d7ea8',
+      'TriagemLlm__AllowedPhones__0=+5584994241248',
+      'TriagemLlm__MaxLlmCallsPerTriagem=20',
+      'TriagemLlm__MaxProviderRetries=2',
+      'TriagemLlm__RetryBackoffBaseMs=1000',
       'EOF',
       'chmod 640 /etc/atua-api.env',
       '# Apenas root e membros do grupo que executar a API lêm o arquivo.',
