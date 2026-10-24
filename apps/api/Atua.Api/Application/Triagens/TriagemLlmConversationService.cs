@@ -145,7 +145,8 @@ public sealed class TriagemLlmConversationService(
                     "[TRIAGEM-LLM] Saída fora do esquema. TriagemId={TriagemId} Motivo={Motivo}",
                     triagemId, result.ErrorReason);
                 triagem.RegistrarDesvio(now);
-                await commandRepository.SaveChangesAsync(cancellationToken);
+                await SendFallbackAfterInvalidOutputAsync(tenantId, triagemId, idempotencyKey, triagem,
+                    consumerPhone, now, cancellationToken);
                 return;
 
             case ETriagemLlmOutcome.Success:
@@ -174,12 +175,25 @@ public sealed class TriagemLlmConversationService(
         TriagemLlmRequest request, DateTimeOffset now, CancellationToken cancellationToken)
     {
         var maxAttempts = 1 + Math.Max(0, options.Value.MaxProviderRetries);
+        var invalidOutputRetryUsed = false;
         TriagemLlmResult result;
 
         for (var attempt = 1; attempt <= maxAttempts; attempt++)
         {
             result = await llmClient.ConduzirAsync(request, cancellationToken);
             await usageRepository.RecordAsync(BuildUsageRecord(tenantId, triagemId, result, now), cancellationToken);
+
+            if (result.Outcome == ETriagemLlmOutcome.InvalidOutput && !invalidOutputRetryUsed)
+            {
+                // Saída fora do esquema costuma ser pontual: uma única nova
+                // chamada imediata evita deixar o consumidor sem resposta.
+                invalidOutputRetryUsed = true;
+                logger.LogWarning(
+                    "[TRIAGEM-LLM] Saída fora do esquema, nova tentativa imediata. TriagemId={TriagemId} " +
+                    "Motivo={Motivo}", triagemId, result.ErrorReason);
+                attempt--;
+                continue;
+            }
 
             if (result.Outcome != ETriagemLlmOutcome.ProviderUnavailable || attempt == maxAttempts)
             {
@@ -239,6 +253,34 @@ public sealed class TriagemLlmConversationService(
             return;
         }
 
+        await AddResponseCommandAndSaveAsync(tenantId, triagemId, idempotencyKey, triagem, mensagem, consumerPhone,
+            now, cancellationToken);
+    }
+
+    /// <summary>
+    /// Saída inválida mesmo após a nova tentativa: em vez de silêncio, envia a
+    /// pergunta padrão do próximo item pendente (mesmo fallback usado quando o
+    /// verificador bloqueia a resposta).
+    /// </summary>
+    private async Task SendFallbackAfterInvalidOutputAsync(Guid tenantId, Guid triagemId, string idempotencyKey,
+        Triagem triagem, string consumerPhone, DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        var pendente = triagem.Status == ETriagemStatus.EmColeta ? NextPendingItem(triagem) : null;
+        var fallback = pendente is null ? null : TriagemLlmFallbackQuestions.For(pendente.Value);
+        if (fallback is null || !responseVerifier.Verify(fallback).Permitido)
+        {
+            await commandRepository.SaveChangesAsync(cancellationToken);
+            return;
+        }
+
+        await AddResponseCommandAndSaveAsync(tenantId, triagemId, idempotencyKey, triagem, fallback, consumerPhone,
+            now, cancellationToken);
+    }
+
+    private async Task AddResponseCommandAndSaveAsync(Guid tenantId, Guid triagemId, string idempotencyKey,
+        Triagem triagem, string mensagem, string consumerPhone, DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
         var command = new TriagemChannelCommand(
             Guid.CreateVersion7(),
             tenantId,

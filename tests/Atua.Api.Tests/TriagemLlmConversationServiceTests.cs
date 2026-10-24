@@ -252,6 +252,45 @@ public class TriagemLlmConversationServiceTests
     }
 
     [Fact]
+    public async Task ConductAsync_SaidaInvalidaSeguidaDeSucesso_EnviaRespostaDaSegundaChamada()
+    {
+        var fixture = CreateFixture();
+        fixture.LlmClient.EnqueueResult(TriagemLlmResult.Invalid("campo 'itensAtendidos' ausente"));
+        fixture.LlmClient.EnqueueResult(TriagemLlmResult.Success(
+            new TriagemLlmSuccessPayload(
+                "Obrigado! Pode enviar uma foto da nota fiscal?",
+                new TriagemLlmCamposEstruturados(null, null, null, null), [],
+                new TriagemLlmSinalDesvio(Detectado: false, Motivo: null)),
+            new TriagemLlmUsageInfo("modelo-teste", 10, 5, TimeSpan.FromMilliseconds(100))));
+
+        await fixture.Service.ConductAsync(fixture.TenantId, fixture.TriagemId, Guid.NewGuid(),
+            "+5584994241248", CancellationToken.None);
+
+        Assert.Equal(2, fixture.UsageRepository.Records.Count);
+        var command = Assert.Single(fixture.CommandRepository.Commands);
+        Assert.Equal("Obrigado! Pode enviar uma foto da nota fiscal?", command.RenderedContent);
+        Assert.Empty(fixture.RetryDelay.RequestedDelays);
+    }
+
+    [Fact]
+    public async Task ConductAsync_SaidaInvalidaDuasVezes_EnviaPerguntaDeFallbackEmVezDeSilencio()
+    {
+        var fixture = CreateFixture();
+        fixture.LlmClient.EnqueueResult(TriagemLlmResult.Invalid("fora do esquema"));
+        fixture.LlmClient.EnqueueResult(TriagemLlmResult.Invalid("fora do esquema"));
+
+        await fixture.Service.ConductAsync(fixture.TenantId, fixture.TriagemId, Guid.NewGuid(),
+            "+5584994241248", CancellationToken.None);
+
+        var triagem = await fixture.TriagemRepository.FindByIdAsync(fixture.TriagemId, CancellationToken.None);
+        Assert.Equal(ETriagemStatus.EmColeta, triagem!.Status);
+        Assert.Equal(2, fixture.UsageRepository.Records.Count);
+        var command = Assert.Single(fixture.CommandRepository.Commands);
+        Assert.Equal(TriagemLlmFallbackQuestions.For(ETriagemChecklistItem.DescricaoDefeito), command.RenderedContent);
+        Assert.Equal(ETriagemChannelCommandKind.RespostaLlm, command.Kind);
+    }
+
+    [Fact]
     public async Task ConductAsync_FlagDesligada_NaoChamaALlmNemAlteraEstado()
     {
         var fixture = CreateFixture(optionsFactory: _ => new TriagemLlmConversationOptions

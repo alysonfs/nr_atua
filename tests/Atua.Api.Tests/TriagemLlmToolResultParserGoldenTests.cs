@@ -54,4 +54,44 @@ public class TriagemLlmToolResultParserGoldenTests
         Assert.Contains(cases, c => c.SchemaValido);
         Assert.Contains(cases, c => !c.SchemaValido);
     }
+
+    private static Amazon.Runtime.Documents.Document ToDocument(string json) =>
+        JsonElementDocumentConverter.ToDocument(System.Text.Json.JsonDocument.Parse(json).RootElement.Clone());
+
+    private const string BaseValida =
+        """"
+        "respostaAoConsumidor": "Pode enviar a nota fiscal?",
+        "camposEstruturados": {},
+        "sinalDesvio": { "detectado": false }
+        """";
+
+    [Fact]
+    public void ItensAtendidosAusente_EquivaleAListaVazia()
+    {
+        var document = ToDocument("{" + BaseValida + "}");
+
+        Assert.True(TriagemLlmToolResultParser.TryParse(document, out var payload, out var error), error);
+        Assert.Empty(payload!.ItensAtendidos);
+    }
+
+    [Fact]
+    public void ItensAtendidosSerializadoComoTexto_EDecodificado()
+    {
+        var json = "{" + BaseValida +
+            """, "itensAtendidos": "[{\"item\":\"DescricaoDefeito\",\"evidencia\":\"pingando água\"}]" }""";
+        var document = ToDocument(json);
+
+        Assert.True(TriagemLlmToolResultParser.TryParse(document, out var payload, out var error), error);
+        var item = Assert.Single(payload!.ItensAtendidos);
+        Assert.Equal("pingando água", item.Evidencia);
+    }
+
+    [Fact]
+    public void ItensAtendidosComTipoErrado_ContinuaInvalido()
+    {
+        var document = ToDocument("{" + BaseValida + """, "itensAtendidos": 3 }""");
+
+        Assert.False(TriagemLlmToolResultParser.TryParse(document, out _, out var error));
+        Assert.Equal("campo 'itensAtendidos' não é uma lista", error);
+    }
 }

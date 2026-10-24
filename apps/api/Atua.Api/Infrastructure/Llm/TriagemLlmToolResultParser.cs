@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Amazon.Runtime.Documents;
 using Atua.Api.Application.Triagens.Contracts;
 using Atua.Api.Domain.Triagens;
@@ -32,7 +33,8 @@ internal static class TriagemLlmToolResultParser
             return false;
         }
 
-        if (!root.TryGetValue("camposEstruturados", out var camposDoc) || !camposDoc.IsDictionary())
+        if (!root.TryGetValue("camposEstruturados", out var camposDoc) ||
+            !(camposDoc = UnwrapJsonString(camposDoc)).IsDictionary())
         {
             error = "campo 'camposEstruturados' ausente ou não é um objeto";
             return false;
@@ -43,9 +45,19 @@ internal static class TriagemLlmToolResultParser
             return false;
         }
 
-        if (!root.TryGetValue("itensAtendidos", out var itensDoc) || !itensDoc.IsList())
+        // O modelo às vezes omite a lista vazia ou a serializa como texto
+        // JSON; ausência equivale a "nenhum item atendido neste turno".
+        var itensDoc = root.TryGetValue("itensAtendidos", out var rawItens)
+            ? UnwrapJsonString(rawItens)
+            : new Document(new List<Document>());
+        if (itensDoc.IsNull())
         {
-            error = "campo 'itensAtendidos' ausente ou não é uma lista";
+            itensDoc = new Document(new List<Document>());
+        }
+
+        if (!itensDoc.IsList())
+        {
+            error = "campo 'itensAtendidos' não é uma lista";
             return false;
         }
 
@@ -54,7 +66,8 @@ internal static class TriagemLlmToolResultParser
             return false;
         }
 
-        if (!root.TryGetValue("sinalDesvio", out var sinalDoc) || !sinalDoc.IsDictionary())
+        if (!root.TryGetValue("sinalDesvio", out var sinalDoc) ||
+            !(sinalDoc = UnwrapJsonString(sinalDoc)).IsDictionary())
         {
             error = "campo 'sinalDesvio' ausente ou não é um objeto";
             return false;
@@ -68,6 +81,48 @@ internal static class TriagemLlmToolResultParser
         payload = new TriagemLlmSuccessPayload(NormalizeForWhatsApp(resposta!), campos!, itens!, sinal!);
         return true;
     }
+
+    /// <summary>
+    /// Decodifica um objeto ou lista que o modelo devolveu serializado como
+    /// texto JSON. Qualquer outro valor é devolvido inalterado, e a validação
+    /// estrita de tipos continua sendo feita pelo chamador.
+    /// </summary>
+    internal static Document UnwrapJsonString(Document doc)
+    {
+        if (!doc.IsString())
+        {
+            return doc;
+        }
+
+        var text = doc.AsString().Trim();
+        if (text.Length < 2 || (text[0] != '[' && text[0] != '{'))
+        {
+            return doc;
+        }
+
+        try
+        {
+            using var json = JsonDocument.Parse(text);
+            return ToDocument(json.RootElement);
+        }
+        catch (JsonException)
+        {
+            return doc;
+        }
+    }
+
+    private static Document ToDocument(JsonElement element) => element.ValueKind switch
+    {
+        JsonValueKind.Object => new Document(element.EnumerateObject()
+            .ToDictionary(property => property.Name, property => ToDocument(property.Value))),
+        JsonValueKind.Array => new Document(element.EnumerateArray().Select(ToDocument).ToList()),
+        JsonValueKind.String => new Document(element.GetString()!),
+        JsonValueKind.Number when element.TryGetInt64(out var integer) => new Document(integer),
+        JsonValueKind.Number => new Document(element.GetDouble()),
+        JsonValueKind.True => new Document(true),
+        JsonValueKind.False => new Document(false),
+        _ => new Document(),
+    };
 
     // O modelo às vezes devolve quebras de linha escapadas ("\\n") e negrito
     // Markdown ("**"), que o WhatsApp exibe literalmente.

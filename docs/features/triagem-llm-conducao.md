@@ -168,8 +168,12 @@ checklist acelera a triagem, mas não substitui essa conferência.
 
 1. A LLM só é chamada pela Master API e com a triagem em `CONTATO_INICIADO`
    ou `EM_COLETA`.
-2. Uma saída fora do esquema não gera mensagem ao consumidor e é contada
-   como tentativa inválida.
+2. A saída fora do esquema nunca é enviada ao consumidor. A API faz uma
+   única nova chamada imediata; se a saída continuar inválida, registra o
+   desvio e envia a pergunta padrão do próximo item pendente, para que o
+   consumidor não fique sem resposta (decisão de 2026-10-24). O parser
+   aceita `itensAtendidos` ausente (lista vazia) e objetos ou listas
+   serializados como texto JSON; os demais tipos continuam estritos.
 3. A triagem só é liberada ao pool quando todos os itens obrigatórios estão
    atendidos, com verificação feita pela API.
 4. Depois de 3 tentativas inválidas do mesmo item, a triagem vai para
