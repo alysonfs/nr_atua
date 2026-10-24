@@ -38,7 +38,9 @@ public sealed class ListTriagemPoolUseCase(AtuaDbContext dbContext) : IListTriag
                 triagem.Id,
                 triagem.WorkOrderId,
                 triagem.Status,
+                triagem.CreatedAtUtc,
                 triagem.UpdatedAtUtc,
+                triagem.ColetaEncerradaEmUtc,
                 ChecklistItemsCompleted =
                     (triagem.DescricaoDefeito != null && triagem.DescricaoDefeito != "" ? 1 : 0)
                     + (triagem.NotaFiscalLegivel ? 1 : 0)
@@ -68,6 +70,7 @@ public sealed class ListTriagemPoolUseCase(AtuaDbContext dbContext) : IListTriag
 
             return new TriagemPoolListItem(
                 row.Id,
+                row.WorkOrderId,
                 workOrder?.WorkOrderProviderNo,
                 workOrder?.CustomerName,
                 workOrder?.ProductModel,
@@ -76,7 +79,9 @@ public sealed class ListTriagemPoolUseCase(AtuaDbContext dbContext) : IListTriag
                 row.ChecklistItemsCompleted,
                 Triagem.ChecklistItensMinimosTotal,
                 row.UpdatedAtUtc,
-                hasNewActivity);
+                hasNewActivity,
+                row.CreatedAtUtc,
+                row.ColetaEncerradaEmUtc);
         }).ToArray();
 
         return new TriagemPoolListResult(ETriagemPoolListOutcome.Success, items.Length, items);

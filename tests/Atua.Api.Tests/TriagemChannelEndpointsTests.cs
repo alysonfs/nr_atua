@@ -625,6 +625,9 @@ public class TriagemChannelEndpointsTests
         builder.Services.AddSingleton<ITriagemLlmConversationContextRepository,
             FakeTriagemLlmConversationContextRepository>();
         builder.Services.AddSingleton<ITriagemLlmRetryDelay, FakeTriagemLlmRetryDelay>();
+        builder.Services.AddSingleton<ITriagemProcessingWatchdog, TaskWhenAnyTriagemProcessingWatchdog>();
+        builder.Services.AddSingleton<ITriagemProcessingNoticeMessagePicker, RandomTriagemProcessingNoticeMessagePicker>();
+        builder.Services.AddSingleton<ITriagemProcessingNoticeSender, TriagemProcessingNoticeSender>();
         builder.Services.AddSingleton(Options.Create(new TriagemLlmConversationOptions()));
         builder.Services.AddSingleton(Options.Create(new TriagemChannelOptions { LeaseSeconds = 60 }));
         builder.Services.AddAuthentication("Test")

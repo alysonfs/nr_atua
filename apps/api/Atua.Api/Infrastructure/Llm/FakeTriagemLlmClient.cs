@@ -19,14 +19,28 @@ public sealed class FakeTriagemLlmClient : ITriagemLlmClient
 {
     private readonly Queue<TriagemLlmResult> queuedResults = new();
 
+    /// <summary>
+    /// Atraso artificial opcional antes de devolver o resultado (produção:
+    /// sempre <see cref="TimeSpan.Zero"/>; testes: usado para simular um
+    /// turno "demorado" de forma determinística, já que a chamada real ao
+    /// Bedrock é I/O — ver <c>TriagemLlmConversationServiceTests</c>, aviso
+    /// de "imagem em análise").
+    /// </summary>
+    public TimeSpan ResponseDelay { get; set; } = TimeSpan.Zero;
+
     /// <summary>Programa o próximo resultado a ser devolvido por <see cref="ConduzirAsync"/>, em ordem FIFO.</summary>
     public void EnqueueResult(TriagemLlmResult result) => queuedResults.Enqueue(result);
 
-    public Task<TriagemLlmResult> ConduzirAsync(TriagemLlmRequest request, CancellationToken cancellationToken)
+    public async Task<TriagemLlmResult> ConduzirAsync(TriagemLlmRequest request, CancellationToken cancellationToken)
     {
+        if (ResponseDelay > TimeSpan.Zero)
+        {
+            await Task.Delay(ResponseDelay, cancellationToken);
+        }
+
         if (queuedResults.Count > 0)
         {
-            return Task.FromResult(queuedResults.Dequeue());
+            return queuedResults.Dequeue();
         }
 
         var pendente = request.ChecklistState.FirstOrDefault(item => !item.Atendido);
@@ -43,6 +57,6 @@ public sealed class FakeTriagemLlmClient : ITriagemLlmClient
             SinalDesvio: new TriagemLlmSinalDesvio(Detectado: false, Motivo: null));
         var usage = new TriagemLlmUsageInfo(ModelId: "fake-model", InputTokens: 0, OutputTokens: 0, Latencia: TimeSpan.Zero);
 
-        return Task.FromResult(TriagemLlmResult.Success(payload, usage));
+        return TriagemLlmResult.Success(payload, usage);
     }
 }

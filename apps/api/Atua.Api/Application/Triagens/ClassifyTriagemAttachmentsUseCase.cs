@@ -21,6 +21,16 @@ namespace Atua.Api.Application.Triagens;
 public interface IClassifyTriagemAttachmentsUseCase
 {
     Task ClassifyPendingAsync(Guid tenantId, Triagem triagem, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Verifica se a triagem tem, neste turno, algum anexo de imagem ou PDF
+    /// ainda não classificado (<see cref="TriagemInboundMedia.VisionClassifiedAtUtc"/>
+    /// nulo) — usado por <see cref="TriagemLlmConversationService"/> para
+    /// decidir se o turno está sujeito ao aviso de "imagem em análise"
+    /// (decisão do PO). Deve ser chamado antes de <see cref="ClassifyPendingAsync"/>,
+    /// que marca as mídias como classificadas.
+    /// </summary>
+    Task<bool> HasPendingAttachmentsAsync(Guid triagemId, CancellationToken cancellationToken);
 }
 
 public sealed class ClassifyTriagemAttachmentsUseCase(
@@ -43,6 +53,12 @@ public sealed class ClassifyTriagemAttachmentsUseCase(
     /// <summary>Content types de imagem aceitos pela Converse API — os únicos efetivamente enviados ao classificador.</summary>
     private static readonly HashSet<string> SupportedImageContentTypes =
         new(StringComparer.OrdinalIgnoreCase) { "image/jpeg", "image/png", "image/webp" };
+
+    public async Task<bool> HasPendingAttachmentsAsync(Guid triagemId, CancellationToken cancellationToken)
+    {
+        var imagens = await mediaRepository.FindClassifiableMediaAsync(triagemId, cancellationToken);
+        return imagens.Any(media => media.VisionClassifiedAtUtc is null);
+    }
 
     public async Task ClassifyPendingAsync(Guid tenantId, Triagem triagem, CancellationToken cancellationToken)
     {

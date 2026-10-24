@@ -31,6 +31,7 @@ public class TriagemPoolUseCasesTests
         var userId = Guid.CreateVersion7();
         Guid tenantId;
         Guid triagemDoPoolId;
+        Guid workOrderIdDoPoolItem;
 
         await using (var context = CreateContext(databaseName))
         {
@@ -38,6 +39,7 @@ public class TriagemPoolUseCasesTests
             var integrationId = await SeedIntegrationAsync(context, tenantId);
             var workOrderId = await SeedWorkOrderAsync(context, tenantId, integrationId, "Cliente A",
                 "Geladeira", "Brastemp");
+            workOrderIdDoPoolItem = workOrderId;
 
             var triagem = CriarTriagemNoEstado(tenantId, integrationId, workOrderId, ETriagemStatus.LiberadaAoPool);
             triagemDoPoolId = triagem.Id;
@@ -74,6 +76,9 @@ public class TriagemPoolUseCasesTests
         Assert.Equal(ETriagemStatus.LiberadaAoPool, item.Status);
         Assert.Equal(5, item.ChecklistItemsCompleted);
         Assert.Equal(Triagem.ChecklistItensMinimosTotal, item.ChecklistItemsTotal);
+        Assert.Equal(workOrderIdDoPoolItem, item.WorkOrderId);
+        Assert.Equal(Now, item.StartedAtUtc);
+        Assert.Equal(Now, item.FinishedAtUtc);
     }
 
     [Fact]
@@ -493,6 +498,9 @@ public class TriagemPoolUseCasesTests
         Assert.NotNull(result.Detail);
         Assert.Equal("Cliente", result.Detail!.WorkOrder.CustomerName);
         Assert.Equal(Triagem.ChecklistItensMinimosTotal, result.Detail.Checklist.Count(item => item.Required));
+        Assert.Equal(result.Detail.WorkOrder.WorkOrderId, result.Detail.WorkOrderId);
+        Assert.Equal(Now, result.Detail.StartedAtUtc);
+        Assert.Equal(Now, result.Detail.FinishedAtUtc);
         var anexo = Assert.Single(result.Detail.Attachments);
         Assert.StartsWith("https://fake-triagem-inbound-media.local/", anexo.Url.ToString());
     }

@@ -36,6 +36,9 @@ public sealed record TriagemPoolDetailResult(ETriagemPoolDetailOutcome Outcome, 
 }
 
 /// <param name="StateReason">Motivo do estado atual (ex.: expirada em 48h, falha de contato, 3 desvios) — épico, "C2 — Detalhe".</param>
+/// <param name="WorkOrderId">Id da OS vinculada — mesmo id usado pela rota do Office <c>/work-orders/:workOrderId</c> (<c>WorkOrder.Id</c>); idêntico a <see cref="TriagemPoolWorkOrderView.WorkOrderId"/>.</param>
+/// <param name="StartedAtUtc">Momento em que a triagem foi criada (<see cref="Triagem.CreatedAtUtc"/>) — início do tempo de triagem no Office.</param>
+/// <param name="FinishedAtUtc">Momento em que a coleta da LLM terminou (<see cref="Triagem.ColetaEncerradaEmUtc"/>); <c>null</c> enquanto ainda em coleta.</param>
 public sealed record TriagemPoolDetailView(
     Guid TriagemId,
     ETriagemStatus Status,
@@ -43,6 +46,9 @@ public sealed record TriagemPoolDetailView(
     DateTimeOffset EnteredPoolAtUtc,
     Guid? AssumidaPorUserId,
     DateTimeOffset? AssumidaEmUtc,
+    Guid WorkOrderId,
+    DateTimeOffset StartedAtUtc,
+    DateTimeOffset? FinishedAtUtc,
     TriagemPoolWorkOrderView WorkOrder,
     IReadOnlyList<TriagemPoolChecklistItemView> Checklist,
     IReadOnlyList<TriagemPoolAttachmentView> Attachments,

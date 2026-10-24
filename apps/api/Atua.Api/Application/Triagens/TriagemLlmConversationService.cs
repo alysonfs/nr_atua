@@ -41,6 +41,8 @@ public sealed class TriagemLlmConversationService(
     ITriagemLlmResponseVerifier responseVerifier,
     ITriagemLlmRetryDelay retryDelay,
     IClassifyTriagemAttachmentsUseCase attachmentVisionUseCase,
+    ITriagemProcessingWatchdog processingWatchdog,
+    ITriagemProcessingNoticeSender processingNoticeSender,
     IOptions<TriagemLlmConversationOptions> options,
     TimeProvider timeProvider,
     ILogger<TriagemLlmConversationService> logger)
@@ -98,6 +100,53 @@ public sealed class TriagemLlmConversationService(
 
         var now = timeProvider.GetUtcNow();
 
+        // Decisão do PO (`triagem-llm-conducao.md`): aviso de "imagem em
+        // análise" só é elegível quando há anexo (imagem ou PDF) pendente
+        // de classificação de visão neste turno — checado ANTES de
+        // ClassifyPendingAsync, que marca as mídias como classificadas.
+        var hasPendingAttachment =
+            await attachmentVisionUseCase.HasPendingAttachmentsAsync(triagemId, cancellationToken);
+        if (!hasPendingAttachment)
+        {
+            await ProcessTurnAsync(tenantId, triagemId, idempotencyKey, triagem, consumerPhone, now,
+                cancellationToken);
+            return;
+        }
+
+        // Corrida entre o processamento completo do turno (visão + conversa
+        // da LLM) e o limite configurável — nunca espera pelo aviso em si:
+        // ConductAsync só retorna depois que `processing` terminar por
+        // completo (mesmo DbContext scoped da requisição; o aviso usa um
+        // escopo de DI separado via ITriagemProcessingNoticeSender, nunca
+        // concorrendo pelo mesmo DbContext). O aviso não chama a LLM e não
+        // é contado em ITriagemLlmUsageRepository.
+        var processing = ProcessTurnAsync(tenantId, triagemId, idempotencyKey, triagem, consumerPhone, now,
+            cancellationToken);
+        var delay = TimeSpan.FromMilliseconds(options.Value.ProcessingNoticeDelayMs);
+        var elapsed = await processingWatchdog.HasElapsedBeforeCompletionAsync(processing, delay, cancellationToken);
+        if (elapsed)
+        {
+            var noticeRequest = new TriagemProcessingNoticeRequest(
+                tenantId, triagem.IntegrationId, triagemId, triagem.WorkOrderId, inboundMessageId, consumerPhone);
+            await processingNoticeSender.SendAsync(noticeRequest, cancellationToken);
+        }
+
+        await processing;
+    }
+
+    /// <summary>
+    /// Classificação de visão computacional + chamada de conversa da LLM +
+    /// aplicação do resultado — extraído de <see cref="ConductAsync"/> para
+    /// poder ser corrido contra o limite de <see cref="ITriagemProcessingWatchdog"/>
+    /// (decisão do PO: aviso de "imagem em análise"). Como
+    /// <see cref="IClassifyTriagemAttachmentsUseCase.ClassifyPendingAsync"/>
+    /// e <see cref="ITriagemLlmClient.ConduzirAsync"/> envolvem I/O real
+    /// (Bedrock), a corrida em <see cref="ConductAsync"/> é observável tanto
+    /// em produção quanto em testes que controlam a latência do fake de LLM.
+    /// </summary>
+    private async Task ProcessTurnAsync(Guid tenantId, Guid triagemId, string idempotencyKey, Triagem triagem,
+        string consumerPhone, DateTimeOffset now, CancellationToken cancellationToken)
+    {
         // Classificação de visão computacional (decisão do PO): roda antes
         // da chamada de conversa do mesmo turno, idempotente por mídia, e
         // conta no mesmo orçamento de chamadas verificado logo abaixo.

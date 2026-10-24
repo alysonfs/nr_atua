@@ -17,4 +17,17 @@ public enum ETriagemChannelCommandKind
 {
     TemplateInicial,
     RespostaLlm,
+
+    /// <summary>
+    /// Aviso de "imagem em processamento" enviado ao consumidor quando a
+    /// classificação de visão computacional + a conversa da LLM não
+    /// concluem dentro do atraso configurado (decisão do PO — ver
+    /// <see cref="Application.Triagens.TriagemLlmConversationOptions.ProcessingNoticeDelayMs"/>,
+    /// `triagem-llm-conducao.md`). Nunca aplica transição de estado no
+    /// <c>complete</c> (mesmo princípio de <see cref="RespostaLlm"/>) e
+    /// nunca é contado por consultas que filtram especificamente
+    /// <see cref="RespostaLlm"/> (ex.: <c>JaApresentouIdentidade</c> em
+    /// <see cref="Application.Triagens.Contracts.ITriagemLlmConversationContextRepository"/>).
+    /// </summary>
+    AvisoProcessamento,
 }

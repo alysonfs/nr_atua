@@ -313,6 +313,14 @@ builder.Services.AddOptions<TriagemLlmConversationOptions>()
     .Bind(builder.Configuration.GetSection(TriagemLlmConversationOptions.SectionName));
 builder.Services.AddScoped<ITriagemLlmConversationContextRepository, TriagemLlmConversationContextRepository>();
 builder.Services.AddSingleton<ITriagemLlmRetryDelay, TaskDelayTriagemLlmRetryDelay>();
+
+// Aviso de "imagem em análise" (decisão do PO — `triagem-llm-conducao.md`):
+// corrida com limite configurável (ProcessingNoticeDelayMs) + persistência
+// via escopo de DI separado, para nunca compartilhar o DbContext scoped do
+// turno ainda em execução concorrentemente.
+builder.Services.AddSingleton<ITriagemProcessingWatchdog, TaskWhenAnyTriagemProcessingWatchdog>();
+builder.Services.AddSingleton<ITriagemProcessingNoticeMessagePicker, RandomTriagemProcessingNoticeMessagePicker>();
+builder.Services.AddSingleton<ITriagemProcessingNoticeSender, TriagemProcessingNoticeSender>();
 builder.Services.AddScoped<TriagemLlmConversationService>();
 
 // CORS: as origens de produção são injetadas pelo user-data da EC2 via

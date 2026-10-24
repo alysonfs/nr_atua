@@ -89,6 +89,9 @@ public sealed class GetTriagemPoolDetailUseCase(
             triagem.UpdatedAtUtc,
             triagem.AssumidaPorUserId,
             triagem.AssumidaEmUtc,
+            triagem.WorkOrderId,
+            triagem.CreatedAtUtc,
+            triagem.ColetaEncerradaEmUtc,
             new TriagemPoolWorkOrderView(
                 triagem.WorkOrderId,
                 workOrder?.WorkOrderProviderNo,

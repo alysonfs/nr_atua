@@ -14,10 +14,19 @@ internal sealed class FakeClassifyTriagemAttachmentsUseCase : IClassifyTriagemAt
 {
     public List<(Guid TenantId, Guid TriagemId)> Calls { get; } = [];
 
+    /// <summary>Controla o retorno de <see cref="HasPendingAttachmentsAsync"/> — padrão sem anexo pendente.</summary>
+    public bool HasPendingAttachments { get; set; }
+
     public Task ClassifyPendingAsync(Guid tenantId, Triagem triagem, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         Calls.Add((tenantId, triagem.Id));
         return Task.CompletedTask;
+    }
+
+    public Task<bool> HasPendingAttachmentsAsync(Guid triagemId, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromResult(HasPendingAttachments);
     }
 }

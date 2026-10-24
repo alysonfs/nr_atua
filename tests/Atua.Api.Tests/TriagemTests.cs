@@ -275,6 +275,86 @@ public class TriagemTests
     }
 
     // -----------------------------------------------------------------------
+    // Encerramento da coleta (ColetaEncerradaEmUtc)
+    // -----------------------------------------------------------------------
+
+    [Fact]
+    public void LiberarAoPool_PreencheColetaEncerradaEmUtc()
+    {
+        var triagem = CriarTriagemEmColeta();
+        PreencherChecklistMinimo(triagem);
+        triagem.MarcarInformacoesSuficientes(Now);
+        Assert.Null(triagem.ColetaEncerradaEmUtc);
+
+        triagem.LiberarAoPool(Now);
+
+        Assert.Equal(Now, triagem.ColetaEncerradaEmUtc);
+    }
+
+    [Fact]
+    public void MarcarAguardandoIntervencao_PreencheColetaEncerradaEmUtc()
+    {
+        var triagem = CriarTriagemEmColeta();
+        Assert.Null(triagem.ColetaEncerradaEmUtc);
+
+        triagem.MarcarAguardandoIntervencao(Now);
+
+        Assert.Equal(ETriagemStatus.AguardandoIntervencao, triagem.Status);
+        Assert.Equal(Now, triagem.ColetaEncerradaEmUtc);
+    }
+
+    [Fact]
+    public void Expirar_PreencheColetaEncerradaEmUtc()
+    {
+        var triagem = CriarTriagemEmColeta();
+        Assert.Null(triagem.ColetaEncerradaEmUtc);
+
+        triagem.Expirar(Now);
+
+        Assert.Equal(Now, triagem.ColetaEncerradaEmUtc);
+    }
+
+    [Fact]
+    public void MarcarFalhaDeContato_PreencheColetaEncerradaEmUtc()
+    {
+        var triagem = CriarTriagemNova();
+        Assert.Null(triagem.ColetaEncerradaEmUtc);
+
+        triagem.MarcarFalhaDeContato(Now);
+
+        Assert.Equal(Now, triagem.ColetaEncerradaEmUtc);
+    }
+
+    [Fact]
+    public void ColetaEncerradaEmUtc_NaoEhSobrescritaUmaVezPreenchida()
+    {
+        var triagem = CriarTriagemEmColeta();
+        var primeiroInstante = Now;
+        var segundoInstante = Now.AddMinutes(5);
+
+        triagem.Expirar(primeiroInstante);
+        Assert.Equal(primeiroInstante, triagem.ColetaEncerradaEmUtc);
+
+        // Chamada redundante (ex.: reentrega) não deve mover o carimbo.
+        Assert.Throws<InvalidTriagemTransitionException>(() => triagem.Expirar(segundoInstante));
+        Assert.Equal(primeiroInstante, triagem.ColetaEncerradaEmUtc);
+    }
+
+    [Fact]
+    public void AguardandoEnvioEContatoIniciadoEEmColeta_NaoTemColetaEncerradaEmUtc()
+    {
+        var aguardandoEnvio = CriarTriagemNova();
+        Assert.Null(aguardandoEnvio.ColetaEncerradaEmUtc);
+
+        var contatoIniciado = CriarTriagemNova();
+        contatoIniciado.MarcarContatoIniciado(Now);
+        Assert.Null(contatoIniciado.ColetaEncerradaEmUtc);
+
+        var emColeta = CriarTriagemEmColeta();
+        Assert.Null(emColeta.ColetaEncerradaEmUtc);
+    }
+
+    // -----------------------------------------------------------------------
     // Chave de idempotência
     // -----------------------------------------------------------------------
 

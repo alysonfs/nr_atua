@@ -60,6 +60,15 @@ public sealed class TriagemLlmConversationOptions
     public int RetryBackoffBaseMs { get; init; } = 1000;
 
     /// <summary>
+    /// Atraso (em milissegundos) tolerado para o processamento de um turno
+    /// com anexo pendente de classificação (visão + conversa da LLM) antes
+    /// de persistir imediatamente um aviso de "imagem em análise" ao
+    /// consumidor (decisão do PO, `triagem-llm-conducao.md`). Padrão 2000ms.
+    /// Não se aplica a turnos sem anexo pendente neste turno.
+    /// </summary>
+    public int ProcessingNoticeDelayMs { get; init; } = 2000;
+
+    /// <summary>
     /// Verifica se a triagem informada está dentro do escopo restrito do
     /// loop conversacional (plano M2 — "restrito a número de teste").
     /// Compara telefones só pelos dígitos (mesma normalização de

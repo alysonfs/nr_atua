@@ -63,8 +63,15 @@ public sealed record TriagemPoolListResult(
 /// <paramref name="EnteredPoolAtUtc"/> e antes da assunção (critério de
 /// aceite 10) — sem expor o conteúdo (decisão do PO).
 /// </param>
+/// <param name="WorkOrderId">
+/// Id da OS vinculada — mesmo id usado pela rota do Office
+/// <c>/work-orders/:workOrderId</c> (<c>WorkOrder.Id</c>).
+/// </param>
+/// <param name="StartedAtUtc">Momento em que a triagem foi criada (<see cref="Triagem.CreatedAtUtc"/>) — início do tempo de triagem no Office.</param>
+/// <param name="FinishedAtUtc">Momento em que a coleta da LLM terminou (<see cref="Triagem.ColetaEncerradaEmUtc"/>); <c>null</c> enquanto ainda em coleta.</param>
 public sealed record TriagemPoolListItem(
     Guid TriagemId,
+    Guid WorkOrderId,
     string? WorkOrderProviderNo,
     string? CustomerName,
     string? ProductModel,
@@ -73,4 +80,6 @@ public sealed record TriagemPoolListItem(
     int ChecklistItemsCompleted,
     int ChecklistItemsTotal,
     DateTimeOffset EnteredPoolAtUtc,
-    bool HasNewActivity);
+    bool HasNewActivity,
+    DateTimeOffset StartedAtUtc,
+    DateTimeOffset? FinishedAtUtc);

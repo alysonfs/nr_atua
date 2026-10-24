@@ -126,6 +126,7 @@ public static class TriagemPoolEndpoints
     private static TriagemPoolListResponse ToResponse(TriagemPoolListResult result) =>
         new(result.TotalCount, result.Items.Select(item => new TriagemPoolListItemResponse(
                 item.TriagemId,
+                item.WorkOrderId,
                 item.WorkOrderProviderNo,
                 item.CustomerName,
                 item.ProductModel,
@@ -134,7 +135,9 @@ public static class TriagemPoolEndpoints
                 item.ChecklistItemsCompleted,
                 item.ChecklistItemsTotal,
                 item.EnteredPoolAtUtc,
-                item.HasNewActivity))
+                item.HasNewActivity,
+                item.StartedAtUtc,
+                item.FinishedAtUtc))
             .ToArray());
 
     private static TriagemPoolDetailResponse ToResponse(TriagemPoolDetailView detail) =>
@@ -145,6 +148,9 @@ public static class TriagemPoolEndpoints
             detail.EnteredPoolAtUtc,
             detail.AssumidaPorUserId,
             detail.AssumidaEmUtc,
+            detail.WorkOrderId,
+            detail.StartedAtUtc,
+            detail.FinishedAtUtc,
             new TriagemPoolWorkOrderResponse(
                 detail.WorkOrder.WorkOrderId,
                 detail.WorkOrder.WorkOrderProviderNo,
@@ -176,6 +182,7 @@ public sealed record TriagemPoolListResponse(int TotalCount, IReadOnlyList<Triag
 
 public sealed record TriagemPoolListItemResponse(
     Guid TriagemId,
+    Guid WorkOrderId,
     string? WorkOrderProviderNo,
     string? CustomerName,
     string? ProductModel,
@@ -184,7 +191,9 @@ public sealed record TriagemPoolListItemResponse(
     int ChecklistItemsCompleted,
     int ChecklistItemsTotal,
     DateTimeOffset EnteredPoolAtUtc,
-    bool HasNewActivity);
+    bool HasNewActivity,
+    DateTimeOffset StartedAtUtc,
+    DateTimeOffset? FinishedAtUtc);
 
 public sealed record TriagemPoolDetailResponse(
     Guid TriagemId,
@@ -193,6 +202,9 @@ public sealed record TriagemPoolDetailResponse(
     DateTimeOffset EnteredPoolAtUtc,
     Guid? AssumidaPorUserId,
     DateTimeOffset? AssumidaEmUtc,
+    Guid WorkOrderId,
+    DateTimeOffset StartedAtUtc,
+    DateTimeOffset? FinishedAtUtc,
     TriagemPoolWorkOrderResponse WorkOrder,
     IReadOnlyList<TriagemPoolChecklistItemResponse> Checklist,
     IReadOnlyList<TriagemPoolAttachmentResponse> Attachments,

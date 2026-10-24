@@ -463,6 +463,7 @@ public sealed class AtuaDbContext(DbContextOptions<AtuaDbContext> options) : DbC
             .IsRequired();
         builder.Property(triagem => triagem.CreatedAtUtc).IsRequired();
         builder.Property(triagem => triagem.UpdatedAtUtc).IsRequired();
+        builder.Property(triagem => triagem.ColetaEncerradaEmUtc);
 
         // Concorrência otimista (mesmo padrão de CollectorActivation/
         // ImmediateCollectionCommand): arbitra duas persistências

@@ -650,6 +650,9 @@ namespace Atua.Api.Infrastructure.Persistence.Migrations
                     b.Property<Guid?>("AssumidaPorUserId")
                         .HasColumnType("uuid");
 
+                    b.Property<DateTimeOffset?>("ColetaEncerradaEmUtc")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<Guid>("ConcurrencyToken")
                         .IsConcurrencyToken()
                         .HasColumnType("uuid");

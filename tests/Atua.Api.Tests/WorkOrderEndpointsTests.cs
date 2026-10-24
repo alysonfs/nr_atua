@@ -6,6 +6,7 @@ using Atua.Api.Application.WorkOrders;
 using Atua.Api.Application.WorkOrders.Contracts;
 using Atua.Api.Domain.Integrations;
 using Atua.Api.Domain.Tenants;
+using Atua.Api.Domain.Triagens;
 using Atua.Api.Domain.WorkOrders;
 using Atua.Api.Endpoints;
 using Atua.Api.Infrastructure.Persistence;
@@ -526,6 +527,50 @@ public class WorkOrderEndpointsTests
         Assert.Equal("Novo", body.History[0].Status);
         Assert.Equal("Em Andamento", body.History[1].Status);
         Assert.True(body.History[0].CreatedAt < body.History[1].CreatedAt);
+        Assert.Null(body.TriagemId);
+    }
+
+    [Fact]
+    public async Task GetDetailRetornaTriagemIdDaTriagemMaisRecenteDaMesmaOSNoMesmoTenant()
+    {
+        var (app, databaseName) = await CreateApplicationAsync();
+        await using var appDisposable = app;
+        var userId = Guid.CreateVersion7();
+        var tenantId = await SeedTenantWithMembershipAsync(databaseName, userId);
+        var integrationId = await SeedIntegrationAsync(databaseName, tenantId);
+
+        var workOrderId = Guid.CreateVersion7();
+        var createdAt = new DateTimeOffset(2026, 9, 1, 9, 0, 0, TimeSpan.Zero);
+        Guid triagemMaisRecenteId;
+        await using (var context = CreateContext(databaseName))
+        {
+            context.WorkOrders.Add(new WorkOrder(workOrderId, tenantId, integrationId, "OS-1", "Novo", createdAt));
+
+            var triagemAntiga = new Triagem(Guid.CreateVersion7(), tenantId, integrationId, workOrderId,
+                createdAt);
+            triagemMaisRecenteId = Guid.CreateVersion7();
+            var triagemRecente = new Triagem(triagemMaisRecenteId, tenantId, integrationId, workOrderId,
+                createdAt.AddMinutes(10));
+
+            // Triagem de outro tenant para a mesma OS física (cenário improvável, mas
+            // reforça o isolamento por tenant na consulta).
+            var outroTenantId = await SeedTenantAsync(databaseName);
+            var outraIntegrationId = await SeedIntegrationAsync(databaseName, outroTenantId);
+            var triagemOutroTenant = new Triagem(Guid.CreateVersion7(), outroTenantId, outraIntegrationId,
+                workOrderId, createdAt.AddMinutes(20));
+
+            AddTriagem(context, triagemAntiga);
+            AddTriagem(context, triagemRecente);
+            AddTriagem(context, triagemOutroTenant);
+            await context.SaveChangesAsync();
+        }
+
+        var client = CreateAuthenticatedClient(app, userId);
+        var response = await client.GetAsync($"/api/tenants/{tenantId}/work-orders/{workOrderId}");
+        var body = await response.Content.ReadFromJsonAsync<WorkOrderDetailResponse>();
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(triagemMaisRecenteId, body!.TriagemId);
     }
 
     private static async Task<Guid> SeedIntegrationAsync(string databaseName, Guid tenantId,
@@ -602,6 +647,14 @@ public class WorkOrderEndpointsTests
         var client = app.GetTestClient();
         client.DefaultRequestHeaders.Add("Test-User-Id", userId.ToString());
         return client;
+    }
+
+    private static void AddTriagem(AtuaDbContext context, Triagem triagem)
+    {
+        context.Triagens.Add(triagem);
+        context.Entry(triagem)
+            .Property(TriagemPersistenceSchema.WorkOrderProviderIdShadowPropertyName)
+            .CurrentValue = triagem.Id.ToString();
     }
 
     private sealed class TestAuthHandler(

@@ -296,7 +296,8 @@ public static class WorkOrderEndpoints
             result.ProductBrand, result.PdCode, result.CategoryId, result.ProductCategoryCode,
             result.ProductCode, result.ProductModel, result.ProductStatus, result.Symptom, result.SymptomRaw,
             result.History.Select(entry => new WorkOrderHistoryEntryResponse(entry.Status, entry.CreatedAt))
-                .ToArray());
+                .ToArray(),
+            result.TriagemId);
 
         return Results.Ok(response);
     }
@@ -369,6 +370,7 @@ public sealed record WorkOrderDetailResponse(
     string? Address, string? ZipCode, string? CountryName, string? StateName, string? CityName,
     string? ProductBrand, string? PdCode, string? CategoryId, string? ProductCategoryCode,
     string? ProductCode, string? ProductModel, string? ProductStatus, string? Symptom, string? SymptomRaw,
-    IReadOnlyList<WorkOrderHistoryEntryResponse> History);
+    IReadOnlyList<WorkOrderHistoryEntryResponse> History,
+    Guid? TriagemId);
 
 public sealed record WorkOrderHistoryEntryResponse(string Status, DateTimeOffset CreatedAt);

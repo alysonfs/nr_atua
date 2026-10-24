@@ -9,7 +9,12 @@ public interface IWorkOrderDetailQuery
     Task<WorkOrderDetailResult?> ExecuteAsync(Guid tenantId, Guid workOrderId, CancellationToken cancellationToken);
 }
 
-/// <summary>Resultado completo de uma OS, com os campos normalizados relevantes para exibição.</summary>
+/// <summary>
+/// Resultado completo de uma OS, com os campos normalizados relevantes para
+/// exibição. <see cref="TriagemId"/> referencia a triagem mais recente
+/// daquela OS (mesmo tenant), usada pela rota /triage-pool/:triagemId no
+/// Office; é <see langword="null"/> quando a OS nunca gerou triagem.
+/// </summary>
 public sealed record WorkOrderDetailResult(
     Guid Id,
     string WorkOrderProviderId,
@@ -41,7 +46,8 @@ public sealed record WorkOrderDetailResult(
     string? ProductStatus,
     string? Symptom,
     string? SymptomRaw,
-    IReadOnlyList<WorkOrderHistoryEntryResult> History);
+    IReadOnlyList<WorkOrderHistoryEntryResult> History,
+    Guid? TriagemId);
 
 /// <summary>Entrada de histórico de status de uma OS, ordenada da mais antiga para a mais recente.</summary>
 public sealed record WorkOrderHistoryEntryResult(string Status, DateTimeOffset CreatedAt);

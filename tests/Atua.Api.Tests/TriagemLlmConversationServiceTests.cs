@@ -28,6 +28,7 @@ public class TriagemLlmConversationServiceTests
         FakeTriagemLlmClient LlmClient,
         FakeTriagemLlmRetryDelay RetryDelay,
         FakeClassifyTriagemAttachmentsUseCase AttachmentVisionUseCase,
+        FakeTriagemProcessingNoticeSender ProcessingNoticeSender,
         Guid TenantId,
         Guid IntegrationId,
         Guid TriagemId,
@@ -60,6 +61,7 @@ public class TriagemLlmConversationServiceTests
         var contextRepository = new FakeTriagemLlmConversationContextRepository();
         var retryDelay = new FakeTriagemLlmRetryDelay();
         var attachmentVisionUseCase = new FakeClassifyTriagemAttachmentsUseCase();
+        var processingNoticeSender = new FakeTriagemProcessingNoticeSender();
         var effectiveOptions = optionsFactory?.Invoke(tenantId) ?? new TriagemLlmConversationOptions
         {
             ConversationEnabled = true,
@@ -76,12 +78,14 @@ public class TriagemLlmConversationServiceTests
             new TriagemLlmResponseVerifier(),
             retryDelay,
             attachmentVisionUseCase,
+            new TaskWhenAnyTriagemProcessingWatchdog(),
+            processingNoticeSender,
             Options.Create(effectiveOptions),
             new FakeTimeProvider(Now),
             NullLogger<TriagemLlmConversationService>.Instance);
 
         return new Fixture(service, triagemRepository, commandRepository, usageRepository, llmClient, retryDelay,
-            attachmentVisionUseCase, tenantId, integrationId, triagemId, workOrderId);
+            attachmentVisionUseCase, processingNoticeSender, tenantId, integrationId, triagemId, workOrderId);
     }
 
     /// <summary>Marca os dois itens que o contrato M1 não permite marcar automaticamente via LLM (pendência documentada).</summary>
@@ -399,5 +403,152 @@ public class TriagemLlmConversationServiceTests
         Assert.Empty(fixture.CommandRepository.Commands);
         // Nenhum novo registro de uso: o orçamento é checado antes de chamar a LLM.
         Assert.Single(fixture.UsageRepository.Records);
+    }
+
+    // ------------------------------------------------------------------
+    // Aviso de "imagem em análise" (decisão do PO — `triagem-llm-conducao.md`).
+    // A corrida usa a implementação real de ITriagemProcessingWatchdog
+    // (Task.WhenAny) com um limite minúsculo (poucos ms) contra uma
+    // latência artificial do fake de LLM — determinístico com folga ampla
+    // (latência >> limite), sem depender de FakeTimeProvider (que não
+    // suporta timers falsos).
+    // ------------------------------------------------------------------
+
+    [Fact]
+    public async Task ConductAsync_AnexoPendenteEProcessamentoDemoraMaisQueOLimite_EnviaAvisoAntesDaRespostaDaLlm()
+    {
+        var fixture = CreateFixture(optionsFactory: tenantId => new TriagemLlmConversationOptions
+        {
+            ConversationEnabled = true,
+            AllowedTenantIds = [tenantId],
+            AllowedPhones = ["+5584994241248"],
+            ProcessingNoticeDelayMs = 5,
+        });
+        fixture.AttachmentVisionUseCase.HasPendingAttachments = true;
+        fixture.LlmClient.ResponseDelay = TimeSpan.FromMilliseconds(200);
+        fixture.LlmClient.EnqueueResult(TriagemLlmResult.Success(
+            new TriagemLlmSuccessPayload(
+                "Pode me contar com suas palavras o que está acontecendo com o aparelho?",
+                new TriagemLlmCamposEstruturados(null, null, null, null), [],
+                new TriagemLlmSinalDesvio(Detectado: false, Motivo: null)),
+            new TriagemLlmUsageInfo("modelo-teste", 10, 5, TimeSpan.FromMilliseconds(200))));
+
+        // No momento em que o aviso é enviado, a resposta da LLM ainda não
+        // foi persistida — prova de que o aviso é criado antes dela.
+        fixture.ProcessingNoticeSender.OnSend = () => Assert.Empty(fixture.CommandRepository.Commands);
+
+        var messageId = Guid.NewGuid();
+        await fixture.Service.ConductAsync(fixture.TenantId, fixture.TriagemId, messageId, "+5584994241248",
+            CancellationToken.None);
+
+        var noticeRequest = Assert.Single(fixture.ProcessingNoticeSender.Requests);
+        Assert.Equal(fixture.TenantId, noticeRequest.TenantId);
+        Assert.Equal(fixture.IntegrationId, noticeRequest.IntegrationId);
+        Assert.Equal(fixture.TriagemId, noticeRequest.TriagemId);
+        Assert.Equal(fixture.WorkOrderId, noticeRequest.WorkOrderId);
+        Assert.Equal(messageId, noticeRequest.InboundMessageId);
+        Assert.Equal("+5584994241248", noticeRequest.ConsumerPhone);
+
+        // A resposta final da LLM continua sendo aguardada por completo.
+        var command = Assert.Single(fixture.CommandRepository.Commands);
+        Assert.Equal(ETriagemChannelCommandKind.RespostaLlm, command.Kind);
+    }
+
+    [Fact]
+    public async Task ConductAsync_AnexoPendenteEProcessamentoRapido_NaoEnviaAviso()
+    {
+        var fixture = CreateFixture();
+        fixture.AttachmentVisionUseCase.HasPendingAttachments = true;
+        fixture.LlmClient.EnqueueResult(TriagemLlmResult.Success(
+            new TriagemLlmSuccessPayload(
+                "Pode me contar com suas palavras o que está acontecendo com o aparelho?",
+                new TriagemLlmCamposEstruturados(null, null, null, null), [],
+                new TriagemLlmSinalDesvio(Detectado: false, Motivo: null)),
+            new TriagemLlmUsageInfo("modelo-teste", 10, 5, TimeSpan.FromMilliseconds(100))));
+
+        await fixture.Service.ConductAsync(fixture.TenantId, fixture.TriagemId, Guid.NewGuid(), "+5584994241248",
+            CancellationToken.None);
+
+        Assert.Empty(fixture.ProcessingNoticeSender.Requests);
+        Assert.Single(fixture.CommandRepository.Commands);
+    }
+
+    [Fact]
+    public async Task ConductAsync_SemAnexoPendente_NaoEnviaAvisoMesmoComProcessamentoLento()
+    {
+        // Sem anexo pendente, o turno nunca entra na corrida com o
+        // watchdog — o aviso só é elegível quando há imagem ou PDF
+        // pendente de classificação neste turno (decisão do PO).
+        var fixture = CreateFixture(optionsFactory: tenantId => new TriagemLlmConversationOptions
+        {
+            ConversationEnabled = true,
+            AllowedTenantIds = [tenantId],
+            AllowedPhones = ["+5584994241248"],
+            ProcessingNoticeDelayMs = 5,
+        });
+        fixture.AttachmentVisionUseCase.HasPendingAttachments = false;
+        fixture.LlmClient.ResponseDelay = TimeSpan.FromMilliseconds(200);
+        fixture.LlmClient.EnqueueResult(TriagemLlmResult.Success(
+            new TriagemLlmSuccessPayload(
+                "Pode me contar com suas palavras o que está acontecendo com o aparelho?",
+                new TriagemLlmCamposEstruturados(null, null, null, null), [],
+                new TriagemLlmSinalDesvio(Detectado: false, Motivo: null)),
+            new TriagemLlmUsageInfo("modelo-teste", 10, 5, TimeSpan.FromMilliseconds(200))));
+
+        await fixture.Service.ConductAsync(fixture.TenantId, fixture.TriagemId, Guid.NewGuid(), "+5584994241248",
+            CancellationToken.None);
+
+        Assert.Empty(fixture.ProcessingNoticeSender.Requests);
+        Assert.Single(fixture.CommandRepository.Commands);
+    }
+
+    [Fact]
+    public async Task ConductAsync_ForaDaAllowlistComAnexoPendente_NaoEnviaAviso()
+    {
+        var fixture = CreateFixture(optionsFactory: _ => new TriagemLlmConversationOptions
+        {
+            ConversationEnabled = true,
+            AllowedTenantIds = [],
+            AllowedPhones = ["+5584994241248"],
+        });
+        fixture.AttachmentVisionUseCase.HasPendingAttachments = true;
+
+        await fixture.Service.ConductAsync(fixture.TenantId, fixture.TriagemId, Guid.NewGuid(), "+5584994241248",
+            CancellationToken.None);
+
+        Assert.Empty(fixture.ProcessingNoticeSender.Requests);
+        Assert.Empty(fixture.CommandRepository.Commands);
+    }
+
+    [Fact]
+    public async Task ConductAsync_ReentregaDaMesmaMensagemComAnexoPendente_NaoEnviaAvisoDeNovo()
+    {
+        var fixture = CreateFixture(optionsFactory: tenantId => new TriagemLlmConversationOptions
+        {
+            ConversationEnabled = true,
+            AllowedTenantIds = [tenantId],
+            AllowedPhones = ["+5584994241248"],
+            ProcessingNoticeDelayMs = 5,
+        });
+        fixture.AttachmentVisionUseCase.HasPendingAttachments = true;
+        fixture.LlmClient.ResponseDelay = TimeSpan.FromMilliseconds(200);
+        fixture.LlmClient.EnqueueResult(TriagemLlmResult.Success(
+            new TriagemLlmSuccessPayload(
+                "Pode me contar com suas palavras o que está acontecendo com o aparelho?",
+                new TriagemLlmCamposEstruturados(null, null, null, null), [],
+                new TriagemLlmSinalDesvio(Detectado: false, Motivo: null)),
+            new TriagemLlmUsageInfo("modelo-teste", 10, 5, TimeSpan.FromMilliseconds(200))));
+        var messageId = Guid.NewGuid();
+
+        await fixture.Service.ConductAsync(fixture.TenantId, fixture.TriagemId, messageId, "+5584994241248",
+            CancellationToken.None);
+        // Reentrega do mesmo evento inbound: nem a LLM nem o aviso são
+        // disparados de novo — a checagem de idempotência do turno inteiro
+        // ocorre antes da detecção de anexo pendente.
+        await fixture.Service.ConductAsync(fixture.TenantId, fixture.TriagemId, messageId, "+5584994241248",
+            CancellationToken.None);
+
+        Assert.Single(fixture.ProcessingNoticeSender.Requests);
+        Assert.Single(fixture.CommandRepository.Commands);
     }
 }

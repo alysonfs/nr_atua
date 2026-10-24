@@ -50,6 +50,24 @@ public sealed class Triagem
     public DateTimeOffset UpdatedAtUtc { get; private set; }
 
     /// <summary>
+    /// Momento em que a coleta da LLM com o consumidor terminou (saiu do
+    /// loop conversacional) — usado pelo Office para calcular o tempo de
+    /// triagem (tempo de resposta da LLM). Preenchida apenas na primeira
+    /// vez (nunca sobrescrita) em <see cref="LiberarAoPool"/>,
+    /// <see cref="MarcarAguardandoIntervencao"/>, <see cref="Expirar"/> e
+    /// <see cref="MarcarFalhaDeContato"/>.
+    ///
+    /// Pendência conhecida: <see cref="RegistrarTentativaInvalida"/> e
+    /// <see cref="RegistrarDesvio"/> também podem mover a triagem para
+    /// <see cref="ETriagemStatus.AguardandoIntervencao"/> diretamente (sem
+    /// passar por <see cref="MarcarAguardandoIntervencao"/>) — nesse caminho
+    /// este campo não é preenchido no momento da transição (reportado ao
+    /// orchestrator/software-architect; fica para a migration de backfill
+    /// cobrir o histórico existente).
+    /// </summary>
+    public DateTimeOffset? ColetaEncerradaEmUtc { get; private set; }
+
+    /// <summary>
     /// Token de concorrência otimista (mesmo padrão de
     /// <see cref="Atua.Api.Domain.Integrations.CollectorControl.CollectorActivation.ConcurrencyToken"/>
     /// e de <see cref="Atua.Api.Domain.Integrations.CollectorControl.ImmediateCollectionCommand.ConcurrencyToken"/>).
@@ -139,6 +157,7 @@ public sealed class Triagem
     {
         ExigirEstado(ETriagemStatus.AguardandoEnvio, nameof(MarcarFalhaDeContato));
         Status = ETriagemStatus.FalhaDeContato;
+        ColetaEncerradaEmUtc ??= now;
         Touch(now);
     }
 
@@ -162,6 +181,7 @@ public sealed class Triagem
         }
 
         Status = ETriagemStatus.Expirada;
+        ColetaEncerradaEmUtc ??= now;
         Touch(now);
     }
 
@@ -187,6 +207,7 @@ public sealed class Triagem
     {
         ExigirEstado(ETriagemStatus.InformacoesSuficientes, nameof(LiberarAoPool));
         Status = ETriagemStatus.LiberadaAoPool;
+        ColetaEncerradaEmUtc ??= now;
         Touch(now);
     }
 
@@ -205,6 +226,7 @@ public sealed class Triagem
     {
         ExigirEmColeta(nameof(MarcarAguardandoIntervencao));
         Status = ETriagemStatus.AguardandoIntervencao;
+        ColetaEncerradaEmUtc ??= now;
         Touch(now);
     }
 
@@ -365,6 +387,7 @@ public sealed class Triagem
         if (tentativasAtuais >= MaxTentativasInvalidasPorItem)
         {
             Status = ETriagemStatus.AguardandoIntervencao;
+            ColetaEncerradaEmUtc ??= now;
         }
     }
 
@@ -383,6 +406,7 @@ public sealed class Triagem
         if (DesviosConsecutivos >= MaxDesviosConsecutivos)
         {
             Status = ETriagemStatus.AguardandoIntervencao;
+            ColetaEncerradaEmUtc ??= now;
         }
     }
 

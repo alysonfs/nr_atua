@@ -24,6 +24,12 @@ public sealed class WorkOrderDetailQueryHandler(AtuaDbContext dbContext) : IWork
             .Select(entry => new WorkOrderHistoryEntryResult(entry.Status, entry.CreatedAt))
             .ToListAsync(cancellationToken);
 
+        var triagemId = await dbContext.Triagens.AsNoTracking()
+            .Where(triagem => triagem.WorkOrderId == workOrderId && triagem.TenantId == tenantId)
+            .OrderByDescending(triagem => triagem.CreatedAtUtc)
+            .Select(triagem => (Guid?)triagem.Id)
+            .FirstOrDefaultAsync(cancellationToken);
+
         return new WorkOrderDetailResult(
             workOrder.Id,
             workOrder.WorkOrderProviderId,
@@ -55,6 +61,7 @@ public sealed class WorkOrderDetailQueryHandler(AtuaDbContext dbContext) : IWork
             workOrder.ProductStatus,
             workOrder.Symptom,
             workOrder.SymptomRaw,
-            history);
+            history,
+            triagemId);
     }
 }

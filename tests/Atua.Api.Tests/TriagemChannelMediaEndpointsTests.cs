@@ -534,6 +534,9 @@ public class TriagemChannelMediaEndpointsTests
         builder.Services.AddScoped<IClassifyTriagemAttachmentsUseCase, ClassifyTriagemAttachmentsUseCase>();
         builder.Services.AddScoped<ITriagemLlmConversationContextRepository, TriagemLlmConversationContextRepository>();
         builder.Services.AddSingleton<ITriagemLlmRetryDelay, FakeTriagemLlmRetryDelay>();
+        builder.Services.AddSingleton<ITriagemProcessingWatchdog, TaskWhenAnyTriagemProcessingWatchdog>();
+        builder.Services.AddSingleton<ITriagemProcessingNoticeMessagePicker, RandomTriagemProcessingNoticeMessagePicker>();
+        builder.Services.AddSingleton<ITriagemProcessingNoticeSender, TriagemProcessingNoticeSender>();
         builder.Services.AddSingleton(
             Microsoft.Extensions.Options.Options.Create(new TriagemLlmConversationOptions
             {
