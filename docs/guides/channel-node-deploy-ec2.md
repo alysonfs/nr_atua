@@ -115,6 +115,24 @@ comando concluído apenas por essa ausência. O evento
 `whatsapp_retry_session_rebuilt` registra reconstrução criptográfica
 para retransmissão, distinta de reconexão do socket.
 
+### Ocorrência observada em 2026-10-24
+
+Após recriação da instância e novo pareamento, houve respostas aceitas
+pelo servidor que permaneceram como “Aguardando mensagem” no cliente.
+Os logs mostraram pedidos de retransmissão, original disponível no
+cache e reconstrução da sessão criptográfica. Não houve desconexão do
+socket no período posterior ao pareamento; o aviso “Google Chrome
+(Ubuntu)” no celular correspondia ao acesso do dispositivo vinculado.
+
+No teste controlado, o PO desvinculou o Web adicional, mantendo o
+Baileys. O envio manual pelo celular do posto e a nova resposta da IA
+ficaram legíveis. Para a resposta da IA, os recibos registraram aceite
+às 10:45:57, entrega às 10:46:25 e leitura às 10:46:29 (horário de
+Brasília), ainda com duas retransmissões. Essa recuperação não prova
+que a coexistência com o Web era a causa única: múltiplos dispositivos
+são suportados pelo WhatsApp. A latência criptográfica residual continua
+sob investigação, sem troca de versão ou remoção das credenciais.
+
 A API recebe sua configuração `TriagemLlm__*` pelo UserData do CDK,
 incluindo modelo, orçamento e allowlists de tenant e telefone de teste.
 A recriação da EC2 reaplica esses valores; as credenciais do Channel
