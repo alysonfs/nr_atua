@@ -6,6 +6,7 @@ import type { TriagemListScope, TriagemPoolListItem } from '../../../../shared/t
 import { translateTriagemPoolStatus, triagemPoolStatusTone } from '../../lib/triageStatus'
 import { formatRelativeTime } from '../../lib/formatRelativeTime'
 import { formatTriageDurationLabel } from '../../lib/formatTriageDuration'
+import { formatAiUsageListLabel } from '../../lib/formatAiUsage'
 import { Badge } from '../../../../shared/components/ui/Badge'
 
 /**
@@ -76,6 +77,11 @@ export function createTriagePoolColumns(
         const item = info.row.original
         return formatTriageDurationLabel(t, item.startedAtUtc, item.finishedAtUtc, nowMs)
       },
+    },
+    {
+      id: 'aiCost',
+      header: t('triagePool.columns.aiCost'),
+      cell: (info) => formatAiUsageListLabel(info.row.original.llmUsage, locale),
     },
     {
       id: 'hasNewActivity',

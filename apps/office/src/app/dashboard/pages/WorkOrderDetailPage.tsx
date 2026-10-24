@@ -1,9 +1,10 @@
 import type { ReactNode } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { useParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useMyTenants } from '../../office/hooks/useTenants'
 import { useWorkOrderDetail } from '../hooks/useWorkOrderDetail'
 import { translateProviderStatus } from '../lib/providerStatus'
+import { TriageSummaryCard } from '../components/TriageSummaryCard'
 
 /** Formata uma data ISO 8601 no padrão do locale ativo (dd/mm/aaaa hh:mm). */
 function formatDateTime(isoDate: string | null, locale: string): string {
@@ -87,15 +88,20 @@ export function WorkOrderDetailPage() {
         <h1 className="text-2xl font-semibold text-slate-950 sm:text-3xl">
           {detail.workOrderProviderNo ?? detail.workOrderProviderId}
         </h1>
-        {detail.triagemId && (
-          <Link
-            to={`/triage-pool/${detail.triagemId}`}
-            className="mt-2 inline-block text-sm font-medium text-sky-700 hover:underline"
-          >
-            {t('workOrderDetail.viewTriage')}
-          </Link>
-        )}
       </div>
+
+      {detail.triagemId && (
+        <TriageSummaryCard
+          triagemId={detail.triagemId}
+          startedAtUtc={detail.triagemStartedAtUtc}
+          finishedAtUtc={detail.triagemFinishedAtUtc}
+          llmUsage={detail.llmUsage}
+          notaFiscalNumero={detail.notaFiscalNumero}
+          notaFiscalSerie={detail.notaFiscalSerie}
+          warrantyEstimate={detail.warrantyEstimate}
+          locale={locale}
+        />
+      )}
 
       <Section title={t('workOrderDetail.generalInfo.title')}>
         <Field label={t('workOrderDetail.generalInfo.id')} value={detail.workOrderProviderId} emptyText={notInformed} />

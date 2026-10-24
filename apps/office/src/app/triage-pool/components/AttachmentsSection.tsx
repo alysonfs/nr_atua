@@ -1,9 +1,12 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { PreviewOpen } from '@icon-park/react'
 import type { TriagemPoolAttachment } from '../../../shared/types/triagePool'
+import { AttachmentPreviewModal } from './AttachmentPreviewModal'
 
 interface AttachmentItemProps {
   attachment: TriagemPoolAttachment
+  onPreview: (attachment: TriagemPoolAttachment) => void
 }
 
 /**
@@ -12,8 +15,11 @@ interface AttachmentItemProps {
  * da EC2 ainda não tem `s3:GetObject` em produção (ver épico, seção 6), então
  * o carregamento pode falhar; trata com mensagem amigável em vez de erro
  * quebrado de mídia.
+ *
+ * Imagens e PDFs (`contentType === 'application/pdf'`) ganham um botão de
+ * zoom que abre `AttachmentPreviewModal` na própria página.
  */
-function AttachmentItem({ attachment }: AttachmentItemProps) {
+function AttachmentItem({ attachment, onPreview }: AttachmentItemProps) {
   const { t } = useTranslation()
   const [failed, setFailed] = useState(false)
 
@@ -27,14 +33,22 @@ function AttachmentItem({ attachment }: AttachmentItemProps) {
 
   if (attachment.mediaKind === 'Image') {
     return (
-      <a href={attachment.url} target="_blank" rel="noreferrer" className="block">
+      <div className="group relative">
         <img
           src={attachment.url}
           alt={attachment.caption ?? t('triagePoolDetail.attachments.imageAlt')}
           onError={() => setFailed(true)}
           className="h-28 w-28 rounded-md border border-slate-200 object-cover"
         />
-      </a>
+        <button
+          type="button"
+          onClick={() => onPreview(attachment)}
+          aria-label={t('triagePoolDetail.attachments.zoomAria')}
+          className="absolute bottom-1 right-1 rounded-full bg-white/90 p-1.5 text-slate-700 shadow hover:bg-white focus:opacity-100 group-hover:opacity-100 sm:opacity-80"
+        >
+          <PreviewOpen theme="outline" size={16} />
+        </button>
+      </div>
     )
   }
 
@@ -54,15 +68,29 @@ function AttachmentItem({ attachment }: AttachmentItemProps) {
     )
   }
 
+  const isPdf = attachment.contentType === 'application/pdf'
+
   return (
-    <a
-      href={attachment.url}
-      target="_blank"
-      rel="noreferrer"
-      className="inline-flex items-center gap-1 text-sm text-sky-700 hover:underline"
-    >
-      {attachment.caption ?? t('triagePoolDetail.attachments.documentLink')}
-    </a>
+    <div className="flex items-center gap-2">
+      <a
+        href={attachment.url}
+        target="_blank"
+        rel="noreferrer"
+        className="inline-flex items-center gap-1 text-sm text-sky-700 hover:underline"
+      >
+        {attachment.caption ?? t('triagePoolDetail.attachments.documentLink')}
+      </a>
+      {isPdf && (
+        <button
+          type="button"
+          onClick={() => onPreview(attachment)}
+          aria-label={t('triagePoolDetail.attachments.zoomAria')}
+          className="rounded-md p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-800"
+        >
+          <PreviewOpen theme="outline" size={16} />
+        </button>
+      )}
+    </div>
   )
 }
 
@@ -73,6 +101,9 @@ interface AttachmentsSectionProps {
 /** C2 — anexos recebidos do consumidor, com acesso por link autorizado e temporário. */
 export function AttachmentsSection({ attachments }: AttachmentsSectionProps) {
   const { t } = useTranslation()
+  const [previewAttachment, setPreviewAttachment] = useState<TriagemPoolAttachment | null>(null)
+
+  const imageAttachments = attachments.filter((attachment) => attachment.mediaKind === 'Image')
 
   return (
     <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
@@ -83,7 +114,7 @@ export function AttachmentsSection({ attachments }: AttachmentsSectionProps) {
         <div className="flex flex-wrap gap-4">
           {attachments.map((attachment) => (
             <div key={attachment.mediaId} className="space-y-1">
-              <AttachmentItem attachment={attachment} />
+              <AttachmentItem attachment={attachment} onPreview={setPreviewAttachment} />
               {attachment.isVoiceNote && attachment.durationSeconds !== null && (
                 <p className="text-xs text-slate-400">
                   {t('triagePoolDetail.attachments.voiceNoteDuration', { seconds: attachment.durationSeconds })}
@@ -93,6 +124,12 @@ export function AttachmentsSection({ attachments }: AttachmentsSectionProps) {
           ))}
         </div>
       )}
+      <AttachmentPreviewModal
+        attachment={previewAttachment}
+        images={imageAttachments}
+        onNavigate={setPreviewAttachment}
+        onClose={() => setPreviewAttachment(null)}
+      />
     </section>
   )
 }

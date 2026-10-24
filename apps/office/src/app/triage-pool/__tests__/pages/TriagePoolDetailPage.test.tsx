@@ -192,6 +192,77 @@ describe('TriagePoolDetailPage', () => {
     expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
   })
 
+  it('renders "—" for AI cost when llmUsage is absent', () => {
+    mockedUseTriagePoolDetail.mockReturnValue({
+      detail: mockedDetail,
+      isLoading: false,
+      isError: false,
+      notFound: false,
+      refetch: vi.fn(),
+    })
+
+    renderPage()
+
+    expect(screen.getByText(`${'Custo de IA'}: —`)).toBeInTheDocument()
+  })
+
+  it('renders the AI cost, tokens and calls when llmUsage is present', () => {
+    mockedUseTriagePoolDetail.mockReturnValue({
+      detail: {
+        ...mockedDetail,
+        llmUsage: { inputTokens: 1200, outputTokens: 340, estimatedCostUsd: 0.0123, calls: 3 },
+      },
+      isLoading: false,
+      isError: false,
+      notFound: false,
+      refetch: vi.fn(),
+    })
+
+    renderPage()
+
+    expect(screen.getByText(/US\$\s?0,0123/)).toBeInTheDocument()
+    expect(screen.getByText(/1.200 tokens de entrada \/ 340 de saída/)).toBeInTheDocument()
+    expect(screen.getByText(/3 chamadas/)).toBeInTheDocument()
+  })
+
+  it('renders the invoice number, series, issue date and a "likely in warranty" badge', () => {
+    mockedUseTriagePoolDetail.mockReturnValue({
+      detail: {
+        ...mockedDetail,
+        notaFiscalNumero: '12345',
+        notaFiscalSerie: '1',
+        warrantyEstimate: { status: 'ProvavelmenteNaGarantia', baseDate: '2026-05-10T00:00:00Z', defaultMonths: 12 },
+      },
+      isLoading: false,
+      isError: false,
+      notFound: false,
+      refetch: vi.fn(),
+    })
+
+    renderPage()
+
+    expect(screen.getByText('Nota fiscal')).toBeInTheDocument()
+    expect(screen.getByText('12345')).toBeInTheDocument()
+    expect(screen.getByText('1')).toBeInTheDocument()
+    expect(screen.getByText('09/05/2026')).toBeInTheDocument()
+    expect(screen.getByText(/provavelmente na garantia \(estimativa: 1 ano\)/i)).toBeInTheDocument()
+    expect(screen.getByText(/prazo padrão de 1 ano a partir da emissão/i)).toBeInTheDocument()
+  })
+
+  it('renders a neutral "indeterminate" warranty badge when the invoice is absent', () => {
+    mockedUseTriagePoolDetail.mockReturnValue({
+      detail: mockedDetail,
+      isLoading: false,
+      isError: false,
+      notFound: false,
+      refetch: vi.fn(),
+    })
+
+    renderPage()
+
+    expect(screen.getByText(/garantia indeterminada/i)).toBeInTheDocument()
+  })
+
   it('renders a pre-pool (in-progress) triagem with the same read-only detail', () => {
     mockedUseTriagePoolDetail.mockReturnValue({
       detail: { ...mockedDetail, status: 'EmColeta', stateReason: 'Coleta em andamento com o consumidor.' },

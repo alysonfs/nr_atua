@@ -156,6 +156,49 @@ describe('WorkOrderDetailPage', () => {
     expect(screen.queryByRole('link', { name: /ver triagem/i })).not.toBeInTheDocument()
   })
 
+  it('does not render the "Triagem" card when triagemId is absent', () => {
+    mockedUseWorkOrderDetail.mockReturnValue({
+      detail: mockedDetail,
+      isLoading: false,
+      isError: false,
+      notFound: false,
+    })
+
+    renderPage()
+
+    expect(screen.queryByText('Triagem')).not.toBeInTheDocument()
+  })
+
+  it('renders the "Triagem" card with duration, AI cost, invoice and warranty badge', () => {
+    mockedUseWorkOrderDetail.mockReturnValue({
+      detail: {
+        ...mockedDetail,
+        triagemId: 'triagem-1',
+        triagemStartedAtUtc: '2026-10-20T10:00:00Z',
+        triagemFinishedAtUtc: '2026-10-20T10:12:00Z',
+        llmUsage: { estimatedCostUsd: 0.0123, inputTokens: 500, outputTokens: 100, calls: 2 },
+        notaFiscalNumero: '12345',
+        notaFiscalSerie: '1',
+        warrantyEstimate: {
+          status: 'ProvavelmenteForaDaGarantia',
+          baseDate: '2026-05-10T00:00:00Z',
+          defaultMonths: 12,
+        },
+      },
+      isLoading: false,
+      isError: false,
+      notFound: false,
+    })
+
+    renderPage()
+
+    expect(screen.getByText('Triagem')).toBeInTheDocument()
+    expect(screen.getByText('Finalizada em 12 min')).toBeInTheDocument()
+    expect(screen.getByText(/US\$\s?0,0123/)).toBeInTheDocument()
+    expect(screen.getByText(/12345/)).toBeInTheDocument()
+    expect(screen.getByText(/provavelmente fora da garantia \(estimativa: 1 ano\)/i)).toBeInTheDocument()
+  })
+
   it('renders the status history in chronological order', () => {
     mockedUseWorkOrderDetail.mockReturnValue({
       detail: mockedDetail,

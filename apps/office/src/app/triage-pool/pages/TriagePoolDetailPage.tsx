@@ -7,9 +7,11 @@ import { useTriagePoolDetail } from '../hooks/useTriagePoolDetail'
 import { ChecklistSection } from '../components/ChecklistSection'
 import { AttachmentsSection } from '../components/AttachmentsSection'
 import { ConversationSection } from '../components/ConversationSection'
+import { InvoiceSection } from '../components/InvoiceSection'
 import { Badge } from '../../../shared/components/ui/Badge'
 import { translateTriagemPoolStatus, triagemPoolStatusTone } from '../lib/triageStatus'
 import { formatTriageDurationLabel } from '../lib/formatTriageDuration'
+import { formatAiUsageDetailLabel } from '../lib/formatAiUsage'
 import { TRIAGE_POOL_POLL_INTERVAL_MS } from '../hooks/useTriagePoolList'
 
 function Field({ label, value }: { label: string; value: string | null }) {
@@ -102,6 +104,9 @@ export function TriagePoolDetailPage() {
               {t('triagePoolDetail.triageDuration')}:{' '}
               {formatTriageDurationLabel(t, detail.startedAtUtc, detail.finishedAtUtc, nowMs)}
             </span>
+            <span className="text-xs text-slate-500">
+              {t('triagePoolDetail.aiUsage.title')}: {formatAiUsageDetailLabel(t, detail.llmUsage, locale)}
+            </span>
           </div>
         </div>
         <Link
@@ -154,6 +159,12 @@ export function TriagePoolDetailPage() {
       </Section>
 
       <ChecklistSection checklist={detail.checklist} />
+      <InvoiceSection
+        notaFiscalNumero={detail.notaFiscalNumero}
+        notaFiscalSerie={detail.notaFiscalSerie}
+        warrantyEstimate={detail.warrantyEstimate}
+        locale={locale}
+      />
       <AttachmentsSection attachments={detail.attachments} />
       <ConversationSection conversation={detail.conversation} locale={locale} />
     </div>

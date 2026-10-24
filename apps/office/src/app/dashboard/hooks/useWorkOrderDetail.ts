@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { apiClient, ApiError } from '../../../shared/lib/apiClient'
+import type { TriagemLlmUsage, TriagemWarrantyEstimate } from '../../../shared/types/triagePool'
 
 /** Entrada de `work_order_history` (RF-026.6), já ordenada do mais antigo para o mais novo. */
 export interface WorkOrderHistoryEntry {
@@ -50,6 +51,25 @@ export interface WorkOrderDetail {
    * exibido.
    */
   triagemId?: string | null
+  /**
+   * Início do atendimento da triagem associada (ISO 8601). Opcional
+   * enquanto o backend não publica o campo.
+   */
+  triagemStartedAtUtc?: string | null
+  /**
+   * Conclusão do atendimento da triagem associada (ISO 8601) ou
+   * `null`/ausente enquanto a triagem está em andamento ou o campo não é
+   * publicado pelo backend.
+   */
+  triagemFinishedAtUtc?: string | null
+  /** Custo de IA (LLM) da triagem associada. Opcional enquanto ausente do backend. */
+  llmUsage?: TriagemLlmUsage
+  /** Estimativa de garantia (RF futuro), calculada a partir da data de emissão da NF. Opcional. */
+  warrantyEstimate?: TriagemWarrantyEstimate
+  /** Número da nota fiscal associada à triagem. Opcional. */
+  notaFiscalNumero?: string | null
+  /** Série da nota fiscal associada à triagem. Opcional. */
+  notaFiscalSerie?: string | null
 }
 
 /**

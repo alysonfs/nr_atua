@@ -26,6 +26,42 @@ export type TriagemListStatus = TriagemPoolStatus | TriagemInProgressStatus
  */
 export type TriagemListScope = 'pool' | 'in-progress' | 'all'
 
+/**
+ * Consumo e custo estimado de LLM (IA) de uma única triagem (ADR-048),
+ * espelhando `TriagemLlmUsageResponse` em
+ * `apps/api/Atua.Api/Endpoints/TriagemPoolEndpoints.cs`. Opcional e com
+ * todos os campos opcionais enquanto o backend não publica (ou ainda não
+ * implantou) o campo — nesse caso a UI exibe "—" em vez de "US$ 0,00".
+ */
+export interface TriagemLlmUsage {
+  calls?: number
+  inputTokens?: number
+  outputTokens?: number
+  /** Custo estimado em dólares americanos (USD). */
+  estimatedCostUsd?: number
+}
+
+/** Os três estados da estimativa de garantia (nunca uma certeza jurídica). */
+export type TriagemWarrantyEstimateStatus =
+  | 'ProvavelmenteNaGarantia'
+  | 'ProvavelmenteForaDaGarantia'
+  | 'Indeterminado'
+
+/**
+ * Estimativa de garantia calculada na leitura a partir da data de emissão
+ * da nota fiscal e de um prazo padrão (`defaultMonths`, hoje 12 meses) —
+ * nunca uma regra por categoria de produto (prevista para uma versão
+ * futura), nem uma certeza jurídica. Espelha `WarrantyEstimateResponse`.
+ * Todos os campos são opcionais enquanto o backend não os publica.
+ */
+export interface TriagemWarrantyEstimate {
+  status?: TriagemWarrantyEstimateStatus
+  /** Data de emissão da nota fiscal usada como base do cálculo (ISO 8601). */
+  baseDate?: string | null
+  /** Prazo padrão usado na estimativa, em meses (hoje sempre 12). */
+  defaultMonths?: number
+}
+
 export interface TriagemPoolListItem {
   triagemId: string
   workOrderProviderNo: string | null
@@ -47,6 +83,8 @@ export interface TriagemPoolListItem {
    * enquanto a triagem está em andamento.
    */
   finishedAtUtc?: string | null
+  /** Custo de LLM (IA) desta triagem. Opcional enquanto ausente do backend. */
+  llmUsage?: TriagemLlmUsage
 }
 
 export interface TriagemPoolListResponse {
@@ -129,4 +167,12 @@ export interface TriagemPoolDetail {
    * enquanto a triagem está em andamento.
    */
   finishedAtUtc?: string | null
+  /** Custo de LLM (IA) desta triagem. Opcional enquanto ausente do backend. */
+  llmUsage?: TriagemLlmUsage
+  /** Estimativa de garantia (ver `TriagemWarrantyEstimate`). Opcional enquanto ausente do backend. */
+  warrantyEstimate?: TriagemWarrantyEstimate
+  /** Número da nota fiscal extraído da classificação de visão, quando já extraído. */
+  notaFiscalNumero?: string | null
+  /** Série da nota fiscal — mesma origem e ressalva de `notaFiscalNumero`. */
+  notaFiscalSerie?: string | null
 }

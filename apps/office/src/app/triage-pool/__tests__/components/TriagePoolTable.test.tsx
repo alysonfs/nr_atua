@@ -85,6 +85,7 @@ describe('TriagePoolTable', () => {
     expect(screen.getByRole('columnheader', { name: /^checklist$/i })).toBeInTheDocument()
     expect(screen.getByRole('columnheader', { name: /tempo no pool/i })).toBeInTheDocument()
     expect(screen.getByRole('columnheader', { name: /tempo de triagem/i })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: /custo de ia/i })).toBeInTheDocument()
     expect(screen.getByRole('columnheader', { name: /nova atividade/i })).toBeInTheDocument()
   })
 
@@ -151,6 +152,26 @@ describe('TriagePoolTable', () => {
     const row = screen.getByText('BRWO260909869').closest('tr')
     expect(row).not.toBeNull()
     expect(row).toHaveTextContent('—')
+  })
+
+  it('renders the AI cost in USD when llmUsage is present, and "—" when absent', async () => {
+    getMock.mockResolvedValueOnce({
+      totalCount: 2,
+      items: [
+        { ...mockedItems[0], llmUsage: { inputTokens: 500, outputTokens: 100, estimatedCostUsd: 0.0123, calls: 2 } },
+        mockedItems[1],
+      ],
+    })
+
+    renderTable({ tenantId: TENANT_ID })
+
+    await waitFor(() => expect(screen.getByText('BRWO260909869')).toBeInTheDocument())
+
+    expect(screen.getByText(/US\$\s?0,0123/)).toBeInTheDocument()
+
+    const secondRow = screen.getByText('BRWO260909870').closest('tr')
+    expect(secondRow).not.toBeNull()
+    expect(secondRow).toHaveTextContent('—')
   })
 
   it('applies the status filter in the request', async () => {
